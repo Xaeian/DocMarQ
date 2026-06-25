@@ -1,17 +1,16 @@
 # docmarq/md/renderer.py
 
-"""
-Markdown → DOCX rendering.
+"""Markdown → DOCX rendering.
 
 Walks `markdown-it-py` tokens and emits `DOCX` API calls. Word's native
 layout (auto page breaks, keep-with-next on Heading styles, paragraph
-spacing) does most of the heavy lifting - this renderer is just a token
-dispatcher with an inline state machine.
+spacing) does the heavy lifting - this renderer is a token dispatcher
+with an inline state machine.
 
 Pure helpers live in sibling modules: `tokens.py` (attr/find_close),
 `slug.py` (heading slugs and anchor resolution), `image_utils.py` (PIL
-preprocess + scaling), `mermaid.py` (mmdc CLI). The class methods below
-own everything that touches `doc` state.
+preprocess + scaling), `mermaid.py` (mmdc CLI). Class methods below own
+everything that touches `doc` state.
 """
 import os
 from markdown_it import MarkdownIt
@@ -93,12 +92,26 @@ class MarkdownRenderer:
     md = MarkdownIt("commonmark", {"html": True, "breaks": False})
     md.enable(["table", "strikethrough"])
     md.use(footnote_plugin)
+    # `$...$` / `$$...$$` → `math_inline` / `math_block` tokens (OMML).
+    # Degrades gracefully when missing - `$...$` stays as literal text.
+    self._math_enabled = False
+    if self.style.math_enable:
+      try:
+        from mdit_py_plugins.dollarmath import dollarmath_plugin
+        md.use(dollarmath_plugin)
+        self._math_enabled = True
+      except ImportError:
+        import warnings
+        warnings.warn(
+          "math formulas need `mdit-py-plugins` (pip install docmarq[md]); "
+          "`$...$` will render as plain text",
+          RuntimeWarning, stacklevel=2,
+        )
     self._md = md
     self._list_depth = 0
-    # Pre-scanned slugs for `[text](#slug)` internal links. Built by
-    # `_collect_heading_slugs` before the first token is rendered so
-    # broken-anchor links can be detected and rendered as plain text
-    # (matches pdfmarq's behavior - never produce dangling targets).
+    # Pre-scanned slugs for `[text](#slug)` internal links - built before
+    # the first token so broken anchors render as plain text, never as
+    # dangling Word hyperlinks.
     self._known_slugs: set[str] = set()
 
   #-------------------------------------------------------------------------------- Entry point
@@ -113,8 +126,7 @@ class MarkdownRenderer:
     if fm:
       self._apply_frontmatter_metadata(fm)
     self._apply_chrome(fm)
-    # Apply markdown body line-height + paragraph gap once at render start.
-    # Caller can still override later via `doc.style(...)`.
+    # Body typography applied once; caller may override via `doc.style(...)`.
     self.doc.style(
       line_height=self.style.line_height,
       space_after=self.style.para_gap_pt,
@@ -122,9 +134,7 @@ class MarkdownRenderer:
     if fm and self.style.banner_render:
       self._render_banner(fm)
     tokens = self._md.parse(md_text)
-    # Pre-scan heading slugs so `link_open` can validate `#anchor` hrefs
-    # against the set of real bookmarks - broken anchors render as plain
-    # text instead of producing dangling Word hyperlinks.
+    # Pre-scan so `link_open` can validate `#anchor` hrefs before rendering.
     self._known_slugs = slug.collect_heading_slugs(tokens)
     self._render_tokens(tokens)
 
@@ -140,33 +150,27 @@ class MarkdownRenderer:
     """
     s = self.style
     sec = self.doc._doc.sections[-1]
-    # Footer template - always shown when `page_number_label` is set
     footer_template = None
     if s.page_number_label:
       footer_template = f"{s.page_number_label} {{page}}"
       if s.page_number_total:
         footer_template += " / {pages}"
-    # Continuation header text - id wins over title, else nothing
-    head_text = None
+    head_text = None  # id wins over title for the continuation header
     if s.mini_banner_render and fm:
       head_text = fm.get("id") or fm.get("title")
       if head_text:
         head_text = str(head_text)
-    # When we have a frontmatter banner we want page 1 to skip the
-    # continuation header. Without a banner we can use the same header
-    # everywhere (simpler).
+    # Split first/default only when the banner occupies page 1 - keeps
+    # the continuation header off the banner page.
     use_different_first = bool(fm and s.banner_render and head_text)
     if use_different_first:
       sec.different_first_page_header_footer = True
-      # First-page header empty - banner is the visual masthead
-      sec.first_page_header.paragraphs[0].text = ""
-      # Continuation header: id/title, right-aligned, body size
+      sec.first_page_header.paragraphs[0].text = ""  # banner is the masthead
       self._fill_header(sec.header.paragraphs[0], head_text)
       if footer_template:
         self._fill_footer(sec.first_page_footer.paragraphs[0], footer_template)
         self._fill_footer(sec.footer.paragraphs[0], footer_template)
     else:
-      # Single header/footer for all pages
       if head_text:
         self._fill_header(sec.header.paragraphs[0], head_text)
       if footer_template:
@@ -174,7 +178,7 @@ class MarkdownRenderer:
 
   @staticmethod
   def _fill_header(p, text:str):
-    """Set a header paragraph to `text`, centered, muted grey."""
+    """Set a header paragraph to `text` - centered, muted grey, 9pt."""
     from docx.shared import RGBColor, Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     p.text = ""
@@ -342,10 +346,8 @@ class MarkdownRenderer:
     s = self.style
     title = fm.get("title")
     if title:
-      # Display text needs aggressive tight leading. Word's `auto` line rule
-      # multiplies by the font's "single" height which for Calibri is
-      # already `~1.2× font size`, so even `1.05× auto` renders loose. Use
-      # `EXACTLY` with an absolute pt value to bypass font metrics entirely.
+      # `EXACTLY` bypasses Calibri's ~1.2× internal leading so large title
+      # text sits tight without gaps between wrapped lines.
       from ..utils import tight_line_height_pt
       new_para(line_spacing_exact_pt=tight_line_height_pt(s.banner_title_size))
       add_run(str(title), bold=True, size=s.banner_title_size)
@@ -354,9 +356,7 @@ class MarkdownRenderer:
     id_ = fm.get("id")
     if status or version or id_:
       new_para(space_before=2)
-      # `•` (U+2022) is the meta separator - bigger and more visible than the
-      # middle-dot `·`, matches how news / dashboards space their metadata.
-      sep = "  •  "
+      sep = "  •  "  # U+2022 BULLET - more visible than middle-dot
       if status:
         bg, fg = s.banner_status_colors.get(status,
           ((0.9, 0.9, 0.9), (0.3, 0.3, 0.3)))
@@ -402,7 +402,7 @@ class MarkdownRenderer:
 
   def _apply_frontmatter_metadata(self, fm:dict):
     """Push recognized YAML keys into `doc.metadata()`. Unknown keys silently
-    ignored - banner rendering happens elsewhere (future iteration)."""
+    ignored; banner rendering is handled separately."""
     meta = {}
     for yaml_key, meta_key in (("title", "title"), ("author", "author"),
         ("subject", "subject")):
@@ -486,11 +486,11 @@ class MarkdownRenderer:
           self._render_paragraph(inline)
         i += 3
       elif tt == "fence" or tt == "code_block":
-        # Info string: first token = lang, rest = optional DSL (mermaid only).
-        info_parts = (t.info or "").strip().split(maxsplit=1)
+        info_parts = (t.info or "").strip().split(maxsplit=1)  # [lang, rest_dsl]
         lang = info_parts[0] if info_parts else None
         info_rest = info_parts[1] if len(info_parts) > 1 else ""
         if lang == "mermaid": self._render_mermaid(t.content, info_rest)
+        elif lang == "math": self._render_math_block(t.content)
         else:
           self.doc.code_block(
             t.content,
@@ -499,6 +499,9 @@ class MarkdownRenderer:
             border_color=self.style.code_block_border,
             font_family=self.style.mono_family,
           )
+        i += 1
+      elif tt == "math_block":
+        self._render_math_block(t.content)
         i += 1
       elif tt == "bullet_list_open": i = self._render_list(tokens, i, ordered=False)
       elif tt == "ordered_list_open": i = self._render_list(tokens, i, ordered=True)
@@ -509,9 +512,7 @@ class MarkdownRenderer:
       elif tt == "table_open": i = self._render_table(tokens, i)
       elif tt == "footnote_block_open": i = self._render_footnote_block(tokens, i)
       elif tt == "html_block":
-        # Directive comments: `<!-- pagebreak -->`, `<!-- group --> ...
-        # <!-- /group -->`. Other HTML blocks are dropped silently
-        # (docmarq doesn't render arbitrary embedded HTML).
+        # Only directive comments are handled; arbitrary HTML is dropped.
         from .tokens import (is_pagebreak_directive,
           is_group_open_directive, is_group_close_directive)
         content = t.content or ""
@@ -535,15 +536,10 @@ class MarkdownRenderer:
   #-------------------------------------------------------------------------------- Headings
 
   def _render_heading(self, inline_token:Token, level:int):
-    """Emit a heading. Inline formatting inside headings is intentionally
-    simplified: bold/italic/strike toggles are passed through, but font
-    family/size/color are inherited from the Heading paragraph style _(so
-    inline `code` keeps heading size, just switches family)_.
-
-    Registers the heading's slug as a Word bookmark so `[text](#slug)`
-    internal links can jump here. Slug is the same GitHub-style id used
-    during the pre-scan so collected slugs and registered bookmarks
-    always match.
+    """Emit a heading. Bold/italic/strike pass through; font family/size/color
+    inherit from the Heading paragraph style (so inline `code` keeps heading
+    size, just switches family). Registers the slug as a Word bookmark so
+    `[text](#slug)` internal links resolve here.
     """
     self.doc.heading(level=level)
     p = self.doc._current_para
@@ -577,6 +573,11 @@ class MarkdownRenderer:
       elif ct == "em_close": state["italic"] = False
       elif ct == "s_open": state["strike"] = True
       elif ct == "s_close": state["strike"] = False
+      elif ct == "math_inline":
+        # Heading math inherits the heading run size (size_halfpt=None) so it
+        # scales with the heading rather than rendering at body size.
+        _, color_hex = self._math_run_props()
+        self._append_inline_math(p, c.content, None, color_hex)
       elif ct == "softbreak": p.add_run(" ")
       elif ct == "hardbreak": p.add_run("\n")
 
@@ -611,8 +612,7 @@ class MarkdownRenderer:
         else:
           self.doc.text(c.content, **kwargs())
       elif ct == "code_inline":
-        # Inline code inherits any wrapping bold/italic/strike state - e.g.
-        # `*foo `code` bar*` should render the code segment as italic too.
+        # Inherits wrapping bold/italic/strike - e.g. `*foo `code` bar*`.
         self.doc.text(c.content, code=True, **kwargs())
       elif ct == "strong_open": state["bold"] = True
       elif ct == "strong_close": state["bold"] = False
@@ -622,8 +622,7 @@ class MarkdownRenderer:
       elif ct == "s_close": state["strike"] = False
       elif ct == "link_open":
         href = get_attr(c, "href") or ""
-        # `#anchor` first - validate against pre-scanned heading slugs.
-        # Unknown anchors collapse to plain text (no dangling jump).
+        # `#anchor` validated against pre-scanned slugs; unknown → plain text.
         anchor = slug.resolve_anchor(href, self._known_slugs)
         if anchor is not None:
           state["link_target"] = anchor
@@ -632,15 +631,16 @@ class MarkdownRenderer:
       elif ct == "link_close":
         state["link_url"] = None
         state["link_target"] = None
+      elif ct == "math_inline":
+        self._render_inline_math(c.content)
       elif ct == "softbreak": self.doc.text(" ")
       elif ct == "hardbreak": self.doc.line_break()
       elif ct == "image":
-        # Inline image: render as alt text in italic for now _(real inline
-        # picture embedding via raw `<w:drawing>` is deferred)_
+        # Inline images render as italic alt text; full embedding is deferred.
         alt = c.content or "[image]"
         self.doc.text(alt, italic=True)
       elif ct == "footnote_ref":
-        # GitHub-style `[^N]` -> small superscript bracket like `[1]`.
+        # `[^N]` → superscript `[1]` link style.
         label = (c.meta or {}).get("label") or ""
         self.doc.text(f"[{label}]", superscript=True, color=self.style.link_color)
 
@@ -654,7 +654,7 @@ class MarkdownRenderer:
     if href.startswith(("http://", "https://", "mailto:", "ftp://")):
       return href
     if href.startswith("#"):
-      return None # internal anchors handled separately via bookmark targets
+      return None  # internal anchors handled via bookmark targets
     if self.style.link_root:
       base = self.style.link_base.strip("/")
       root = self.style.link_root.rstrip("/")
@@ -737,11 +737,9 @@ class MarkdownRenderer:
 
   def _render_blockquote(self, tokens:list[Token], start:int) -> int:
     end = find_close(tokens, start, "blockquote_open", "blockquote_close")
-    # GitHub callout: `> [!NOTE]\n> body...`
-    callout_type = self._detect_callout(tokens, start, end)
+    callout_type = self._detect_callout(tokens, start, end)  # `> [!NOTE]` form
     if callout_type:
       return self._render_callout(tokens, start, end, callout_type)
-    # Regular blockquote: every inline → tight-grouped paragraphs
     inlines = self._collect_blockquote_inlines(tokens, start, end)
     total = len(inlines)
     for idx, inline in enumerate(inlines):
@@ -788,12 +786,10 @@ class MarkdownRenderer:
         body_inlines.append(stripped)
       body_inlines.extend(inlines[1:])
     total = 1 + len(body_inlines)
-    # Title paragraph (colored)
     sb, sa = self._spacing_for(0, total, 3, 3)
     self.doc.blockquote(text=None, border_color=border_rgb, text_color=text_rgb,
       space_before=sb, space_after=sa)
     self.doc.text(label, bold=True, color=text_rgb)
-    # Body paragraphs (muted)
     for j, inline in enumerate(body_inlines):
       sb, sa = self._spacing_for(j + 1, total, 3, 3)
       self.doc.blockquote(text=None, border_color=border_rgb,
@@ -812,17 +808,15 @@ class MarkdownRenderer:
     if not children:
       return None
     new_children = list(children)
-    # First child should be the marker text. If it doesn't match, leave intact.
+    # Drop the `[!TYPE]` text token if present; leave unchanged if it doesn't match.
     if new_children[0].type == "text" and CALLOUT_RE.match(new_children[0].content):
       new_children.pop(0)
-      # Drop the next softbreak/hardbreak if there is one - otherwise the body
-      # would start with a leading blank line.
+      # Drop the following softbreak so the body doesn't start with a blank line.
       if new_children and new_children[0].type in ("softbreak", "hardbreak"):
         new_children.pop(0)
     if not new_children:
       return None
-    # Build a shallow clone with replaced children. `markdown_it.token.Token`
-    # constructor takes `(type, tag, nesting)` - copy the rest field-by-field.
+    # `Token(type, tag, nesting)` - copy remaining fields manually.
     clone = type(inline_token)(inline_token.type, inline_token.tag,
       inline_token.nesting)
     clone.children = new_children
@@ -830,14 +824,149 @@ class MarkdownRenderer:
     clone.attrs = inline_token.attrs
     return clone
 
+  #-------------------------------------------------------------------------------------- Math
+
+  def _math_run_props(self) -> tuple[int, str]:
+    """`(size_halfpt, color_hex)` for OMML runs matching body font size/color."""
+    from ..constants import Defaults
+    from ..utils import color_hex
+    body_pt = self.doc._style.font_size or Defaults.FONT_SIZE
+    return round(body_pt * 2), color_hex(self.style.body_color)
+
+  def _render_inline_math(self, latex:str):
+    """Inline `$...$`: append a native OMML equation to the current paragraph,
+    falling back to an inline image when the LaTeX is outside the OMML subset.
+    """
+    if self.doc._current_para is None:
+      self.doc.para()
+    size_halfpt, color_hex = self._math_run_props()
+    self._append_inline_math(self.doc._current_para, latex, size_halfpt, color_hex)
+
+  def _append_inline_math(self, p, latex:str, size_halfpt:int|None, color_hex:str):
+    """Append inline math to paragraph `p` (works for body paragraphs and
+    headings). Native OMML first; image fallback on conversion failure.
+
+    `size_halfpt=None` lets the math runs inherit the paragraph's run size -
+    used for headings so `# Result $x^2$` sizes the formula to the heading,
+    not the body. Body callers pass the explicit body size so a non-default
+    `font_size` doesn't fall back to Word's 11pt Normal default.
+    """
+    from .math import latex_to_omath, MathConversionError
+    try:
+      omath = latex_to_omath(latex, size_halfpt=size_halfpt,
+        color_hex=color_hex, display=False)
+      p._p.append(omath)
+      return
+    except (MathConversionError, RecursionError):
+      # RecursionError can escape the depth guard through nested sub-parsers.
+      pass
+    self._append_inline_math_image(p, latex)
+
+  def _render_math_block(self, latex:str):
+    """Display `$$...$$` (or ```math): a centered native OMML equation on its
+    own paragraph, with an image fallback for unsupported LaTeX."""
+    from .math import build_omath_para, MathConversionError
+    from ..constants import Align
+    from ..utils import align_to_docx
+    self.doc._flush_para()
+    size_halfpt, color_hex = self._math_run_props()
+    try:
+      omath_para = build_omath_para(latex, size_halfpt=size_halfpt,
+        color_hex=color_hex, align="center")
+    except (MathConversionError, RecursionError):
+      self._render_math_block_image(latex)
+      return
+    p = self.doc._doc.add_paragraph()
+    self.doc._apply_para_spacing(p)
+    p.alignment = align_to_docx(Align.CENTER)
+    p._p.append(omath_para)
+    self.doc._track_block_spacing(self.doc._style.space_after or 0)
+
+  #------------------------------------------------------------------------- Math image fallback
+
+  def _append_inline_math_image(self, p, latex:str):
+    """Render `latex` to a PNG and embed it inline in paragraph `p`, dropped
+    onto the text baseline. Last resort (no matplotlib, or mathtext also can't
+    parse it): render the LaTeX body as inline `code` - never the raw `$...$`
+    delimiters, so the no-`$`-leak contract holds."""
+    from .math import render_math_png
+    from ..constants import Defaults
+    body_pt = self.doc._style.font_size or Defaults.FONT_SIZE
+    result = render_math_png(latex, fontsize_pt=body_pt,
+      color=self.style.body_color, fontset=self.style.math_fontset)
+    if result is None:
+      self._warn_math_fallback()
+      self.doc.text(latex, code=True)
+      return
+    buf, _w_mm, h_mm, baseline_mm = result
+    from docx.shared import Mm
+    from ..utils import to_mm
+    run = p.add_run()
+    try:
+      run.add_picture(buf, height=Mm(to_mm(h_mm, self.doc.unit)))
+    except Exception:
+      self._warn_math_fallback()
+      self.doc.text(latex, code=True)
+      return
+    self._pin_inline_picture_offsets(run)
+    # Shift down by the descent so formula baseline aligns with text baseline.
+    # `<w:position>` is in half-points; positive = raised.
+    descent_pt = baseline_mm / 25.4 * 72.0
+    if descent_pt > 0.1:
+      self._set_run_vertical_position(run, -round(descent_pt * 2))
+
+  def _render_math_block_image(self, latex:str):
+    """Centered block image for a display formula outside the OMML subset."""
+    from .math import render_math_png
+    from ..constants import Defaults, Align
+    body_pt = self.doc._style.font_size or Defaults.FONT_SIZE
+    # Display math is a touch larger than inline, matching LaTeX conventions.
+    result = render_math_png(latex, fontsize_pt=body_pt * 1.25,
+      color=self.style.body_color, fontset=self.style.math_fontset)
+    if result is None:
+      # Render the LaTeX body as centered code - never echo the `$$` delimiters.
+      self._warn_math_fallback()
+      self.doc.para(align=Align.CENTER)
+      self.doc.text(latex, code=True)
+      return
+    buf, w_mm, h_mm, _baseline = result
+    content_w = self.doc._page.content_width
+    if w_mm > content_w:  # cap to page width
+      h_mm = h_mm * content_w / w_mm
+      w_mm = content_w
+    self._insert_picture(buf, w_mm, h_mm)
+
+  def _set_run_vertical_position(self, run, half_points:int):
+    """Set `<w:position>` on a run (raises/lowers it; half-point units)."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    rpr = run._element.get_or_add_rPr()
+    pos = rpr.find(qn("w:position"))
+    if pos is None:
+      pos = OxmlElement("w:position")
+      rpr.append(pos)
+    pos.set(qn("w:val"), str(half_points))
+
+  def _warn_math_fallback(self):
+    """Warn on total render failure. Message varies: matplotlib missing vs.
+    present but unable to parse this LaTeX."""
+    import warnings
+    try:
+      import matplotlib  # noqa: F401
+      msg = ("math formula is outside both the OMML subset and matplotlib "
+        "mathtext; rendering LaTeX source as code text")
+    except ImportError:
+      msg = ("math formula could not be rendered (install matplotlib for the "
+        "image fallback: pip install docmarq[math]); rendering LaTeX as text")
+    warnings.warn(msg, RuntimeWarning, stacklevel=2)
+
   #------------------------------------------------------------------------------------ Images
 
   @staticmethod
   def _standalone_image_src(inline_token:Token) -> str|None:
-    """Return image `src` if `inline_token` contains exactly one `image`
-    child (modulo whitespace-only text children), else `None`. Used to
-    decide whether a paragraph is "just an image" and should be embedded
-    as a centered block instead of rendered as text+placeholder.
+    """Return image `src` when `inline_token` is exactly one image (ignoring
+    whitespace-only text children), else `None`. Determines block vs. inline
+    image treatment.
     """
     children = inline_token.children or []
     seen_image = None
@@ -856,16 +985,9 @@ class MarkdownRenderer:
     return get_attr(seen_image, "src")
 
   def _render_block_image(self, src:str, inline_token:Token):
-    """Embed an image as a block paragraph. Resolves `src` against
-    `base_dir`; if the file's missing falls back to an italic alt-text
-    placeholder so the document still renders.
-
-    Title DSL `![alt](src "key=value")` controls sizing and alignment;
-    see `image_utils.parse_image_dsl`.
-
-    python-docx's JPEG/PNG decoder is strict - JPEGs with non-standard APP
-    segments (e.g. ICC color profile in APP2) are rejected. We retry via
-    Pillow re-save to a normalized stream before giving up.
+    """Embed an image as a centered block paragraph. Falls back to italic
+    alt text when the file is missing. Title DSL `![alt](src "key=val")`
+    controls sizing and alignment (see `image_utils.parse_image_dsl`).
     """
     alt = ""
     title = None
@@ -884,22 +1006,20 @@ class MarkdownRenderer:
       self.doc.text(alt or f"[image: {src}]", italic=True)
       return
     if not self._try_insert_image(path, dsl=dsl):
-      # Final fallback - placeholder text so paper still renders
       self.doc.para()
       self.doc.text(alt or f"[image: {src}]", italic=True)
 
   def _try_insert_image(self, path:str, dsl:image_utils.ImageDSL|None=None) -> bool:
     """Insert image scaled per DSL overrides with `style.image_max_h` cap.
 
-    Every image goes through Pillow first to:
-      1. Crop transparent padding (Word renders full transparent canvas
-         which produces visible right-shift / shrunk content).
-      2. Normalize format (e.g. JPEGs with APP2 ICC profile reject by
-         python-docx; re-saving as PNG fixes it).
-      3. Rasterize SVG to PNG (python-docx has no SVG support).
+    Every image goes through Pillow to:
+      1. Crop transparent padding - Word renders the full transparent canvas,
+         causing visible right-shift / shrunk content.
+      2. Normalize format - JPEGs with APP2 ICC profile are rejected by
+         python-docx; re-saving as PNG fixes it.
+      3. Rasterize SVG (python-docx has no SVG support).
 
-    `dsl.align` is applied to the paragraph holding the image after the
-    insert (mapped to Word's paragraph alignment).
+    `dsl.align` is applied to the paragraph after the insert.
     """
     from docx.image.exceptions import UnrecognizedImageError
     content_w = self.doc._page.content_width
@@ -986,9 +1106,9 @@ class MarkdownRenderer:
     )
 
   def _insert_picture(self, src, width_mm:float|None, height_mm:float|None):
-    """Low-level: centered paragraph + picture run with explicit dimensions.
-    `src` may be a path or a `BytesIO`. Goes around `doc.image()` to allow
-    BOTH width and height to be passed (used after computing scaled dims).
+    """Centered paragraph + picture run with explicit dimensions. `src` may
+    be a path or `BytesIO`. Bypasses `doc.image()` to pass both width and
+    height simultaneously after scaled dims are computed.
     """
     from docx.shared import Mm, Pt
     from ..utils import align_to_docx, to_mm
@@ -1008,21 +1128,15 @@ class MarkdownRenderer:
     if height_mm is not None:
       kwargs["height"] = Mm(to_mm(height_mm, self.doc.unit))
     run.add_picture(src, **kwargs)
-    # python-docx leaves the `<wp:inline>` element minimal - no `distT/L/R/B`
-    # attributes and no `<wp:effectExtent>`. LibreOffice _(and some Word
-    # versions)_ render the image with a small horizontal offset when these
-    # are missing. Pin them all to zero so the image sits flush at the
-    # paragraph's left edge.
     self._pin_inline_picture_offsets(run)
     self.doc._track_block_spacing(2)
 
   @staticmethod
   def _pin_inline_picture_offsets(run):
-    """Set `distT/B/L/R="0"` on every `<wp:inline>` in this run and inject
-    a zero-valued `<wp:effectExtent>` if missing. Fixes the systematic
-    rightward offset observed with python-docx's `add_picture` output.
+    """Set `distT/B/L/R="0"` and inject a zero `<wp:effectExtent>` on every
+    `<wp:inline>` in this run. python-docx omits these; LibreOffice and some
+    Word versions render a small horizontal offset when they are absent.
     """
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
     WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
     def wp(tag):
@@ -1035,7 +1149,7 @@ class MarkdownRenderer:
         eff = OxmlElement("wp:effectExtent")
         for attr in ("l", "t", "r", "b"):
           eff.set(attr, "0")
-        # Schema order: extent → effectExtent → docPr → ...
+        # OOXML schema order: extent → effectExtent → docPr → ...
         extent = inline.find(wp("extent"))
         if extent is not None:
           idx = list(inline).index(extent) + 1
@@ -1046,19 +1160,15 @@ class MarkdownRenderer:
   #------------------------------------------------------------------------------- Footnote block
 
   def _render_footnote_block(self, tokens:list[Token], start:int) -> int:
-    """Render the footnote bibliography section that markdown-it places at
-    the end of the document. Emits an H2 heading (`style.footnote_label`)
-    followed by one paragraph per footnote prefixed with `[N]`.
-
-    Body runs use the same auto-derived size as table cells (`body - 1`,
-    min 7pt) so the bibliography reads as compact reference material, not
-    as full-weight body text. Heading keeps its style-driven size.
+    """Render the footnote bibliography section appended by markdown-it.
+    Emits an H2 heading (when `style.footnote_label` is set) or a thin HR,
+    then one paragraph per footnote prefixed with `[N]`. Runs are one pt
+    smaller than body (`smaller_size`) so the bibliography reads as compact
+    reference material. Heading keeps its style-driven size.
     """
     from ..constants import Defaults
     from ..utils import smaller_size
     end = find_close(tokens, start, "footnote_block_open", "footnote_block_close")
-    # When `footnote_label` is set, emit an H2 heading. Otherwise fall back
-    # to a thin HR - the smaller body font alone signals reference material.
     if self.style.footnote_label:
       self.doc.heading(self.style.footnote_label, level=2)
     else:
@@ -1101,8 +1211,7 @@ class MarkdownRenderer:
           self._render_paragraph(inline)
         k += 3
       elif t.type == "footnote_anchor":
-        # Back-reference link - skip; just decoration in GitHub renderer
-        k += 1
+        k += 1  # back-reference decoration; no DOCX equivalent
       else:
         k += 1
 
@@ -1156,6 +1265,9 @@ class MarkdownRenderer:
     for c in (inline_token.children or []):
       if c.type in ("text", "code_inline"):
         parts.append(c.content)
+      elif c.type == "math_inline":
+        # Tables take plain strings; preserve LaTeX in `$...$` notation.
+        parts.append(f"${c.content}$")
       elif c.type == "softbreak": parts.append(" ")
       elif c.type == "hardbreak": parts.append("\n")
     return "".join(parts)
@@ -1214,9 +1326,11 @@ def md_to_docx(
   if landscape:
     width, height = height, width
   eff_style = build_style(fm, style, render)
-  doc = DOCX(output_path, width=width, height=height, margin=margin)
+  doc = DOCX(output_path, width=width, height=height, margin=margin,
+    gutter=render.gutter or 0)
   # Render-block typography that doesn't live on `MarkdownStyle` is applied
   # via the fluent doc API instead. Word picks these up for subsequent runs.
+  # Typography from render block that isn't on MarkdownStyle goes via doc API.
   if render.font_size is not None:
     doc.font(size=render.font_size)
   if render.line_height is not None:

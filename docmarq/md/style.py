@@ -50,9 +50,21 @@ class MarkdownStyle:
   # Heading styles (see `core.py` `tight_line_height`).
   line_height: float = 1.0
 
-  # Paragraph gap in pt (Word `space_after`). Default 6pt gives clear
-  # paragraph separation without the loose ~10pt Word "Normal" baseline.
-  para_gap_pt: float = 6
+  # Paragraph gap in pt (Word `space_after`). 8pt ≈ pdfmarq's 3mm body gap,
+  # so PDF and DOCX share the same vertical rhythm.
+  para_gap_pt: float = 8
+
+  #---------------------------------------------------------------------------------- Math
+
+  # Math formulas (`$...$`, `$$...$$`) render as native Word equations (OMML)
+  # - editable, selectable, scalable. Constructs outside the supported LaTeX
+  # subset fall back to a matplotlib-rendered image so raw LaTeX never leaks
+  # into the output. Set `math_enable=False` to leave `$...$` as plain text.
+  math_enable: bool = True
+  # Fallback image fontset (matplotlib mathtext): stix / stixsans / cm /
+  # dejavusans / dejavuserif. `stix` is closest to Word's Cambria Math, so a
+  # fallback formula blends with the native ones around it.
+  math_fontset: str = "stix"
 
   #------------------------------------------------------------------------------- Mermaid
 

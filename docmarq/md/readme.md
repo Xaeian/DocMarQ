@@ -67,6 +67,7 @@ title: Report
 render:
   page: A4              # A4 / A3 / A5 / LETTER / LEGAL
   margin: 25            # mm; or list [top, right, bot, left]
+  gutter: 0             # mm binding margin (Word native gutter)
   landscape: false      # flip page
   font_body: Calibri
   font_head: Sora       # defaults to `font_body`
@@ -75,7 +76,7 @@ render:
   line_height: 1.0      # Word "Single" rule (~1.2x in render due to Calibri metrics)
   img_max_h: 120        # mm cap on every image (per-image DSL still overrides)
   banner: true          # page-1 banner from frontmatter
-  banner_min: true      # mini-banner on continuation pages
+  banner_min: true      # mini-banner on continuation pages (alias: `header`)
   page_number: true     # footer numbering
   lang: pl              # banner/footer labels (en/pl/de/fr/es/it/cs/sk)
 ---
@@ -247,11 +248,49 @@ with DOCX("out.docx") as doc:
   MarkdownRenderer(doc, MarkdownStyle(banner_render=False)).render(open("body.md").read())
 ```
 
+## Math formulas
+
+Inline `$...$` and display `$$...$$` (also ` ```math ` fences) render as
+**native Word equations (OMML)** - editable in Word's equation editor,
+selectable, and scaling with font + zoom. The converter is self-contained
+(built straight on OOXML, no extra runtime dependency) and covers the
+common markdown-math subset:
+
+````md
+Inline $E = mc^2$ and the quadratic root $x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}$.
+
+$$\sum_{i=1}^{n} i = \frac{n(n+1)}{2}$$
+
+$$f(x) = \begin{cases} 1 & x > 0 \\ 0 & x \le 0 \end{cases}$$
+````
+
+Supported: superscripts/subscripts, `\frac` / `\dfrac` / `\tfrac` / `\binom`,
+`\sqrt` and `\sqrt[n]`, big operators (`\sum`, `\prod`, `\int`, `\oint`, ...)
+with limits, Greek + relation/operator/arrow/set symbols, functions
+(`\sin`, `\log`, `\lim_{...}`, ...), delimiters (`\left ... \right`),
+accents (`\hat`, `\vec`, `\bar`, `\dot`, ...), `\overline` / `\underline`,
+matrices (`matrix` / `pmatrix` / `bmatrix` / `vmatrix` / `cases`), and font
+commands (`\mathbb`, `\mathcal`, `\mathbf`, `\mathrm`, `\text`, ...).
+
+LaTeX outside this subset falls back to a **matplotlib-rendered image** so
+the formula still appears (never raw `$...$`). Inline fallback images are
+baseline-aligned. Toggle / tune via `MarkdownStyle`:
+
+```py
+MarkdownStyle(
+  math_enable=True,     # False leaves `$...$` as plain text
+  math_fontset="stix",  # fallback image fontset (matplotlib mathtext)
+)
+```
+
+The image fallback needs matplotlib (`pip install docmarq[math]`); without
+it, unconvertible formulas degrade to italic LaTeX source text.
+
 ## Not supported (use `pdfmarq` if you need them)
 
-- Math formulas _(`$x^2$`, `$$...$$`)_: Word's OMML is out of scope for v0.2.0
 - Syntax highlighting in fenced code _(language hint is accepted, ignored)_
 - Deferred page-number rendering: Word uses field codes; configure via `page_number_label` only
+- Rich inline content inside table cells _(math in a cell degrades to `$latex$` source text)_
 
 ## Optional deps for features
 

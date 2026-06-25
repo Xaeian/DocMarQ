@@ -1,17 +1,13 @@
-"""
-Pure helpers for walking markdown-it tokens.
-
-`markdown-it-py` returns a flat token list with `*_open` / `*_close` pairs.
-These helpers cover the two operations we need everywhere: pulling an HTML
-attribute off an open token and finding the matching close for a range.
-"""
+"""Helpers for walking markdown-it token lists.
+`*_open` / `*_close` pair structure requires attr lookup and depth-tracking
+close-finding; this module centralises both so callers stay free of boilerplate."""
 import re
 from markdown_it.token import Token
 
 #-------------------------------------------------------------------------------------- Attrs
 
 def get_attr(token:Token, name:str) -> str|None:
-  """Get HTML attribute value from a token's attrs list/dict."""
+  """Return the value of HTML attribute `name` from a token, or None."""
   if not token.attrs:
     return None
   if isinstance(token.attrs, dict):
@@ -24,10 +20,9 @@ def get_attr(token:Token, name:str) -> str|None:
 #----------------------------------------------------------------------------- Range scanning
 
 def find_close(tokens:list[Token], start:int, open_type:str, close_type:str) -> int:
-  """Return index of the matching close token for a balanced open token.
-  Falls back to last index when no close is found - safer than raising
-  since `markdown-it` always produces balanced output for valid input.
-  """
+  """Return index of the matching close token for the open token at `start`.
+  Falls back to last index on imbalance - markdown-it always produces
+  balanced output for valid input, so this is a safety net only."""
   depth = 0
   for j in range(start, len(tokens)):
     tt = tokens[j].type
@@ -47,11 +42,9 @@ CALLOUT_RE = re.compile(r"^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$",
 
 #---------------------------------------------------------------------------- Directives
 
-# HTML-comment directives for layout control. Whitespace-tolerant inside
-# the comment, case-insensitive on the name. Extra tokens inside the
-# comment disqualify the match - `<!-- pagebreak xxx -->` is not a
-# directive, just a regular HTML comment that gets dropped.
-# Symmetric with `pdfmarq.md.md_html` detectors.
+# HTML-comment directives for layout control. Whitespace-tolerant, case-insensitive.
+# Any extra content disqualifies the match (e.g. `<!-- pagebreak xxx -->` is not a
+# directive). Symmetric with `pdfmarq.md.md_html` detectors.
 _PAGEBREAK_RE = re.compile(r"\s*<!--\s*pagebreak\s*-->\s*", re.IGNORECASE)
 _GROUP_OPEN_RE = re.compile(r"\s*<!--\s*group\s*-->\s*", re.IGNORECASE)
 _GROUP_CLOSE_RE = re.compile(r"\s*<!--\s*/\s*group\s*-->\s*", re.IGNORECASE)

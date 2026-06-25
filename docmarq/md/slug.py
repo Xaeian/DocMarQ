@@ -38,10 +38,10 @@ def collect_heading_slugs(tokens:list[Token]) -> set[str]:
   broken jumps.
   """
   slugs:set[str] = set()
-  for j, t in enumerate(tokens):
+  for i, t in enumerate(tokens):
     if t.type != "heading_open": continue
-    if j + 1 < len(tokens) and tokens[j + 1].type == "inline":
-      slug = slugify_inline(tokens[j + 1])
+    if i + 1 < len(tokens) and tokens[i + 1].type == "inline":
+      slug = slugify_inline(tokens[i + 1])
       if slug:
         slugs.add(slug)
   return slugs

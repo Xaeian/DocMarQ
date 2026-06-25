@@ -7,8 +7,6 @@ solve column widths or text fitting. This module covers what Word doesn't
 hand us: zebra striping, header shading, border styling, cell padding.
 """
 from .utils import color_hex
-from .styles import TableStyle
-from .constants import Align
 
 #-------------------------------------------------------------------------------- Border helpers
 
@@ -127,9 +125,9 @@ def set_cell_margins(cell, top:float=0, right:float=0, bot:float=0, left:float=0
 def set_cell_vertical_align(cell, align:str="center"):
   """Set vertical alignment of cell content. `align`: `top`/`center`/`bottom`."""
   from docx.enum.table import WD_ALIGN_VERTICAL
-  table = {
+  va_map = {
     "top": WD_ALIGN_VERTICAL.TOP,
     "center": WD_ALIGN_VERTICAL.CENTER,
     "bottom": WD_ALIGN_VERTICAL.BOTTOM,
   }
-  cell.vertical_alignment = table.get(align, WD_ALIGN_VERTICAL.CENTER)
+  cell.vertical_alignment = va_map.get(align, WD_ALIGN_VERTICAL.CENTER)

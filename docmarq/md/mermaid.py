@@ -114,10 +114,9 @@ def _try_mmdc(source:str, out_path:Path, *, cli:str, theme:str,
   css_path = None
   cmd = [cli, "-i", src_path, "-o", str(out_path),
     "-t", theme, "-b", background, "-s", str(scale)]
-  # Optional puppeteer config (e.g. custom Chrome path on sandboxed envs).
-  # Honors `DOCMARQ_MMDC_PUPPETEER_CONFIG` and `XAEIAN_MMDC_PUPPETEER_CONFIG`
-  # so users already running pdfmarq with the second one set don't need a
-  # separate var for docmarq.
+  # Puppeteer config (custom Chrome path, sandbox flags, etc.).
+  # Both vars are checked: XAEIAN_MMDC_PUPPETEER_CONFIG is the pdfmarq name;
+  # DOCMARQ_MMDC_PUPPETEER_CONFIG is the docmarq-specific override.
   pp_config = (os.environ.get("DOCMARQ_MMDC_PUPPETEER_CONFIG")
     or os.environ.get("XAEIAN_MMDC_PUPPETEER_CONFIG"))
   if pp_config and Path(pp_config).is_file():

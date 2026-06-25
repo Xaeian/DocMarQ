@@ -1,5 +1,11 @@
 # Changes `docmarq`
 
+## `0.2.0` Math & gutter
+
+- Math formulas → native Word equations _(OMML)_ + image fallback
+- `render:` keys `gutter`, `header`
+- Wider paragraph spacing _(PDF parity)_
+
 ## `0.1.1` Fonts, mermaid & render keys
 
 - `.svg` image conversion

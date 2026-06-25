@@ -1,16 +1,14 @@
 # docmarq/core.py
 
 """Core DOCX class - main facade for document generation."""
-import os
-from typing import Callable
 from docx import Document
-from docx.shared import Mm, Pt, RGBColor, Emu
+from docx.shared import Mm, Pt, RGBColor
 from docx.enum.text import WD_BREAK
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
-from .constants import Defaults, Align, A4
+from .constants import Defaults
 from .utils import (to_mm, parse_margin, align_to_docx, color_hex,
   rgb255, smaller_size, tight_line_height)
 from .styles import Style, TableStyle
@@ -42,6 +40,7 @@ class DOCX:
     unit: str = Defaults.UNIT,
     template: str|None = None,
     neutral_style: bool = True,
+    gutter: float = 0,
   ):
     self.path = path
     self.unit = unit
@@ -50,20 +49,16 @@ class DOCX:
       width=to_mm(width, unit), height=to_mm(height, unit),
       margin_top=to_mm(top, unit), margin_right=to_mm(right, unit),
       margin_bot=to_mm(bot, unit), margin_left=to_mm(left, unit),
+      gutter=to_mm(gutter, unit),
     )
     self._doc = Document(template) if template else Document()
     self._apply_section_geometry()
     self._style = Style().with_defaults()
     self._metadata = Metadata()
-    self._current_para = None # active `Paragraph` for run accumulation
-    self._para_default_color = None # one-shot override; cleared on each `_flush_para`
-    self._last_space_after = 0 # pt - previous block's space_after, used for
-                                 # CSS-style margin collapsing on subsequent paragraphs
-    self._extra_block_after = 0 # pt - one-shot bonus added to the NEXT paragraph's
-                                 # `space_before` on top of collapse. Tables/lists set
-                                 # this to force breathing room since their internal
-                                 # paragraphs don't propagate `space_after` past the
-                                 # block boundary.
+    self._current_para = None       # open paragraph; runs append here
+    self._para_default_color = None # per-paragraph color override; reset on flush
+    self._last_space_after = 0      # pt - previous block's space_after (margin collapse)
+    self._extra_block_after = 0     # pt - one-shot space_before bonus (see _track_block_spacing)
     self._bookmark_id = 0
     if neutral_style:
       self._override_heading_styles()
@@ -108,21 +103,14 @@ class DOCX:
   #--------------------------------------------------------------------- Section / page setup
 
   def _override_heading_styles(self):
-    """Replace Word's default blue Heading 1..6 with `pdfmarq`-style neutral
-    palette - near-black text, GitHub-light sizes, tight spacing matching
-    `pdfmarq`'s `head_gap_top`/`head_gap_bot`, thin bottom border for h1/h2.
-
-    Word's stock heading colors come from the document theme (accent1).
-    Setting `font.color.rgb` overrides the theme link so the color is fixed
-    regardless of the active theme.
+    """Recolor Word's built-in Heading 1..6 to the GitHub-light palette:
+    near-black text, pdfmarq sizes/spacing, thin bottom rule on h1/h2.
+    `font.color.rgb` pins the color so it holds regardless of the theme.
     """
     near_black = RGBColor(*rgb255(Defaults.HEAD_COLOR))
     rule_hex = color_hex(Defaults.RULE_COLOR)
-    # Per-level (`space_before`, `space_after`) in pt - see `_HEADING_SPACING_PT`
-    # on the class. Word ADDS adjacent vertical margins _(unlike CSS which
-    # collapses them)_, so heading `space_before` is offset by previous block's
-    # `space_after` in `heading()` itself - this style-level setting is just
-    # the fallback default for paragraphs created outside the fluent API.
+    # Style-level spacing defaults. `heading()` recomputes `space_before`
+    # per-paragraph (margin collapse); these cover headings made outside it.
     spacing_pt = self._HEADING_SPACING_PT
     for i, size_pt in enumerate(Defaults.HEAD_SIZES, start=1):
       try:
@@ -133,22 +121,17 @@ class DOCX:
       st.font.size = Pt(size_pt)
       st.font.bold = True
       st.font.name = Defaults.FONT_FAMILY
-      # `st.font.name` only sets `ascii` / `hAnsi`. The default Office theme
-      # leaves `asciiTheme="majorHAnsi"` (= Calibri **Light**, not Calibri)
-      # and some renderers prefer the theme reference over the direct font.
-      # Strip the theme refs so we render with the stock body font everywhere.
+      # `st.font.name` sets only ascii/hAnsi and leaves the theme refs, which
+      # resolve to Calibri Light; `_force_font` strips them so the body font wins.
       _force_font(st, Defaults.FONT_FAMILY)
       before_pt, after_pt = spacing_pt[i-1]
       st.paragraph_format.space_before = Pt(before_pt)
       st.paragraph_format.space_after = Pt(after_pt)
-      # Display text needs tighter leading than body. `tight_line_height`
-      # interpolates from 1.15 at body size down to 1.0 at 24pt+ so big
-      # headings don't have wasteful vertical air between wrapped lines.
+      # Tighter leading for display sizes: 1.15 at body, → 1.0 at 24pt+.
       st.paragraph_format.line_spacing = tight_line_height(size_pt)
       if i in Defaults.HEAD_UNDERLINE_LEVELS:
         _set_pbdr(st.element, rule_hex, sides=("bottom",), size_eighths=4)
-    # Same treatment for `Normal` - guarantees body text uses Calibri across
-    # all script ranges instead of any theme-resolved font.
+    # Pin `Normal` body font too, across all script ranges.
     try:
       _force_font(self._doc.styles["Normal"], Defaults.FONT_FAMILY)
     except KeyError:
@@ -277,16 +260,10 @@ class DOCX:
     self._para_default_color = None
 
   def _apply_para_spacing(self, p):
-    """Apply current `Style` line-height and before/after spacing to paragraph,
-    with CSS-style margin collapsing against the previous block.
-
-    Word natively SUMS adjacent paragraph margins _(unlike CSS which collapses
-    them to `max(prev.after, this.before)`)_. We compensate by shrinking
-    `this.space_before` by however much the previous block's `space_after`
-    already contributes - visual gap = `max(prev_after, declared_before)`.
-    On top of that, any `extra_block_after` left over from a heavy block
-    (table, list) is added to the next paragraph's `space_before` since
-    those blocks can't propagate `space_after` past their boundary.
+    """Apply line-height and before/after spacing with CSS-style margin
+    collapse. Word SUMS adjacent paragraph margins (CSS takes the max), so
+    `space_before` is shrunk by the previous block's `space_after` to land a
+    gap of `max(prev_after, declared_before)`. See `_collapsed_before`.
     """
     pf = p.paragraph_format
     if self._style.line_height is not None:
@@ -307,13 +284,11 @@ class DOCX:
     return val
 
   def _track_block_spacing(self, after_pt:float, extra_for_next:float=0):
-    """Record this block's `space_after` _(for collapsing against the next
-    paragraph's `space_before`)_ plus an optional one-shot bonus added to
-    the NEXT paragraph that goes through `_collapsed_before`.
+    """Record this block's `space_after` (for collapse against the next
+    paragraph) plus an optional one-shot `space_before` bonus for it.
 
-    Tables and list runs use `extra_for_next` because their internal cell /
-    item paragraphs have `space_after=0` (packed inside the block) and
-    therefore don't produce any visible gap below the block on their own.
+    Tables and lists set `extra_for_next`: their inner paragraphs use
+    `space_after=0`, so nothing else would give the next block breathing room.
     """
     self._last_space_after = after_pt
     if extra_for_next:
@@ -353,20 +328,14 @@ class DOCX:
 
   #----------------------------------------------------------------------------------- Headings
 
-  # Heading spacing per level (space_before, space_after) in pt. Mirrors
-  # the values set on the style itself in `_override_heading_styles`. Used
-  # both there AND in `heading()` per-paragraph to compute margin-collapsed
-  # `space_before` against the previous block's `space_after`.
+  # Per-level (space_before, space_after) in pt - shared by the style defaults
+  # in `_override_heading_styles` and the margin-collapse math in `heading()`.
   _HEADING_SPACING_PT = [(10, 4), (8, 3), (6, 3), (4, 2), (3, 2), (3, 2)]
 
   def heading(self, text:str|None=None, level:int=1) -> "DOCX":
-    """Add a heading (uses Word's built-in `Heading 1..9` styles for TOC support).
-    Returns with `_current_para` set so `text()` can append rich runs to the
-    heading - lets markdown render mixed inline formatting inside headings.
-
-    Per-paragraph `space_before` is overridden to apply CSS-style margin
-    collapsing against the previous block's `space_after` - prevents the
-    "heading sits too far below body" effect Word otherwise produces.
+    """Add a heading using Word's built-in `Heading 1..9` styles (TOC-aware).
+    Leaves `_current_para` set so `text()` can append rich inline runs.
+    `space_before` is recomputed for margin collapse against the previous block.
     """
     self._flush_para()
     level = max(1, min(9, level))
@@ -394,11 +363,9 @@ class DOCX:
     except KeyError:
       p = self._doc.add_paragraph(text or "", style="List Bullet")
     self._tighten_list_spacing(p)
-    # Items pack tightly internally (0/0) but the LAST item before a
-    # non-list block must leave enough air for body to breathe. We can't
-    # know which item is "last" until the next call lands, so every item
-    # parks the same bonus - consumed only by `_collapsed_before`, which
-    # the next list item bypasses (it goes through `_tighten_list_spacing`).
+    # Items pack tight (0/0); the last one needs air before the next block.
+    # Which item is last isn't known yet, so every item parks the bonus -
+    # only a following non-list paragraph consumes it (list items bypass it).
     self._track_block_spacing(0, extra_for_next=4)
     self._current_para = p
     return self
@@ -490,6 +457,7 @@ class DOCX:
     return self
 
   #------------------------------------------------------------------------------------- Tables
+
   def table(
     self,
     body: list[list[str]],
@@ -519,18 +487,16 @@ class DOCX:
       try: tbl.style = word_style
       except KeyError: pass
     style = style or TableStyle()
-    # Effective cell font size: explicit `style.font_size` wins, else the
-    # next-smaller value on the typographic ladder (11→10, 14→12, 16→14)
-    # via `smaller_size`. Tables read better one ladder step below body.
+    # Cell size: explicit `style.font_size`, else one ladder step below body
+    # (11→10, 14→12) via `smaller_size` - tables read better slightly smaller.
     if style.font_size is None:
       body_pt = self._style.font_size or Defaults.FONT_SIZE
       eff_size_pt = smaller_size(body_pt)
     else:
       eff_size_pt = style.font_size
-    # Column widths: explicit `widths=` wins; otherwise fill content area equally.
-    # Without explicit widths Word/python-docx auto-sizes to content - making
-    # the table appear left-shifted when the content is narrow. Setting explicit
-    # widths (and disabling autofit) anchors the table to the full content area.
+    # Column widths: explicit `widths=`, else fill the content area equally.
+    # Without them python-docx auto-sizes to content and narrow tables drift
+    # left; explicit widths + no autofit anchor the table to the full width.
     if widths:
       col_w_mm = [to_mm(w, self.unit) for w in widths[:ncols]]
       while len(col_w_mm) < ncols:
@@ -539,24 +505,20 @@ class DOCX:
       col_w_mm = [self._page.content_width / ncols] * ncols
     else:
       col_w_mm = None
-    # Borders first - `_set_table_widths` below reorders `tblPr` children
-    # into canonical schema order and will pick up these borders at the
-    # right slot. Doing it the other way around leaves `tblBorders` at the
-    # end of `tblPr`, which strict renderers (OnlyOffice) reject.
+    # Borders first: `_set_table_widths` reorders `tblPr` into canonical schema
+    # order and slots these borders correctly (strict renderers need the order).
     apply_table_borders(tbl, style.border_color, style.border_size)
     if col_w_mm:
       tbl.autofit = False
       tbl.allow_autofit = False
-      _set_table_widths(tbl, col_w_mm)
-    # Table position on page
+      _set_table_widths(tbl, col_w_mm, left_pad_mm=style.cell_pad_h)
     if style.table_align:
       tbl.alignment = {"L": WD_TABLE_ALIGNMENT.LEFT, "C": WD_TABLE_ALIGNMENT.CENTER,
         "R": WD_TABLE_ALIGNMENT.RIGHT}.get(style.table_align, WD_TABLE_ALIGNMENT.LEFT)
-    # Header row
     if header:
-      hr = tbl.rows[0]
+      head_row = tbl.rows[0]
       for j, txt in enumerate(header):
-        cell = hr.cells[j]
+        cell = head_row.cells[j]
         cell.text = "" # clear placeholder
         p = cell.paragraphs[0]
         run = p.add_run(txt)
@@ -572,7 +534,7 @@ class DOCX:
         set_cell_align(cell, aligns[j] if aligns and j < len(aligns) else None)
         self._tighten_cell_paras(cell)
       if style.header_repeat:
-        repeat_header_row(hr)
+        repeat_header_row(head_row)
     # Body rows
     body_start = 1 if header else 0
     for i, row in enumerate(body or []):
@@ -592,17 +554,14 @@ class DOCX:
         set_cell_vertical_align(cell, style.vertical_align)
         set_cell_align(cell, aligns[j] if aligns and j < len(aligns) else None)
         self._tighten_cell_paras(cell)
-    # Tables can't propagate `space_after` past their boundary _(cell paragraph
-    # spacing stays inside the cell)_, so park a bonus for the next paragraph
-    # to breathe. Without this, the body paragraph right below a table sticks
-    # to its bottom border.
+    # Cell spacing stays inside the table, so park a `space_before` bonus for
+    # the next paragraph - else it sticks to the table's bottom border.
     self._track_block_spacing(0, extra_for_next=6)
     return self
 
   def _tighten_cell_paras(self, cell):
-    """Strip Word's default body-paragraph spacing from cell content.
-    Without this every cell carries phantom padding from `Normal` style's
-    `space_after`, making rows look bottom-heavy regardless of `cell_pad_v`.
+    """Strip the `Normal` style's `space_after` from cell paragraphs - else
+    every cell carries phantom padding and rows look bottom-heavy.
     """
     for p in cell.paragraphs:
       pf = p.paragraph_format
@@ -749,10 +708,8 @@ class DOCX:
 
 def _inject_page_fields(p, template:str):
   """Insert Word `PAGE`/`NUMPAGES` fields where `{page}`/`{pages}` appear.
-
-  Word's auto-page-numbering uses field codes (`<w:fldChar>` runs) rather
-  than literal numbers. We split `template` on the placeholders and emit
-  alternating literal-text runs and field-instruction runs.
+  Auto page numbering uses field codes, not literal numbers, so the template
+  is split on the placeholders into alternating text and field runs.
   """
   import re
   parts = re.split(r"(\{page\}|\{pages\})", template)
@@ -762,7 +719,7 @@ def _inject_page_fields(p, template:str):
     elif part == "{pages}":
       _append_field(p, "NUMPAGES")
     elif part:
-      r = p.add_run(part)
+      p.add_run(part)
 
 def _append_field(p, instr:str):
   """Append a `<w:fldSimple>` field run with given instruction."""
@@ -818,10 +775,9 @@ def _set_pbdr(element, hex_color:str, sides:tuple=_BORDER_SIDES_ALL,
     el.set(qn("w:color"), hex_color)
 
 def _force_font(style, font_name:str):
-  """Strip theme font references on a style and pin explicit `font_name`
-  for every script range. Office's default theme has `majorHAnsi` resolving
-  to "Calibri Light" (not Calibri), and some renderers prefer the theme
-  reference over the direct `ascii` font - this guarantees Calibri wins.
+  """Strip theme font references on a style and pin `font_name` for every
+  script range. Office's `majorHAnsi` theme font resolves to Calibri Light,
+  and some renderers prefer the theme ref over the direct `ascii` font.
   """
   from docx.oxml.ns import qn
   from docx.oxml import OxmlElement
@@ -834,14 +790,12 @@ def _force_font(style, font_name:str):
   if rfonts is None:
     rfonts = OxmlElement("w:rFonts")
     rpr.append(rfonts)
-  # Drop every `*Theme` attribute - theme indirection is what causes the
-  # Calibri-vs-Calibri-Light surprise.
+  # Drop the theme refs (the source of the Calibri-vs-Calibri-Light mismatch).
   for theme_attr in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
     full = qn(f"w:{theme_attr}")
     if full in rfonts.attrib:
       del rfonts.attrib[full]
-  # Pin direct fonts for every script range so Word/LibreOffice can't fall
-  # back to a theme font we already stripped.
+  # Pin direct fonts for every script range.
   for direct_attr in ("ascii", "hAnsi", "eastAsia", "cs"):
     rfonts.set(qn(f"w:{direct_attr}"), font_name)
 
@@ -850,65 +804,49 @@ def _force_font(style, font_name:str):
 # `dxa` (twentieths of a point) is the OOXML native length unit for tables.
 _DXA_PER_MM = 1440 / 25.4
 
-def _set_table_widths(tbl, col_widths_mm:list[float]):
-  """Anchor a table's total width, per-column widths, left edge, and
-  neutralize Word's implicit cell-margin default via raw XML.
+def _set_table_widths(tbl, col_widths_mm:list[float], left_pad_mm:float=0):
+  """Anchor a table's total/per-column widths and left edge via raw XML.
 
-  Children of `<w:tblPr>` are placed in canonical schema order
-  (`tblW → jc → tblInd → tblBorders → tblLayout → tblCellMar → tblLook`).
-  Strict OOXML renderers (OnlyOffice in particular) misinterpret tables
-  whose `tblPr` children appear in non-schema order and silently fall back
-  to defaults, which is why tables drifted left of the page margin there
-  even though MS Word and LibreOffice rendered them correctly.
+  `<w:tblPr>` children must be in canonical schema order
+  (`tblW → jc → tblInd → tblBorders → tblLayout → tblCellMar → tblLook`);
+  strict renderers (OnlyOffice) fall back to defaults on out-of-order children.
 
-  `jc=left` is set explicitly: `tblInd` is documented as measured from
-  the "leading edge", which is defined by `jc`. Without explicit `jc`,
-  the leading edge is implementation-defined.
-
-  `tblInd=0` anchors the table border at the page's left margin.
-
-  `tblCellMar=0` neutralizes Word's table-level cell-margin default
-  (typically 108 dxa ≈ 1.9 mm on left/right). Without this, Word extends
-  the table border LEFT of `tblInd` to make room for the implicit default
-  margin. Setting `tblCellMar=0` here lets per-cell `tcMar` fully control
-  padding without disturbing the border position.
+  `jc=left` is explicit because `tblInd` is measured from the leading edge,
+  which `jc` defines. `tblInd` equals the per-cell left padding (`tcMar/left`):
+  renderers anchor the table by cell content, pulling the border left of the
+  margin by that padding, so an equal `tblInd` shifts it back onto the margin.
+  `tblCellMar` stays 0 so only the per-cell margin participates.
   """
   total_dxa = int(round(sum(col_widths_mm) * _DXA_PER_MM))
+  left_dxa = int(round(left_pad_mm * _DXA_PER_MM))
   tbl_el = tbl._element
   tbl_pr = tbl_el.find(qn("w:tblPr"))
-  # Wipe pre-existing children we manage. Take references to elements we
-  # want to keep BEFORE removing them so we can re-insert at the correct
-  # schema slot.
+  # Drop the children we manage; keep refs to borders/look first so they
+  # re-insert at the right schema slot.
   preserved_borders = tbl_pr.find(qn("w:tblBorders"))
   preserved_look = tbl_pr.find(qn("w:tblLook"))
   for tag in ("tblW", "jc", "tblInd", "tblBorders", "tblLayout",
       "tblCellMar", "tblLook"):
     for el in tbl_pr.findall(qn(f"w:{tag}")):
       tbl_pr.remove(el)
-  # Build elements in canonical schema order, then append once at the end.
-  # 1. tblW
+  # Build in canonical schema order: tblW, jc, tblInd, [borders], tblLayout,
+  # tblCellMar, [look] - borders/look carried over from the preserved refs.
   tbl_w = OxmlElement("w:tblW")
   tbl_w.set(qn("w:w"), str(total_dxa))
   tbl_w.set(qn("w:type"), "dxa")
-  # 2. jc - explicit left justification (defines `tblInd` leading edge)
-  jc = OxmlElement("w:jc")
+  jc = OxmlElement("w:jc")               # left - defines the tblInd leading edge
   jc.set(qn("w:val"), "left")
-  # 3. tblInd
-  tbl_ind = OxmlElement("w:tblInd")
-  tbl_ind.set(qn("w:w"), "0")
+  tbl_ind = OxmlElement("w:tblInd")      # match per-cell left padding (see docstring)
+  tbl_ind.set(qn("w:w"), str(left_dxa))
   tbl_ind.set(qn("w:type"), "dxa")
-  # 4. tblBorders (carry over if any)
-  # 5. tblLayout
   tbl_layout = OxmlElement("w:tblLayout")
   tbl_layout.set(qn("w:type"), "fixed")
-  # 6. tblCellMar - zero on all sides via canonical `left`/`right`
-  tbl_cell_mar = OxmlElement("w:tblCellMar")
+  tbl_cell_mar = OxmlElement("w:tblCellMar")  # 0 all sides; per-cell tcMar owns padding
   for side in ("top", "left", "bottom", "right"):
     el = OxmlElement(f"w:{side}")
     el.set(qn("w:w"), "0")
     el.set(qn("w:type"), "dxa")
     tbl_cell_mar.append(el)
-  # 7. tblLook (carry over if any)
   ordered = [tbl_w, jc, tbl_ind]
   if preserved_borders is not None:
     ordered.append(preserved_borders)

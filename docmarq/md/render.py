@@ -8,9 +8,10 @@ frontmatter `render:` keys < caller's `style=` non-default fields.
 
 Word controls some typography itself (heading sizes, body line spacing)
 so docmarq applies `font_size` and `line_height` via fluent doc settings
-rather than `MarkdownStyle` fields. `head_font` has no direct counterpart -
-docmarq applies it to the body font instead (heading style picks up the
-body font automatically), with a one-time note in the docstring.
+rather than `MarkdownStyle` fields. `font_head` maps to the heading font
+family (falling back to `font_body` when unset), `gutter` to the Word
+native section gutter, and `header`/`banner_min` to the continuation-page
+mini-banner.
 """
 from dataclasses import dataclass, fields
 import warnings
@@ -35,6 +36,7 @@ class RenderConfig:
   page: PageSize|None = None
   margin: float|tuple|list|None = None
   landscape: bool|None = None
+  gutter: float|None = None         # binding margin (Word native gutter)
   font_body: str|None = None
   font_head: str|None = None
   font_mono: str|None = None
@@ -43,6 +45,7 @@ class RenderConfig:
   img_max_h: float|None = None
   banner: bool|None = None
   banner_min: bool|None = None
+  header: bool|None = None          # alias of `banner_min` (continuation-page header)
   page_number: bool|None = None
   lang: str|None = None
   mermaid_theme: str|None = None
@@ -79,6 +82,7 @@ def parse_render_block(fm:dict|None) -> RenderConfig:
     if key == "page": out.page = _parse_page(val)
     elif key == "margin": out.margin = _parse_margin_val(val)
     elif key == "landscape": out.landscape = _parse_bool(val, "landscape")
+    elif key == "gutter": out.gutter = _parse_positive_float(val, "gutter", allow_zero=True)
     elif key == "font_body": out.font_body = _parse_str(val, "font_body")
     elif key == "font_head": out.font_head = _parse_str(val, "font_head")
     elif key == "font_mono": out.font_mono = _parse_str(val, "font_mono")
@@ -87,6 +91,7 @@ def parse_render_block(fm:dict|None) -> RenderConfig:
     elif key == "img_max_h": out.img_max_h = _parse_positive_float(val, "img_max_h")
     elif key == "banner": out.banner = _parse_bool(val, "banner")
     elif key == "banner_min": out.banner_min = _parse_bool(val, "banner_min")
+    elif key == "header": out.header = _parse_bool(val, "header")
     elif key == "page_number": out.page_number = _parse_bool(val, "page_number")
     elif key == "lang": out.lang = _parse_str(val, "lang")
     elif key == "mermaid_theme": out.mermaid_theme = _parse_str(val, "mermaid_theme")
@@ -194,12 +199,14 @@ def build_style(
     base.image_max_h = render.img_max_h
   if render.mermaid_theme is not None:
     base.mermaid_theme = render.mermaid_theme
-  # `syntax_theme` parsed but not applied: docmarq has no syntax highlighting.
-  # Keeping the key for cross-format source files - same `.md` works for both.
+  # `syntax_theme` accepted but not applied: docmarq has no syntax highlighting.
+  # The key exists so the same `.md` frontmatter works across pipelines.
   if render.banner is not None:
     base.banner_render = render.banner
   if render.banner_min is not None:
     base.mini_banner_render = render.banner_min
+  if render.header is not None:  # `header` is the friendly alias for `banner_min`
+    base.mini_banner_render = render.header
   if render.page_number is not None:
     if render.page_number is False:
       base.page_number_label = None
@@ -215,9 +222,8 @@ def build_style(
 #---------------------------------------------------------------- Top-level deprecation
 
 def warn_top_level_landscape(fm:dict|None) -> None:
-  """`landscape:` at frontmatter top-level used to flip the page; it must
-  now live under `render:`. Warn loudly when detected; the value is NOT
-  honored."""
+  """`landscape:` at frontmatter top-level is not honored; it must live
+  under `render:`. Warns when detected so authors can migrate."""
   if not fm or not isinstance(fm, dict):
     return
   if "landscape" in fm:

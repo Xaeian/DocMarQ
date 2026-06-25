@@ -107,13 +107,7 @@ LANG_PRESETS:dict[str, dict] = {
 
 def lang_style(lang:str, **overrides) -> MarkdownStyle:
   """Build a `MarkdownStyle` from a language preset + caller overrides.
-
-  Unknown `lang` falls back to the `en` preset (`MarkdownStyle` defaults),
-  so callers don't have to validate the language code themselves.
-
-  Args:
-    lang: Language code from `LANG_PRESETS` (`en`, `pl`, `de`, ...).
-    **overrides: Extra `MarkdownStyle` fields, win over preset values.
-  """
+  Unknown `lang` silently falls back to `en` so callers need not pre-validate.
+  `overrides` win over preset values."""
   base = LANG_PRESETS.get(lang, {})
   return MarkdownStyle(**{**base, **overrides})

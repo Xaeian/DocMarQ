@@ -193,8 +193,9 @@ md_to_docx(text, "doc.docx", landscape=True)
 Supported markdown: headings, paragraphs, lists, tables, code blocks,
 blockquotes, GitHub callouts (`> [!NOTE]`), footnotes, mermaid diagrams
 (via local `mmdc` or mermaid.ink fallback - shared cache with `pdfmarq`),
-images, YAML frontmatter with banner rendering. Math is not yet
-supported in DOCX output (use `pdfmarq` for math-heavy documents).
+images, YAML frontmatter with banner rendering, and math formulas
+(`$x^2$`, `$$...$$`) as native Word equations (OMML) with a matplotlib
+image fallback for LaTeX outside the supported subset.
 
 ## Advanced
 

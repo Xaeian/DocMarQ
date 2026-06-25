@@ -2,11 +2,9 @@
 
 """Font configuration helpers.
 
-Word fonts are referenced by family name only - actual rasterization is
-done by the host system. We do NOT embed fonts here _(unlike PDFs where
-embedding is the norm)_. If a target machine lacks the font, Word will
-substitute. To embed fonts, save `settings.xml` with `<w:embedTrueTypeFonts/>`
-- add later if needed.
+Word fonts are referenced by family name only; rasterization is host-side.
+No embedding: if the target machine lacks the font, Word substitutes silently.
+To embed, add `<w:embedTrueTypeFonts/>` to `settings.xml`.
 """
 
 #-------------------------------------------------------------------------------------- Helpers

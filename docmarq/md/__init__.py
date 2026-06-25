@@ -1,18 +1,8 @@
 # docmarq/md/__init__.py
 
-"""
-Markdown to DOCX rendering for `docmarq`.
-
-Mirrors `pdfmarq.md` API: drop in `md_to_docx` for one-shot conversion, or
-construct `MarkdownRenderer(doc, style)` for embedding markdown into a
-larger document.
-
-  pip install docmarq[md]
-  from docmarq.md import md_to_docx, MarkdownStyle, lang_style
-
-Bundled dependencies:
-  - markdown-it-py  # parser
-"""
+"""Markdown-to-DOCX rendering for `docmarq`. Mirrors the `pdfmarq.md` API:
+`md_to_docx` for one-shot conversion, `MarkdownRenderer` for embedding into
+a larger document. Requires the `md` extra (`markdown-it-py`, `mdit-py-plugins`, `PyYAML`)."""
 
 #------------------------------------------------------------------------- Extras for auto-toml
 

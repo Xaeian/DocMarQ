@@ -1,11 +1,10 @@
 # docmarq/inline.py
 
-"""
-Rich inline runs - mixed-style spans within a single paragraph.
+"""Rich inline runs - mixed-style spans within a single paragraph.
 
-Same data model as `pdfmarq.inline.RichSegment` but emits Word runs
-(`<w:r>` elements) instead of PDF text drawing ops. `python-docx` handles
-the actual line breaking and justification - we only build the run list.
+Mirrors `pdfmarq.inline.RichSegment` but emits Word runs (`<w:r>`) instead of
+PDF drawing ops. `python-docx` owns line-breaking and justification; we only
+build the run list.
 """
 from dataclasses import dataclass
 from .utils import color_hex, rgb255
@@ -43,7 +42,6 @@ def _apply_run_format(run, seg:RichSegment, default_family:str, default_size:flo
     code_family:str="Consolas", code_size:float|None=None, code_color:tuple|str=(0.09,0.11,0.13)):
   """Apply `RichSegment` styling to a `python-docx` `Run`."""
   from docx.shared import Pt, RGBColor
-  from docx.enum.text import WD_COLOR_INDEX
   f = run.font
   if seg.code:
     f.name = code_family
@@ -63,9 +61,8 @@ def _apply_run_format(run, seg:RichSegment, default_family:str, default_size:flo
   hl = seg.highlight or ("yellow" if seg.code and False else None) # code shading via rPr below
   if hl:
     f.highlight_color = _highlight_value(hl)
-  # Custom background shading - `seg.bg_color` paints a colored chip behind the
-  # run (status badges, callout titles). Mutually exclusive with `seg.code`
-  # which has its own fixed code-block-grey shading.
+  # bg_color (status badges, callout titles) and code shading are mutually exclusive;
+  # code always wins with its fixed grey.
   if seg.code:
     _apply_run_shading(run, "F2F4F6")
   elif seg.bg_color is not None:

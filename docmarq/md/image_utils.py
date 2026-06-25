@@ -41,13 +41,12 @@ def preprocess_to_buffer(path:str):
   SVG inputs route through `_svg_to_png_buffer` first since neither Pillow
   nor python-docx can read them natively.
 
-  Transparent padding around source artwork is the #1 reason embedded
-  images look "shifted right" or smaller than expected - Word honors the
-  declared bounding box (including transparent margins), so the visible
-  content ends up centered inside an oversized canvas.
+  Word honors the declared bounding box including transparent margins, so
+  uncropped images appear smaller or misaligned. Cropping to the opaque
+  content removes that bias.
 
-  Also normalizes the format: JPEGs with non-standard APP segments (e.g.
-  APP2 ICC profile) are rejected by python-docx; re-saving as PNG fixes it.
+  Also normalizes format: python-docx rejects JPEGs with non-standard APP
+  segments (e.g. APP2 ICC profile); re-saving as PNG avoids that.
   """
   if not os.path.isfile(path):
     return None

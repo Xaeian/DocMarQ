@@ -72,15 +72,11 @@ def tight_line_height(size_pt:float) -> float:
   return round(1.15 - (size_pt - 11) / (24 - 11) * 0.15, 3)
 
 def tight_line_height_pt(size_pt:float) -> float:
-  """Absolute line-height in points for display text rendered via Word's
-  `lineRule="exact"`. Returns `size_pt × factor` where factor drops from
-  ~1.10 at body size to ~1.05 at large display.
+  """Absolute line-height in points for `lineRule="exact"`. Same taper as
+  `tight_line_height` but bypasses Calibri's internal leading (~1.2× font
+  size in "single" mode), so the value is used verbatim by Word.
 
-  Use this instead of `tight_line_height` when the multiplier-times-Word-
-  single-line approach is too loose. Calibri's "single" line is ~1.2× font
-  size due to internal leading, so `1.05 multiplier in auto mode` actually
-  renders ~1.26× font size. `exact` mode bypasses the font metrics and
-  uses the exact value, giving truly tight display leading.
+  Use over `tight_line_height` when auto-mode leading is too loose.
 
   Examples (Calibri, rounded):
     11pt body  → 12.7pt (`1.15×`)
@@ -101,11 +97,9 @@ def tight_line_height_pt(size_pt:float) -> float:
 _HEX_DIGITS = set("0123456789abcdefABCDEF")
 
 def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
-  """Parse color from `(r,g,b)` tuple or hex string to canonical `(r,g,b)` 0-1 floats.
-
-  Mirrors `pdfmarq.parse_color` exactly: same user-facing input formats, same
-  0-1 float output. Word's native 0-255 RGB conversion happens at the OOXML
-  boundary via `rgb255()` - never in user code.
+  """Parse `(r,g,b)` tuple or hex string to 0-1 floats. Mirrors
+  `pdfmarq.parse_color` - 0-255 conversion to OOXML happens at the
+  boundary in `rgb255()`, keeping user-facing values consistently 0-1.
   """
   if color is None:
     return (0.0, 0.0, 0.0)
