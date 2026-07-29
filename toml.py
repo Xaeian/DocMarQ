@@ -94,9 +94,9 @@ def scan_package(pkg_dir:str) -> tuple[set[str], set[str]]:
   """Return (modules, subpackages) present in package."""
   modules = set()
   subpackages = set()
-  for name in DIR.file_list(pkg_dir, exts=[".py"], basename=True):
-    if not name.startswith("__"):
-      modules.add(name.removesuffix(".py"))
+  for name in DIR.file_list(pkg_dir, exts=[".py"], local=True):
+    if "/" in name or name.startswith("__"): continue
+    modules.add(name.removesuffix(".py"))
   for name in DIR.folder_list(pkg_dir, basename=True):
     if PATH.is_file(PATH.join(pkg_dir, name, "__init__.py")):
       subpackages.add(name)
@@ -175,9 +175,10 @@ def build_extras(
     for name, pkgs in found.items():
       extras.setdefault(name, set()).update(pkgs)
   for subpkg in subpackages:
-    found = _scan_extras_from_file(PATH.join(pkg_dir, subpkg, "__init__.py"))
-    for name, pkgs in found.items():
-      extras.setdefault(name, set()).update(pkgs)
+    for path in DIR.file_list(PATH.join(pkg_dir, subpkg), exts=[".py"]):
+      found = _scan_extras_from_file(path)
+      for name, pkgs in found.items():
+        extras.setdefault(name, set()).update(pkgs)
   if extras:
     all_deps = set()
     for deps in extras.values():
@@ -276,6 +277,10 @@ def generate_toml(
     pat_str = ", ".join(f'"{pat}"' for pat in package_data)
     lines.append(f'{pkg_name} = [{pat_str}]')
     lines.append('')
+  lines.append('[tool.pytest.ini_options]')
+  lines.append('testpaths = ["tests"]')
+  lines.append('python_functions = ["*"]')
+  lines.append('')
   return "\n".join(lines)
 
 #-------------------------------------------------------------------------------------- Logging
@@ -349,23 +354,15 @@ examples:
 """
 
 if __name__ == "__main__":
-  import argparse
-  def fmt(prog):
-    return argparse.RawDescriptionHelpFormatter(prog, max_help_position=34, width=90)
-  class TomlParser(argparse.ArgumentParser):
-    def format_help(self): return "\n" + super().format_help().rstrip() + "\n\n"
-  parser = TomlParser(
-    description=f"Generate {c.ORANGE}pyproject.toml{c.END} from package source",
-    formatter_class=fmt,
-    add_help=False,
-    usage=argparse.SUPPRESS,
-    epilog=EXAMPLES,
+  from xaeian.cli._args import _make_parser, _add_help
+  parser = _make_parser(
+    f"Generate {c.ORANGE}pyproject.toml{c.END} from package source", EXAMPLES,
   )
   parser.add_argument("package", metavar="PACKAGE", help="Package directory to scan")
   parser.add_argument("-o", "--output", default=None, metavar="PATH",
     help="Output file (default: parent/pyproject.toml)")
   parser.add_argument("-a", "--auto-deps", action="store_true",
     help="Auto-detect third-party dependencies from imports")
-  parser.add_argument("-h", "--help", action="help", help="Show this help message and exit")
+  _add_help(parser)
   args = parser.parse_args()
   generate(args.package, args.output, args.auto_deps)

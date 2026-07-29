@@ -1,5 +1,9 @@
 # Changes `docmarq`
 
+## `0.2.1` SVG deps
+
+- `svglib` + `rlPyCairo` included in `docmarq[md]`
+
 ## `0.2.0` Math & gutter
 
 - Math formulas → native Word equations _(OMML)_ + image fallback

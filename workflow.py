@@ -15,30 +15,13 @@ CLI:
   py workflow.py xaeian -o .github/workflows/publish.yml
 """
 
-import ast, sys
-from xaeian import FILE, DIR, PATH, Print, Color as c
+import sys
+from xaeian import FILE, PATH, Print, Color as c
+from toml import get_meta
 
 p = Print()
 
 #------------------------------------------------------------------------------------- Analysis
-
-def get_meta(pkg_dir:str) -> dict:
-  """Extract `__repo__`, `__python__` from `__init__.py`."""
-  meta = {"repo": "", "python": ">=3.10"}
-  init = PATH.join(pkg_dir, "__init__.py")
-  if not PATH.is_file(init): return meta
-  try:
-    tree = ast.parse(FILE.load(init))
-    for node in ast.walk(tree):
-      if isinstance(node, ast.Assign):
-        for t in node.targets:
-          if not isinstance(t, ast.Name): continue
-          if isinstance(node.value, ast.Constant):
-            val = str(node.value.value)
-            if t.id == "__repo__": meta["repo"] = val
-            elif t.id == "__python__": meta["python"] = val
-  except Exception: pass
-  return meta
 
 def has_svglib(root:str) -> bool:
   """Check if `svglib` is in `pyproject.toml` dependencies."""
@@ -103,7 +86,6 @@ def generate(package:str, output:str|None=None):
     p.inf(f"Cairo: {c.VIOLET}libcairo2-dev{c.GREY} (svglib detected){c.END}")
   workflow = generate_workflow(meta, cairo)
   out = output or PATH.join(root, ".github", "workflows", "publish.yml")
-  DIR.ensure(out)
   FILE.save(out, workflow)
   p.ok(f"Generated {c.GREY}{PATH.dirname(out)}/{c.END}{c.ORANGE}{PATH.basename(out)}{c.END}")
 
@@ -116,21 +98,11 @@ examples:
 """
 
 if __name__ == "__main__":
-  import argparse
-  def fmt(prog):
-    return argparse.RawDescriptionHelpFormatter(prog, max_help_position=34, width=90)
-  class WorkflowParser(argparse.ArgumentParser):
-    def format_help(self): return "\n" + super().format_help().rstrip() + "\n\n"
-  parser = WorkflowParser(
-    description="Generate GitHub Actions workflow for PyPI publishing",
-    formatter_class=fmt,
-    add_help=False,
-    usage=argparse.SUPPRESS,
-    epilog=EXAMPLES,
-  )
+  from xaeian.cli._args import _make_parser, _add_help
+  parser = _make_parser("Generate GitHub Actions workflow for PyPI publishing", EXAMPLES)
   parser.add_argument("package", metavar="PACKAGE", help="Package directory to scan")
   parser.add_argument("-o", "--output", default=None, metavar="PATH",
     help="Output file (default: .github/workflows/publish.yml)")
-  parser.add_argument("-h", "--help", action="help", help="Show this help message and exit")
+  _add_help(parser)
   args = parser.parse_args()
   generate(args.package, args.output)

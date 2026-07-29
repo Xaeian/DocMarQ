@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docmarq"
-version = "0.2.0"
+version = "0.2.1"
 description = "DOCX generation library with fluent API"
 readme = "readme.md"
 license = {text = "MIT"}
@@ -14,9 +14,9 @@ keywords = ["docx", "word", "ooxml", "document", "generation"]
 dependencies = ["python-docx"]
 
 [project.optional-dependencies]
-md = ["PyYAML", "markdown-it-py", "mdit-py-plugins"]
-test = ["pytest"]
-all = ["PyYAML", "markdown-it-py", "mdit-py-plugins", "pytest"]
+math = ["matplotlib"]
+md = ["PyYAML", "markdown-it-py", "mdit-py-plugins", "rlPyCairo", "svglib"]
+all = ["PyYAML", "markdown-it-py", "matplotlib", "mdit-py-plugins", "rlPyCairo", "svglib"]
 
 [project.urls]
 Repository = "https://github.com/Xaeian/docmarq"
@@ -26,4 +26,4 @@ include = ["docmarq*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_functions = ["*"] # tests are named by behavior, no `test_` prefix
+python_functions = ["*"]

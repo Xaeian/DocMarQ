@@ -13,18 +13,18 @@ from dataclasses import dataclass
 #----------------------------------------------------------------------------- Preprocess
 
 def _svg_to_png_buffer(path:str):
-  """Rasterize SVG to PNG bytes in a `BytesIO`. Returns `None` when svglib
-  isn't installed or the SVG fails to parse.
+  """Rasterize SVG to PNG bytes in a `BytesIO`. Returns `None` for a broken SVG.
 
   python-docx has no native SVG support, so we go SVG → reportlab `Drawing`
-  → PNG via `renderPM` (PIL under the hood). DPI of 192 (~2x screen) keeps
+  → PNG via `renderPM` (rlPyCairo backend). DPI of 192 (~2x screen) keeps
   the raster crisp when Word scales it inside the page width.
   """
   try:
+    import rlPyCairo  # renderPM loads its backend lazily - check here, fail fast
     from svglib.svglib import svg2rlg
     from reportlab.graphics import renderPM
   except ImportError:
-    return None
+    raise ImportError("Install with: pip install docmarq[md]")
   try:
     drawing = svg2rlg(path)
     if drawing is None:

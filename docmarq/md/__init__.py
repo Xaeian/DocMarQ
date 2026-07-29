@@ -2,11 +2,11 @@
 
 """Markdown-to-DOCX rendering for `docmarq`. Mirrors the `pdfmarq.md` API:
 `md_to_docx` for one-shot conversion, `MarkdownRenderer` for embedding into
-a larger document. Requires the `md` extra (`markdown-it-py`, `mdit-py-plugins`, `PyYAML`)."""
+a larger document. Requires the `md` extra."""
 
 #------------------------------------------------------------------------- Extras for auto-toml
 
-__extras__ = ("md", ["markdown-it-py", "mdit-py-plugins", "PyYAML"])
+__extras__ = ("md", ["markdown-it-py", "mdit-py-plugins", "PyYAML", "svglib", "rlPyCairo"])
 
 #----------------------------------------------------------------------------------- Public API
 
