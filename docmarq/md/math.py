@@ -99,7 +99,7 @@ SPACES: dict[str, str] = {
   ",": " ",  # thin space
   ":": " ",  # medium space
   ";": " ",  # thick space
-  "!": "",         # negative thin space - drop
+  "!": "",   # negative thin space - drop
   "quad": " ",
   "qquad": "  ",
   " ": " ",
@@ -114,7 +114,8 @@ FUNCTIONS: set[str] = {
   "det", "gcd", "Pr", "min", "max", "sup", "inf", "lim", "limsup",
   "liminf",
 }
-LIM_FUNCTIONS: set[str] = {"lim", "limsup", "liminf", "max", "min", "sup", "inf", "argmax", "argmin"}
+LIM_FUNCTIONS: set[str] = {"lim", "limsup", "liminf", "max", "min", "sup", "inf",
+  "argmax", "argmin"}
 
 # Big operators → (glyph, default-omit-when-integral). Integrals use OMML's
 # default n-ary char so we omit `chr`; everything else sets it explicitly.
@@ -189,7 +190,6 @@ def _prop(parent, tag:str, **attrs):
   parent.append(child)
   return child
 
-
 def _xml_safe(text:str) -> str:
   """Drop XML-1.0-illegal control chars (NUL etc.). lxml raises ValueError on
   them, which would escape the MathConversionError contract; stripping keeps a
@@ -201,7 +201,6 @@ def _xml_safe(text:str) -> str:
     or 0xE000 <= ord(ch) <= 0xFFFD
     or 0x10000 <= ord(ch) <= 0x10FFFF
   )
-
 
 class _Build:
   """OMML builder bound to a run color + size so every leaf run is styled
@@ -302,7 +301,8 @@ class _Parser:
   raises `MathConversionError` so the caller can fall back to an image.
   """
 
-  MAX_DEPTH = 120  # recursion guard - raise MathConversionError (-> image) not RecursionError
+  # Recursion guard: raise MathConversionError (→ image), never RecursionError.
+  MAX_DEPTH = 120
 
   def __init__(self, tokens:list[str], build:_Build, display:bool):
     self.toks = tokens
@@ -406,7 +406,7 @@ class _Parser:
     """Parse a single base atom (no scripts). Returns a node list so a
     braced group `{...}` can expand to multiple runs under one base."""
     # Depth guard: pathological nesting must raise MathConversionError (caught
-    # by the renderer -> image fallback), never overflow into RecursionError
+    # by the renderer → image fallback), never overflow into RecursionError
     # (which is uncaught and would abort the whole document).
     self.depth += 1
     if self.depth > self.MAX_DEPTH:
@@ -566,7 +566,7 @@ class _Parser:
     return node
 
   # Commands whose body is LITERAL TEXT: spaces preserved, `^`/`_` NOT parsed
-  # as math. Style comes from FONT_CMDS (textbf->bold, textit->italic, ...).
+  # as math. Style comes from FONT_CMDS (textbf→bold, textit→italic, ...).
   TEXT_MODE = {"text", "textrm", "textbf", "textit", "textsf", "texttt",
     "mathrm", "operatorname"}
 
@@ -940,7 +940,6 @@ def _coalesce_runs(el) -> None:
     del el[:]
     el.extend(merged)
 
-
 def _split_rows(tokens:list[str]) -> list[list[list[str]]]:
   """Split a matrix token stream into rows (`\\\\`) of cells (`&`)."""
   rows: list[list[list[str]]] = []
@@ -1033,10 +1032,10 @@ def _normalize_for_mathtext(latex:str) -> str:
   image fallback succeeds instead of degrading to text. Conservative: only
   removes wrappers, never changes the math meaning."""
   s = latex
-  s = _BIG_DELIM_RE.sub("", s)        # \big( -> (  (mathtext sizes via \left\right)
-  s = _CANCEL_RE.sub("", s)            # \cancel{x} -> {x}
-  s = _TAG_RE.sub("", s)               # drop \tag{1}
-  s = _COLOR_RE.sub("", s)             # \color{red}{x} -> {x}; \textcolor{red}{x} -> {x}
+  s = _BIG_DELIM_RE.sub("", s)  # \big( → ( ; mathtext sizes via \left\right
+  s = _CANCEL_RE.sub("", s)     # \cancel{x} → {x}
+  s = _TAG_RE.sub("", s)        # drop \tag{1}
+  s = _COLOR_RE.sub("", s)      # \color{red}{x} → {x}; \textcolor{red}{x} → {x}
   return s
 
 def render_math_png(latex:str, fontsize_pt:float=11,

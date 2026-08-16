@@ -1,5 +1,10 @@
 # Changes `docmarq`
 
+## `0.2.2` Inline code styling
+
+- Inline `code` honors `mono_family` + code colors
+- Warnings: code block in blockquote, missing `PyYAML`
+
 ## `0.2.1` SVG deps
 
 - `svglib` + `rlPyCairo` included in `docmarq[md]`

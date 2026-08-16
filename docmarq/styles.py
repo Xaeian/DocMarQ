@@ -26,6 +26,12 @@ class Style:
   space_before: float|None = None # pt
   space_after: float|None = None # pt
   highlight: str|None = None # named highlight color: yellow/green/cyan/...
+  # Inline `code` runs; `None` falls back to `Defaults.CODE_*`. The markdown
+  # renderer feeds these from `MarkdownStyle`.
+  code_family: str|None = None
+  code_size: float|None = None # pt; None → `CODE_SIZE_RATIO` of body size
+  code_color: tuple|str|None = None
+  code_bg: tuple|str|None = None
 
   def merge(self, parent:"Style") -> "Style":
     """Create new style inheriting `None` values from parent."""
@@ -50,6 +56,10 @@ class Style:
       space_before=self.space_before if self.space_before is not None else 4,
       space_after=self.space_after if self.space_after is not None else 4,
       highlight=self.highlight,
+      code_family=self.code_family or Defaults.CODE_FAMILY,
+      code_size=self.code_size,
+      code_color=self.code_color if self.code_color is not None else Defaults.CODE_COLOR,
+      code_bg=self.code_bg if self.code_bg is not None else Defaults.CODE_BG,
     )
 
   def copy(self, **overrides) -> "Style":
@@ -82,7 +92,7 @@ class TableStyle:
   header_repeat: bool = True
   table_align: str|None = None
   fill_content_width: bool = True # auto-fill content area width
-  # Cell font size in pt. `None` -> auto-derive as `body_size - 1` rounded to
+  # Cell font size in pt. `None` → auto-derive as `body_size - 1` rounded to
   # integer (for 11 pt body → 10 pt cells, common paper convention). Set
   # an explicit float to override.
   font_size: float|None = None

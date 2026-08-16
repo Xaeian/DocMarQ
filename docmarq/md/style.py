@@ -101,11 +101,11 @@ class MarkdownStyle:
   link_base: str = ""
 
   # GitHub callout titles - override for localization
-  callout_label_note:      str = "Note"
-  callout_label_tip:       str = "Tip"
+  callout_label_note: str = "Note"
+  callout_label_tip: str = "Tip"
   callout_label_important: str = "Important"
-  callout_label_warning:   str = "Warning"
-  callout_label_caution:   str = "Caution"
+  callout_label_warning: str = "Warning"
+  callout_label_caution: str = "Caution"
 
   # Callout palette (border + text colors per type)
   callout_colors: dict = field(default_factory=_default_callout_colors)

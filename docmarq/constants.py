@@ -75,3 +75,8 @@ class Defaults:
   # the same markdown source renders at the same scale in both libs.
   HEAD_SIZES = (20, 16, 13, 11, 11, 11)
   HEAD_UNDERLINE_LEVELS = (1, 2) # which heading levels get bottom border
+  # Inline `code` runs; 0-1 tuples so `color_hex` emits `1F2328` / `F2F4F6`.
+  CODE_FAMILY = "Consolas"
+  CODE_SIZE_RATIO = 0.92 # of body size, when no explicit code size is set
+  CODE_COLOR = (0.09, 0.11, 0.13)
+  CODE_BG = (0.949, 0.957, 0.965)

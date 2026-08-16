@@ -161,7 +161,8 @@ def _try_mermaid_ink(source:str, out_path:Path, *, theme:str,
     encoded = base64.urlsafe_b64encode(source.encode("utf-8")).decode("ascii")
     # `bgColor` may be `transparent`, a hex value (`!RRGGBB`), or named.
     bg = background.lstrip("#")
-    if bg.lower() != "transparent": bg = f"!{bg}" if all(c in "0123456789abcdefABCDEF" for c in bg) else bg
+    if bg.lower() != "transparent" and all(c in "0123456789abcdefABCDEF" for c in bg):
+      bg = f"!{bg}"
     url = f"https://mermaid.ink/img/{encoded}?type=png&theme={theme}&bgColor={bg}"
     req = urllib.request.Request(url, headers={"User-Agent": "docmarq/0.1"})
     with urllib.request.urlopen(req, timeout=30) as resp:

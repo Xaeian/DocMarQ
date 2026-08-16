@@ -324,7 +324,9 @@ class DOCX:
       superscript=seg.superscript,
       subscript=seg.subscript,
     )
-    _apply_run_format(run, merged, family, size)
+    _apply_run_format(run, merged, family, size,
+      code_family=self._style.code_family, code_size=self._style.code_size,
+      code_color=self._style.code_color, code_bg=self._style.code_bg)
 
   #----------------------------------------------------------------------------------- Headings
 

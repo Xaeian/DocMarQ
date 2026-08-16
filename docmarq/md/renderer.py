@@ -51,8 +51,17 @@ def strip_frontmatter(text:str) -> tuple[dict|None, str]:
   remainder = rest[end_match[1]:].lstrip("\n").lstrip("\r\n")
   try:
     import yaml
+  except ImportError:
+    import warnings
+    warnings.warn(
+      "YAML frontmatter needs PyYAML (pip install docmarq[md]); "
+      "title/banner/metadata are skipped",
+      RuntimeWarning, stacklevel=2,
+    )
+    return None, remainder
+  try:
     data = yaml.safe_load(yaml_block) or {}
-  except (ImportError, Exception):
+  except Exception:
     data = None
   return data, remainder
 
@@ -130,6 +139,9 @@ class MarkdownRenderer:
     self.doc.style(
       line_height=self.style.line_height,
       space_after=self.style.para_gap_pt,
+      code_family=self.style.mono_family,
+      code_color=self.style.code_inline_color,
+      code_bg=self.style.code_inline_bg,
     )
     if fm and self.style.banner_render:
       self._render_banner(fm)
@@ -597,7 +609,7 @@ class MarkdownRenderer:
 
     def kwargs():
       k = {}
-      if state["bold"]:   k["bold"] = True
+      if state["bold"]: k["bold"] = True
       if state["italic"]: k["italic"] = True
       if state["strike"]: k["strike"] = True
       return k
@@ -724,15 +736,29 @@ class MarkdownRenderer:
       return (0, after)
     return (0, 0)
 
+  # Quote content is flattened to `inline` tokens; a fence carries its text on
+  # `token.content` instead, so it would vanish. Reported, not dropped silently.
+  _QUOTE_UNSUPPORTED = ("fence", "code_block")
+
   def _collect_blockquote_inlines(self, tokens:list[Token], start:int, end:int) -> list[Token]:
     """Flat list of every `inline` token directly inside the blockquote.
     Nested blockquotes / lists / code blocks not yet supported - they'd
     require recursion and per-block grouping."""
     out = []
+    dropped = []
     j = start + 1
     while j < end:
-      if tokens[j].type == "inline": out.append(tokens[j])
+      t = tokens[j]
+      if t.type == "inline": out.append(t)
+      elif t.type in self._QUOTE_UNSUPPORTED: dropped.append(t)
       j += 1
+    if dropped:
+      import warnings
+      warnings.warn(
+        f"{len(dropped)} code block(s) inside a blockquote are not rendered; "
+        "move them outside the `>` quote to keep the content",
+        RuntimeWarning, stacklevel=2,
+      )
     return out
 
   def _render_blockquote(self, tokens:list[Token], start:int) -> int:
