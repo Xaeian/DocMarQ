@@ -102,9 +102,9 @@ def tight_line_height_pt(size_pt:float) -> float:
 _HEX_DIGITS = set("0123456789abcdefABCDEF")
 
 def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
-  """Parse `(r,g,b)` tuple or hex string to 0-1 floats. Mirrors
-  0-1 per channel - 0-255 conversion to OOXML happens at the
-  boundary in `rgb255()`, keeping user-facing values consistently 0-1.
+  """Parse `(r,g,b)` tuple or hex string to 0-1 floats.
+  0-255 conversion to OOXML happens at the boundary in `rgb255()`, keeping
+  user-facing values consistently 0-1.
   """
   if color is None:
     return (0.0, 0.0, 0.0)

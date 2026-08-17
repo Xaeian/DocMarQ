@@ -125,11 +125,7 @@ def scale_dims_for_buffer(buf, content_w_mm:float,
 
 @dataclass
 class ImageDSL:
-  """Parsed `![alt](src "key=value ...")` title DSL.
-
-  Field-for-field the image DSL, so the same
-  source markdown produces consistent sizing intent in both pipelines.
-  """
+  """Parsed `![alt](src "key=value ...")` title DSL."""
   exact_w_mm: float|None = None
   exact_h_mm: float|None = None
   max_w_mm: float|None = None

@@ -14,9 +14,7 @@ Two layers:
      dependency - OMML is built straight from `python-docx`'s OOXML layer.
 
   2. `render_math_png` - a matplotlib (mathtext) raster fallback used when
-     the converter hits a construct outside the supported subset. The
-     formula is embedded as a picture so the document never shows raw
-     LaTeX.
+     the converter hits a construct outside the supported subset.
 
 The converter raises `MathConversionError` for anything it can't represent;
 the renderer catches it and routes that single formula through the image
@@ -39,7 +37,7 @@ from docx.oxml.ns import qn
 class MathConversionError(Exception):
   """Raised when a LaTeX construct falls outside the supported OMML subset.
   The renderer catches this and falls back to an image render of the whole
-  formula, so callers never see raw LaTeX in the output."""
+  formula."""
 
 #------------------------------------------------------------------------------------ Symbol tables
 

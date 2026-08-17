@@ -152,9 +152,8 @@ class MarkdownRenderer:
     # would lose its heading entirely.
     if self.style.skip_dup_title and banner_title:
       tokens = _skip_matching_h1(tokens, str(banner_title))
-    # Pre-scan so `link_open` can validate `#anchor` hrefs before rendering.
-    # After the drop, so a link to the removed title is an unknown anchor like
-    # any other instead of a bookmark that never gets emitted.
+    # Slugs are collected after the drop, so a link to the removed title is an
+    # unknown anchor like any other.
     self._known_slugs = slug.collect_heading_slugs(tokens)
     self._render_tokens(tokens)
     if self.style.sign_render:
@@ -1330,8 +1329,7 @@ class MarkdownRenderer:
         # Tables take plain strings; preserve LaTeX in `$...$` notation.
         parts.append(f"${c.content}$")
       elif c.type == "image":
-        # A cell holds a string, so the picture cannot travel. Its alt text
-        # does, which keeps the cell from silently coming out empty.
+        # A cell holds a string, so the picture cannot travel - its alt can
         alt = (c.content or "").strip()
         parts.append(alt or "[image]")
       elif c.type == "softbreak": parts.append(" ")

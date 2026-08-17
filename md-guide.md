@@ -29,7 +29,7 @@ YAML between `---` markers at the top of the file. It becomes the banner on page
 ---
 id: RM-001           # unique document code
 title: Markdown document guide
-version: v2.2.1
+version: v2.3.1
 author: Emilian Świtalski
 status: approved     # draft/review/approved/deprecated/archived
 entity: Gdynia Maritime University
@@ -76,18 +76,18 @@ For the syntax itself, [Markdown](https://github.com/Xaeian/Markdown) is the ref
 PDF is the richer target.
 If a document may end up as DOCX, do not lean on anything in the middle column.
 
-| Written as | PDF | DOCX |
-| --- | --- | --- |
-| fenced code with a language | coloured by Pygments | plain, the hint is dropped |
-| `$x^2$` and `$$…$$` | drawn, blocks numbered `(1)`, `(2)` | a real Word equation, unnumbered |
-| a formula inside a table cell | drawn | drops back to `$…$` as text |
-| formatting in a table cell | bold, links and images all work | text survives, an image leaves its alt |
-| footnote ref `[^1]` | jumps to the definition | superscript only, not clickable |
-| `- [x]` task list | checkbox | literal `[x]` |
-| `==mark==`, `^sup^`, `~sub~` | rendered | literal characters |
-| `:rocket:` | emoji | literal `:rocket:` |
-| definition list | rendered | one paragraph, literal `:` |
-| `<b>/<strong> <i>/<em> <code> <br> <hr>` | rendered | dropped, the text survives |
+| Written as                               | PDF                                 | DOCX                                   |
+| ---------------------------------------- | ----------------------------------- | -------------------------------------- |
+| fenced code with a language              | coloured by Pygments                | plain, the hint is dropped             |
+| `$x^2$` and `$$…$$`                      | drawn, blocks numbered `(1)`, `(2)` | a real Word equation, unnumbered       |
+| a formula inside a table cell            | drawn                               | drops back to `$…$` as text            |
+| formatting in a table cell               | bold, links and images all work     | text survives, an image leaves its alt |
+| footnote ref `[^1]`                      | jumps to the definition             | superscript only, not clickable        |
+| `- [x]` task list                        | checkbox                            | literal `[x]`                          |
+| `==mark==`, `^sup^`, `~sub~`             | rendered                            | literal characters                     |
+| `:rocket:`                               | emoji                               | literal `:rocket:`                     |
+| definition list                          | rendered                            | one paragraph, literal `:`             |
+| `<b>/<strong> <i>/<em> <code> <br> <hr>` | rendered                            | dropped, the text survives             |
 
 A formula itself is safe in both. What is not safe is a table cell carrying anything beyond plain text: in DOCX a cell is a string, so formatting flattens and a picture is reduced to its alt text.
 A tag carrying attributes is stripped too, so `<b class="x">` is not the whitelisted `<b>`.
@@ -111,14 +111,14 @@ Relative paths resolve against the markdown file's directory, and an `https://` 
 ![diagram](schema.svg "max_w=120 max_h=80 scale=0.8 align=C")
 ```
 
-| Key      | Effect                                                        |
-| -------- | ------------------------------------------------------------- |
-| `max_w`  | Cap width in mm, aspect ratio preserved                       |
-| `max_h`  | Cap height in mm, aspect ratio preserved                      |
-| `w`      | Set width in mm                                               |
-| `h`      | Set height in mm                                              |
-| `scale`  | Multiplier on the natural size, `1.0` means 100%              |
-| `align`  | `L`, `C` or `R`, block images default to `C`                  |
+| Key     | Effect                                           |
+| ------- | ------------------------------------------------ |
+| `max_w` | Cap width in mm, aspect ratio preserved          |
+| `max_h` | Cap height in mm, aspect ratio preserved         |
+| `w`     | Set width in mm                                  |
+| `h`     | Set height in mm                                 |
+| `scale` | Multiplier on the natural size, `1.0` means 100% |
+| `align` | `L`, `C` or `R`, block images default to `C`     |
 
 Sizing resolves in one order: `scale` from the natural size, then `w` and `h`, then `max_*` clamps whatever came out.
 So a cap is never overridden, an explicit `w` wider than `max_w` still lands on `max_w`, and `scale` replaces `w`/`h` rather than joining them.

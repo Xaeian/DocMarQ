@@ -29,8 +29,8 @@ from pathlib import Path
 
 #-------------------------------------------------------------------------------------------- Cache
 
-# Shared location; a hit lands only when source, theme, background and scale
-# all match, so a different scale is a different entry.
+# Keyed on source + theme + background + scale, so a different scale is a
+# different entry.
 _CACHE_DIR = Path.home() / ".cache" / "marq" / "mermaid"
 
 def _cache_key(source:str, theme:str, background:str, scale:float,

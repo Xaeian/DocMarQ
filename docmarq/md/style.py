@@ -1,8 +1,8 @@
 # docmarq/md/style.py
 
-"""Markdown-rendering style,
-trimmed - Word handles layout/sizing itself so we don't need height/size
-fields, just color palette, fonts, and a few format toggles."""
+"""Markdown-rendering style.
+Word handles layout and sizing itself, so this holds just the color palette,
+fonts, and a few format toggles."""
 from dataclasses import dataclass, field
 
 #-------------------------------------------------------------------------- Callout palette default
@@ -49,8 +49,7 @@ class MarkdownStyle:
 
   # Body line-height multiplier. 1.0 = Word's "Single" rule, which renders
   # ~1.2x font size due to Calibri's internal leading - tight without being
-  # cramped. A renderer without paragraph spacing needs 1.4 for the same result, having no
-  # such built-in leading; the two defaults are intentionally different.
+  # cramped.
   line_height: float = 1.0
 
   # Paragraph gap in mm. Converted to Word's
@@ -78,7 +77,7 @@ class MarkdownStyle:
   mermaid_enable: bool = True
   mermaid_theme: str = "default" # mmdc theme: default / dark / forest / neutral
   mermaid_background: str = "transparent" # bg color; transparent matches page
-  mermaid_scale: float = 3 # oversampling factor; matches `pdfmarq` for shared cache
+  mermaid_scale: float = 3 # PNG oversampling factor
   mermaid_cli: str = "mmdc" # CLI binary name / path
 
   # Colors (rgb 0-1) - GitHub-light palette
