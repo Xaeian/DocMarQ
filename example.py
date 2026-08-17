@@ -9,7 +9,7 @@ Showcases:
   - Word-native fonts (no font registration needed)
   - `link_root` for cross-document references in the rendered DOCX
   - `base_dir` so relative image paths in the markdown resolve correctly
-  - YAML frontmatter → page-1 banner + chrome (`render:` block)
+  - YAML frontmatter → page-1 banner (content only; chrome comes from `style`)
 """
 import sys
 from docmarq.md import md_to_docx, lang_style
@@ -21,7 +21,7 @@ LANG = "en" # en | pl | de | fr | es | it | cs | sk
 LINK_ROOT = "https://github.com/{owner}/docs/blob/main"
 FONTS = dict(body_family="Calibri", mono_family="Consolas")
 
-#----------------------------------------------------------------------------------- Renderer
+#----------------------------------------------------------------------------------------- Renderer
 
 def render(in_path:str) -> str:
   """Convert markdown at `in_path` to a sibling `.docx`. Returns output path."""
@@ -37,7 +37,7 @@ def render(in_path:str) -> str:
   )
   return out_path
 
-#-------------------------------------------------------------------------------------- Entry
+#-------------------------------------------------------------------------------------------- Entry
 
 def main():
   if len(sys.argv) != 2:

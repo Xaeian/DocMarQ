@@ -7,10 +7,9 @@ Markdown-to-DOCX renderer with YAML frontmatter. Requires `pip install docmarq[m
 ```py
 from docmarq.md import md_to_docx
 md_to_docx(open("doc.md").read(), "doc.docx")
-# Force landscape orientation (overrides `landscape: true` in YAML)
-md_to_docx(md_text, "out.docx", landscape=True)
-# Relative image paths resolved against base_dir
-md_to_docx(md_text, "out.docx", base_dir="./assets")
+# Landscape, and relative images resolved against a directory
+from docmarq.constants import A4
+md_to_docx(md_text, "out.docx", page=A4.landscape(), base_dir="./assets")
 ```
 
 ## Banner (YAML frontmatter)
@@ -28,7 +27,6 @@ entity: Texas Ranger Division
 address: 1 Lone Star Boulevard, Dallas TX 75201
 created: 1993-04-21
 updated: 2026-03-15
-sign: true
 logo: ./ranger-badge.svg
 ---
 
@@ -46,45 +44,47 @@ logo: ./ranger-badge.svg
 | `address`   | Address (right of banner, muted)                                             |
 | `created`   | ISO date, formatted via `style.date_format`                                  |
 | `updated`   | Same                                                                         |
-| `sign`      | `true` adds a dashed signature line + label at the end                       |
 | `logo`      | Path to `.svg`/`.png`/`.jpg`, aspect-aware                                   |
 | `subject`   | Written to DOCX core properties `/Subject`, not rendered                     |
 | `keywords`  | Written to DOCX core properties `/Keywords`, string or YAML list             |
 
-Aliases: `code` → `id`, `company` → `entity` _(legacy)_.
-
 DOCX core properties _(`/Title`, `/Author`, `/Subject`, `/Keywords`)_ auto-fill from matching YAML keys. Pass `metadata={...}` to `md_to_docx()` to override per-key.
 
-If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice.
+If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Only applies when the banner actually printed that title, so `banner_render=False` never costs you the heading.
 
-## Render block
+## Presentation
 
-Geometry, fonts, chrome, and locale live under a nested `render:` key in the same frontmatter. All optional; library defaults apply when absent. Mirrors `pdfmarq.md.render` field-for-field.
+Frontmatter carries content only. Everything visual comes from the caller, and `style=` is used **verbatim** - there is no layering and no diff-against-defaults heuristic, so you can set any value, including one equal to a `MarkdownStyle()` default.
 
-```yaml
----
-title: Report
-render:
-  page: A4              # A4 / A3 / A5 / LETTER / LEGAL
-  margin: 25            # mm; or list [top, right, bot, left]
-  gutter: 0             # mm binding margin (Word native gutter)
-  landscape: false      # flip page
-  font_body: Calibri
-  font_head: Sora       # defaults to `font_body`
-  font_mono: Consolas
-  font_size: 11         # body pt
-  line_height: 1.0      # Word "Single" rule (~1.2x in render due to Calibri metrics)
-  img_max_h: 120        # mm cap on every image (per-image DSL still overrides)
-  banner: true          # page-1 banner from frontmatter
-  banner_min: true      # mini-banner on continuation pages (alias: `header`)
-  page_number: true     # footer numbering
-  lang: pl              # banner/footer labels (en/pl/de/fr/es/it/cs/sk)
----
+```python
+from docmarq.md import md_to_docx, lang_style
+from docmarq.constants import A4, page_size
+
+style = lang_style("pl",  # banner/footer labels
+  body_family="Calibri", head_family="Calibri", mono_family="Consolas",
+  body_size=11, line_height=1.0, image_max_h=120,
+  banner_render=True, mini_banner_render=True, sign_render=True,
+  mermaid_theme="default",
+)
+md_to_docx(md, "out.docx", style=style,
+  page=A4, margin=25, gutter=0, base_dir=".", font_dir="./fonts")
 ```
 
-Precedence: `MarkdownStyle()` defaults < lang preset < frontmatter `render:` keys < caller's `style=` non-default fields.
+`page` is a `PageSize` in mm: `A4`, `A4.landscape()`, `page_size("a3")` for a preset name (`A4`/`A3`/`A5`/`LETTER`/`LEGAL`, raises on anything else), or `PageSize(200, 250)` for a custom sheet.
 
-Top-level `landscape:` in frontmatter is deprecated and warns at parse time; move it under `render.landscape:`.
+Everything after `output_path` is keyword-only, so the argument order cannot silently diverge from `pdfmarq.md.md_to_pdf`.
+
+### Intentional divergences from pdfmarq
+
+Same field names, deliberately different values - do not "fix" these:
+
+| Field | pdfmarq | docmarq | Why |
+| --- | --- | --- | --- |
+| `line_height` | `1.4` | `1.0` | Word's "Single" already adds ~1.2× leading; pdfmarq has none |
+| `body_family` / `mono_family` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on the reader's machine |
+| `gutter` | folded into the left margin | Word's native gutter | Word mirrors it on duplex, a PDF margin cannot |
+| `math_fontset` | `stixsans` | `stix` | fallback formulas blend with Word's serif Cambria Math |
+| `syntax_theme` | Pygments style name | _absent_ | docmarq has no syntax highlighting, so it has no dead field for it |
 
 ## Internal links
 
@@ -116,22 +116,16 @@ Resolution:
 
 ## Style
 
+Beyond the fields shown above:
+
 ```py
-from docmarq.md import MarkdownStyle
-style = MarkdownStyle(
-  body_family="Calibri",
-  head_family="Sora",          # None = inherit from body_family
-  mono_family="Consolas",
-  line_height=1.0,             # 1.0 = Word "Single" rule
-  para_gap_pt=6,               # pt between paragraphs
+MarkdownStyle(
+  para_gap=3,                  # mm between paragraphs
   page_number_label="Strona",  # "Strona 1/5" footer; None to disable
   page_number_total=True,      # False → "Strona 1" without total
   date_format="%d.%m.%Y",      # strftime pattern
-  banner_render=True,          # page 1 full banner
-  mini_banner_render=True,     # header line on pages 2+
-  image_max_h=120,             # mm - cap tall images and diagrams
+  skip_dup_title=True,         # drop `# X` if it matches frontmatter title
 )
-md_to_docx(md_text, "out.docx", style=style)
 ```
 
 ### Banner labels (i18n)

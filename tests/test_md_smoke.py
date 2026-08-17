@@ -5,8 +5,9 @@
 import pytest
 from conftest import assert_valid_docx
 from docmarq.md import md_to_docx, MarkdownStyle
+from docmarq.constants import A4
 
-#---------------------------------------------------------------------------------- Markdown
+#----------------------------------------------------------------------------------------- Markdown
 
 def md_minimal_renders(tmp_path):
   path = tmp_path / "min.docx"
@@ -55,20 +56,17 @@ def md_frontmatter_metadata(tmp_path):
   md_to_docx(src, str(path))
   assert_valid_docx(path)
 
-def md_landscape_from_frontmatter(tmp_path):
-  # `render.landscape: true` auto-flips when `landscape=` is None (default).
-  # Top-level `landscape:` is no longer honored (warns).
+def md_page_landscape_flips_page(tmp_path):
+  # orientation comes from `page=`, never from the document
   path = tmp_path / "ls.docx"
-  src = "---\nrender:\n  landscape: true\n---\n\n# Wide content"
-  doc = md_to_docx(src, str(path))
+  doc = md_to_docx("# Wide content", str(path), page=A4.landscape())
   assert doc.page_width > doc.page_height
   assert_valid_docx(path)
 
-def md_landscape_explicit_overrides_frontmatter(tmp_path):
-  # explicit `landscape=False` wins over `render.landscape: true`
-  path = tmp_path / "ls_false.docx"
+def md_frontmatter_never_sets_geometry(tmp_path):
+  # a leftover `render:` block is inert content, not configuration
   src = "---\nrender:\n  landscape: true\n---\n\n# Content"
-  doc = md_to_docx(src, str(path), landscape=False)
+  doc = md_to_docx(src, str(tmp_path / "inert.docx"))
   assert doc.page_width < doc.page_height
 
 def md_footnote_no_label_default(tmp_path):

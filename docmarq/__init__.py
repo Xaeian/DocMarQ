@@ -3,7 +3,7 @@
 """
 DOCX generation with fluent API. Built on `python-docx`.
 
-Mirror of `pdfmarq` philosophy: thin fluent layer over a heavy backend.
+A thin fluent layer over a heavy backend.
 We use `python-docx` for OOXML zip plumbing, content types, and
 relationships - everything user-facing is our own API.
 
@@ -15,9 +15,9 @@ Example:
   ...   doc.text("Drugi z ").text("bold", bold=True).text(" tekstem.")
 """
 
-#----------------------------------------------------------------------- Metadata for auto-toml
+#--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 __repo__ = "Xaeian/docmarq"
 __python__ = ">=3.10"
 __description__ = "DOCX generation library with fluent API"
@@ -29,7 +29,7 @@ __dependencies__ = ["python-docx"]
 # so users debugging `No module named 'docx'` see the right install command.
 __import_names__ = {"python-docx": "docx"}
 
-#----------------------------------------------------------------------------------- Public API
+#--------------------------------------------------------------------------------------- Public API
 
 from .constants import (
   Unit, PageSize, Align, Colors, Defaults,
@@ -38,7 +38,10 @@ from .constants import (
 from .styles import Style, TableStyle, Styles
 from .layout import PageGeometry
 from .structure import Metadata, Bookmark
-from .utils import to_mm, mm_to_emu, pt_to_emu, parse_color, parse_margin, color_hex, rgb255
+from .utils import (
+  to_mm, mm_to_pt, mm_to_emu, pt_to_emu, smaller_size,
+  parse_color, parse_margin, color_hex, rgb255,
+)
 from .inline import RichSegment
 from .core import DOCX
 
@@ -49,6 +52,7 @@ __all__ = [
   "Style", "TableStyle", "Styles",
   "PageGeometry",
   "Metadata", "Bookmark",
-  "to_mm", "mm_to_emu", "pt_to_emu", "parse_color", "parse_margin", "color_hex", "rgb255",
+  "to_mm", "mm_to_pt", "mm_to_emu", "pt_to_emu", "smaller_size",
+  "parse_color", "parse_margin", "color_hex", "rgb255",
   "RichSegment",
 ]

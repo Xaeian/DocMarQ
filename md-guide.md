@@ -1,16 +1,12 @@
 # Markdown document guide
 
-How to prepare a markdown file that renders cleanly to PDF (via [`pdfmarq`](https://github.com/Xaeian/PDFMarQ)) and DOCX (via [`docmarq`](https://github.com/Xaeian/DocMarQ)). Both libraries share the same metadata layout, so the same source file works for both targets.
+How to prepare a markdown file that renders cleanly to PDF through [`pdfmarq`](https://github.com/Xaeian/PDFMarQ) and DOCX through [`docmarq`](https://github.com/Xaeian/DocMarQ).
+Both read the same source, so one file serves both.
 
-The document has three layers of metadata, all optional:
-
-- **Frontmatter**: identifying fields (title, author, status, dates). Renders as a banner on page 1.
-- **`render:` sub-block**: page geometry, fonts, chrome. Use only when you want to deviate from defaults.
-- **Inline DSL**: per-block hints on images, mermaid diagrams, and layout directives in the body.
+The document says what it is; how it looks is decided per conversion and never written into the file.
+That is why there are no keys here for page size, margins or fonts.
 
 ## Quick start
-
-A minimal document needs only a title and an author:
 
 ```md
 ---
@@ -20,34 +16,42 @@ author: Emilian Świtalski
 
 # Summary
 
-Revenue is up 23% year-over-year. Details in the sections below.
+Revenue is up 23% year-over-year.
 ```
 
-That's it. Everything else has sensible defaults.
+Everything else has sensible defaults.
 
 ## Frontmatter
 
-YAML block between `---` markers at the top of the file. Controls the banner on page 1 and the mini-banner on continuation pages.
+YAML between `---` markers at the top of the file. It becomes the banner on page 1.
 
 ```yaml
 ---
-id: RM-001             # document code (unique)
+id: RM-001           # unique document code
 title: Markdown document guide
-version: 2.1.3
+version: v2.2.1
 author: Emilian Świtalski
-status: approved       # draft/review/approved/deprecated/archived
+status: approved     # draft/review/approved/deprecated/archived
 entity: Gdynia Maritime University
 address: Morska 81/87, 81-225 Gdynia
-created: 2024-09-15    # first written, set once (YYYY-MM-DD)
-updated: 2026-03-22    # last content change (YYYY-MM-DD)
-sign: true             # add signature field at document end
-logo: umg.svg          # .svg/.png/.jpg
-subject: Short description for PDF /Subject metadata
+created: 2024-09-15  # first written, set once
+updated: 2026-03-22  # last content change
+logo: umg.svg        # .svg/.png/.jpg
+subject: Short description for /Subject metadata
 keywords: policy, workflow, reference
 ---
 ```
 
-`subject` and `keywords` are not rendered in the banner. They populate the document's `/Subject` and `/Keywords` metadata, visible in any PDF reader's document properties and searchable by DMS systems.
+Every field is optional and unknown keys pass through untouched, so a document can carry whatever else your tooling needs.
+
+`title` and `author` also fill `/Title` and `/Author`.
+`subject` and `keywords` never show in the banner; they fill `/Subject` and `/Keywords`, searchable by DMS systems.
+`keywords` takes a comma-separated string or a YAML list.
+Write dates bare: a quoted date is carried through as text and the two formats then disagree on how to print it.
+
+A first heading repeating `title` word for word is dropped so the title is not printed twice, and its anchor goes with it, so do not link to it.
+
+The language of everything the renderer writes itself, callout labels, the word for "page", the date format, is chosen at conversion time rather than in the file.
 
 ### Statuses
 
@@ -59,167 +63,129 @@ keywords: policy, workflow, reference
 | `deprecated` | red       | Still accessible but no longer recommended. Being phased out. |
 | `archived`   | violet    | Historical record only. Not valid for current use.            |
 
-Typical flow is `draft` → `review` → `approved` → `deprecated` → `archived`, though not every document goes through all stages. Only one version of a document should be `approved` at a time. When approving a new version, the previous one moves to `deprecated` or `archived`.
-
-Changing the status does not require updating `version` or `updated`. Status reflects an administrative decision, not a change to content.
-
-### Dates
-
-The `updated` date changes when content changes: rewritten text, fixed factual errors, added or removed sections. It does not change for status transitions, cosmetic edits or `author` field updates.
-
-The `created` date is set once when the document is first written. It never changes, even across major version bumps.
-
-Edits that touch only frontmatter fields other than content, such as `status`, `author` or `sign`, do not bump the version and do not change `updated`. The same applies to trivial edits that do not change what the document says: reflowing paragraphs, inserting blank lines, fixing indentation, correcting obvious typos, adjusting capitalisation or swapping one punctuation mark for an equivalent one.
-
-## Render block
-
-Geometry, fonts and chrome live under a nested `render:` key inside the same frontmatter. All fields are optional; library defaults apply when absent. Both PDF and DOCX honour the same keys.
-
-```yaml
----
-title: Quarterly report
-render:
-  page: A4           # A4 / A3 / A5 / LETTER / LEGAL
-  margin: 25         # mm; or list [top, right, bot, left]
-  landscape: false   # flip page
-  font_body: IBMPlexSans
-  font_head: Sora    # defaults to `font_body`
-  font_mono: IBMPlexMono
-  font_size: 11      # body pt
-  line_height: 1.4
-  img_max_h: 120     # mm cap on every image (per-image DSL still overrides)
-  banner: true       # page-1 banner from frontmatter
-  banner_min: true   # mini-banner on continuation pages
-  page_number: true  # footer numbering
-  lang: pl           # banner/footer labels (en/pl/de/fr/es/it/cs/sk)
-  mermaid_theme: default
-  syntax_theme: default
----
-```
-
-| Key             | Type           | Effect                                                                 |
-| --------------- | -------------- | ---------------------------------------------------------------------- |
-| `page`          | preset name    | `A4` / `A3` / `A5` / `LETTER` / `LEGAL` (case-insensitive)             |
-| `margin`        | number or list | Single value = all sides. List of 1-4 = CSS-style top/right/bot/left   |
-| `landscape`     | bool           | Flip page width/height                                                 |
-| `font_body`     | family name    | Body text family                                                       |
-| `font_head`     | family name    | Heading family (defaults to `font_body`)                               |
-| `font_mono`     | family name    | Monospace family (code, table cells)                                   |
-| `font_size`     | pt             | Body font size in points                                               |
-| `line_height`   | number         | Body line-height multiplier                                            |
-| `img_max_h`     | mm             | Global cap on image height (per-image DSL still overrides)             |
-| `banner`        | bool           | Render the full page-1 banner from frontmatter                         |
-| `banner_min`    | bool           | Render the compact mini-banner on continuation pages                   |
-| `page_number`   | bool           | Footer page numbering                                                  |
-| `lang`          | code           | Overrides autodetect: `en`/`pl`/`de`/`fr`/`es`/`it`/`cs`/`sk`          |
-| `mermaid_theme` | preset name    | `default` / `dark` / `forest` / `neutral` (mermaid built-in themes)    |
-| `syntax_theme`  | Pygments style | PDF only: `default`, `monokai`, `friendly`, `solarized-light`, etc.    |
-
-Fonts must be available to the renderer. For PDF, that means a TTF in the configured `font_dir`. For DOCX, Word/LibreOffice substitutes from the client's system fonts. Mermaid diagrams render server-side as PNG and use `font_body` to match the rest of the document (requires the TTF to be present locally).
-
-`render.lang:` overrides the auto-detected language. When omitted, the renderer uses the body language to pick banner labels, footer labels, and date format.
-
-`render.syntax_theme:` is honored only in PDF (Pygments). DOCX accepts the key for cross-format consistency but doesn't colour fenced code.
+Status is an administrative decision, so changing it bumps neither `version` nor `updated`.
+A value outside the table is not rejected: it prints as a grey badge in capitals, so a typo shows up as a colourless label rather than an error.
 
 ## Content
 
-Standard GitHub-flavored markdown works in both PDF and DOCX: headings, paragraphs, bold/italic/strikethrough, ordered and unordered lists, blockquotes, fenced code blocks, tables, footnotes, internal links.
+Standard GitHub-flavored markdown works in both.
+For the syntax itself, [Markdown](https://github.com/Xaeian/Markdown) is the reference; this guide covers only what these two renderers add, and where they part company.
 
-A few features are PDF-only because Word handles them natively:
-- **Syntax highlighting** in fenced code blocks (Pygments). DOCX accepts the `language` hint but doesn't colour.
-- **Math** inline `$x^2$` and block `$$\int_0^1 x\,dx$$`. DOCX has no math support.
-- **`Page N/M` page totals**. DOCX uses Word's live field codes which only resolve at display time.
+### Where the two formats differ
+
+PDF is the richer target.
+If a document may end up as DOCX, do not lean on anything in the middle column.
+
+| Written as | PDF | DOCX |
+| --- | --- | --- |
+| fenced code with a language | coloured by Pygments | plain, the hint is dropped |
+| `$x^2$` and `$$…$$` | drawn, blocks numbered `(1)`, `(2)` | a real Word equation, unnumbered |
+| a formula inside a table cell | drawn | drops back to `$…$` as text |
+| formatting in a table cell | bold, links and images all work | text survives, an image leaves its alt |
+| footnote ref `[^1]` | jumps to the definition | superscript only, not clickable |
+| `- [x]` task list | checkbox | literal `[x]` |
+| `==mark==`, `^sup^`, `~sub~` | rendered | literal characters |
+| `:rocket:` | emoji | literal `:rocket:` |
+| definition list | rendered | one paragraph, literal `:` |
+| `<b>/<strong> <i>/<em> <code> <br> <hr>` | rendered | dropped, the text survives |
+
+A formula itself is safe in both. What is not safe is a table cell carrying anything beyond plain text: in DOCX a cell is a string, so formatting flattens and a picture is reduced to its alt text.
+A tag carrying attributes is stripped too, so `<b class="x">` is not the whitelisted `<b>`.
+All other HTML goes in both formats, so prefer `---` over `<hr>`.
+
+### Lists
+
+Under a numbered item a nested list needs three or four spaces; two makes it a sibling instead, in both formats.
+In PDF that still looks about right, because the marker you typed is the marker you get, which is what makes the mistake easy to miss.
+Under a bullet, two spaces are fine.
+
+A nested list that starts at anything other than `1.` needs a blank line above it, or the parent item swallows it and the text runs together on one line.
+With that blank line any starting number is read as a list.
+PDF then prints the numbers as written, while Word counts from one through its own list style.
 
 ### Images
 
-Standard markdown image syntax. Relative paths resolve against the markdown file's directory.
-
-```md
-![diagram](schema.svg)
-```
-
-The optional title slot accepts a small DSL for sizing and alignment. Six keys, each optional, space-separated.
+Relative paths resolve against the markdown file's directory, and an `https://` address never loads.
 
 ```md
 ![diagram](schema.svg "max_w=120 max_h=80 scale=0.8 align=C")
 ```
 
-| Key      | Effect                                                                  |
-| -------- | ----------------------------------------------------------------------- |
-| `max_w`  | Cap width in mm. Aspect ratio preserved.                                |
-| `max_h`  | Cap height in mm. Aspect ratio preserved.                               |
-| `w`      | Force width in mm. Overrides natural width.                             |
-| `h`      | Force height in mm. Overrides natural height.                           |
-| `scale`  | Multiplier on natural size (1.0 = 100%). Applied after `max_*` caps.    |
-| `align`  | `L` / `C` / `R`. Default `C` for block images.                          |
+| Key      | Effect                                                        |
+| -------- | ------------------------------------------------------------- |
+| `max_w`  | Cap width in mm, aspect ratio preserved                       |
+| `max_h`  | Cap height in mm, aspect ratio preserved                      |
+| `w`      | Set width in mm                                               |
+| `h`      | Set height in mm                                              |
+| `scale`  | Multiplier on the natural size, `1.0` means 100%              |
+| `align`  | `L`, `C` or `R`, block images default to `C`                  |
 
-If both `max_*` and `w`/`h` are set, the explicit dimension wins. If only `max_w` is set, height scales proportionally (and vice versa). Without any DSL the image renders at natural size capped by `render.img_max_h` (or the library default of 120mm).
+Sizing resolves in one order: `scale` from the natural size, then `w` and `h`, then `max_*` clamps whatever came out.
+So a cap is never overridden, an explicit `w` wider than `max_w` still lands on `max_w`, and `scale` replaces `w`/`h` rather than joining them.
+
+With no DSL at all the two formats disagree, so set `w`, `h` or `scale` whenever the size matters.
+A cap alone will not equalise them: PDF clamps the natural size, so a cap larger than the image changes nothing, while DOCX clamps the full text width, so the same cap scales the image up to it.
+PDF keeps a raster at natural size and never enlarges it, while an SVG spreads across the full text width.
+DOCX fits every block image to the text width, upwards as well, then clamps to the same 120mm height, so only wide images reach the full width and a small PNG still arrives blown up.
+
+A missing image never stops the conversion: PDF prints `[Image not found: …]`, DOCX drops in the alt text, and the document comes out looking finished with a hole in it.
+In DOCX an image also has to stand alone in its paragraph, or it turns into italic alt text.
 
 ### Mermaid diagrams
 
-Mermaid fenced blocks compile to PNG via the `mmdc` CLI (or the `mermaid.ink` HTTP fallback) and embed like any figure. The same image DSL applies, written as a space-separated info string after the `mermaid` lang token.
+Fenced `mermaid` blocks compile to PNG and embed like any other figure.
+The same image DSL applies, written as an info string after the lang token.
 
 ````md
 ```mermaid max_h=80 align=C
 flowchart TB
   A --> B
-  B --> C
 ```
 ````
 
-When the info string is empty, the diagram is centered and capped by `render.img_max_h`. When `mmdc` is missing and the network fallback fails, the source renders as a plain fenced block so the document still produces output.
+When the renderer is unavailable the source stays a plain fenced block, so the document still builds.
 
 ### Callouts
-
-GitHub-style admonitions inside a blockquote.
 
 ```md
 > [!NOTE]
 > Plain information block.
-
-> [!WARNING]
-> Heads-up. Something can go wrong here.
 ```
 
-Five types: `NOTE`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION`. Each gets a coloured left border and a bold label. Labels follow the document language (Polish `Notatka`/`Wskazówka`/`Ważne`/`Ostrzeżenie`/`Uwaga`, etc.).
+Five types: `NOTE`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION`.
+Each gets a coloured left border and a bold label in the document language, so Polish gives `Notatka`, `Wskazówka`, `Ważne`, `Ostrzeżenie` and `Uwaga`.
 
 ### Internal links
 
-```md
-See the [diagnostics section](#diagnostics) for the failure modes.
+Each heading registers a GitHub-style slug: lowercase, spaces to hyphens, unicode kept, runs collapsed to one.
+Two headings with the same text get the same slug and nothing tells them apart, so linking to either is a coin flip.
 
-## Diagnostics
-```
+A link to a slug that does not exist stays readable rather than dangling: plain text in DOCX, styled but inert in PDF.
+The dropped duplicate title counts as one of those, so a link to it is text, not a jump.
 
-Each heading auto-registers a GitHub-style slug (lowercase, spaces → hyphens, unicode preserved). Links to slugs that don't exist render as plain text instead of dangling anchors. Footnote refs `[^1]` jump to their definitions the same way.
+Footnote refs `[^1]` jump to their definition in PDF.
+DOCX prints the superscript but registers no anchor, and the definitions collect at the end of the document rather than becoming Word footnotes.
 
 ## Layout directives
 
-Inline HTML comments that control page flow. Inert in normal markdown renderers; recognised by these libraries.
+HTML comments that control page flow, inert in ordinary markdown renderers.
 
 ```md
 <!-- pagebreak -->
-```
 
-Forces a page break at this point. Useful for chapter starts or splitting a long section.
-
-```md
 <!-- group -->
-A heading or short block
-that must stay together.
+A block that must stay together.
 <!-- /group -->
 ```
 
-The wrapped content is kept on the same page. If the group doesn't fit in the remaining space and would fit on the next page, the renderer breaks pre-emptively. Groups larger than a page render as-is with normal flow.
+`pagebreak` forces a break at that point.
+`group` keeps its content on one page, breaking pre-emptively when the block would fit on the next; a group larger than a page flows normally.
+Both must stand alone in the comment, so `<!-- pagebreak now -->` is an ordinary comment and does nothing.
 
 ## Pre-flight checklist
 
-Before sending a document for review or release:
-
-1. Frontmatter has at minimum `title:` and `author:`.
-2. `status:` is honest. `draft` for unfinished work, `review` for pending approval.
-3. `id:` is set if the document is part of a controlled set (DMS, audit trail).
-4. `created:` is set once and untouched. `updated:` is current.
-5. `subject:` and `keywords:` are filled for DMS searchability.
-6. `render:` is left out unless you need a non-default page size, font, or orientation.
-7. Images and logo paths are relative to the markdown file, and the referenced files travel with the source.
+1. `title:` and `author:` are set, and `status:` is honest.
+2. `id:` is set if the document belongs to a controlled set, such as a DMS or an audit trail.
+3. `created:` untouched, `updated:` current.
+4. Every image and the logo resolve to a file that travels with the source. Check the output, because a missing one is never reported.
+5. If the document may also become DOCX, nothing from the PDF column is load-bearing.

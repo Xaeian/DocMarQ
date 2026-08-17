@@ -4,7 +4,7 @@ close-finding; this module centralises both so callers stay free of boilerplate.
 import re
 from markdown_it.token import Token
 
-#-------------------------------------------------------------------------------------- Attrs
+#-------------------------------------------------------------------------------------------- Attrs
 
 def get_attr(token:Token, name:str) -> str|None:
   """Return the value of HTML attribute `name` from a token, or None."""
@@ -17,7 +17,7 @@ def get_attr(token:Token, name:str) -> str|None:
       return v
   return None
 
-#----------------------------------------------------------------------------- Range scanning
+#----------------------------------------------------------------------------------- Range scanning
 
 def find_close(tokens:list[Token], start:int, open_type:str, close_type:str) -> int:
   """Return index of the matching close token for the open token at `start`.
@@ -34,17 +34,17 @@ def find_close(tokens:list[Token], start:int, open_type:str, close_type:str) -> 
         return j
   return len(tokens) - 1
 
-#---------------------------------------------------------------------------------- Callouts
+#----------------------------------------------------------------------------------------- Callouts
 
 # `> [!NOTE]` style marker matching GitHub-flavored markdown callouts.
 CALLOUT_RE = re.compile(r"^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$",
   re.IGNORECASE)
 
-#---------------------------------------------------------------------------- Directives
+#--------------------------------------------------------------------------------------- Directives
 
 # HTML-comment directives for layout control. Whitespace-tolerant, case-insensitive.
 # Any extra content disqualifies the match (e.g. `<!-- pagebreak xxx -->` is not a
-# directive). Symmetric with `pdfmarq.md.md_html` detectors.
+# directive).
 _PAGEBREAK_RE = re.compile(r"\s*<!--\s*pagebreak\s*-->\s*", re.IGNORECASE)
 _GROUP_OPEN_RE = re.compile(r"\s*<!--\s*group\s*-->\s*", re.IGNORECASE)
 _GROUP_CLOSE_RE = re.compile(r"\s*<!--\s*/\s*group\s*-->\s*", re.IGNORECASE)

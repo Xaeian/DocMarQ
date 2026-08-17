@@ -16,7 +16,7 @@ from conftest import assert_valid_docx
 from docmarq.md import md_to_docx, MarkdownStyle
 from docmarq.md.math import latex_to_omath, build_omath_para, MathConversionError
 
-#-------------------------------------------------------------------------------------- Helpers
+#------------------------------------------------------------------------------------------ Helpers
 
 @pytest.fixture
 def document_xml():
@@ -33,7 +33,7 @@ def child_tags():
     return [c.tag.split("}")[-1] for c in el]
   return _tags
 
-#---------------------------------------------------------------------- Converter: structures
+#---------------------------------------------------------------------------- Converter: structures
 
 def omml_superscript():
   el = latex_to_omath(r"E = mc^2")
@@ -148,7 +148,7 @@ def omath_para_is_centered():
   assert jc.get(qn("m:val")) == "center"
   assert para.find(qn("m:oMath")) is not None
 
-#------------------------------------------------------------------ Converter: error contract
+#------------------------------------------------------------------------ Converter: error contract
 
 @pytest.mark.parametrize("bad", [
   "", "   ",
@@ -173,7 +173,7 @@ def deep_nesting_terminates_without_other_error():
   except MathConversionError:
     pass
 
-#--------------------------------------------------------------------- Integration: md_to_docx
+#-------------------------------------------------------------------------- Integration: md_to_docx
 
 def md_inline_math_produces_omml(tmp_path, document_xml):
   path = tmp_path / "inline.docx"
@@ -232,7 +232,7 @@ def md_table_cell_math_preserved_as_text(tmp_path, document_xml):
   # Cell math degrades to LaTeX source rather than being dropped.
   assert "x^2" in xml
 
-#-------------------------------------------------------------- Regressions (adversarial review)
+#----------------------------------------------------------------- Regressions (adversarial review)
 
 def nested_font_scr_before_sty():
   # CT_RPr requires m:scr before m:sty (mathbb wrapping mathbf).

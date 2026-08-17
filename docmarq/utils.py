@@ -3,7 +3,7 @@
 """Utility functions - unit conversion, color parsing, helpers."""
 from .constants import Unit, EMU_PER_MM, EMU_PER_PT
 
-#---------------------------------------------------------------------------------------- Units
+#-------------------------------------------------------------------------------------------- Units
 
 def to_mm(value:float, unit:str="mm") -> float:
   """Convert value from given unit to millimeters."""
@@ -13,6 +13,11 @@ def to_mm(value:float, unit:str="mm") -> float:
   if unit not in factors:
     raise ValueError(f"Unknown unit: {unit}. Use: mm, cm, in, pt, px")
   return value * factors[unit]
+
+def mm_to_pt(*values:float) -> list[float]|float:
+  """Convert mm values to points. Returns single value or list."""
+  result = [v / Unit.PT for v in values]
+  return result[0] if len(result) == 1 else result
 
 def mm_to_emu(value_mm:float) -> int:
   """Convert millimeters to EMU (OOXML native unit)."""
@@ -26,7 +31,7 @@ def to_emu(value:float, unit:str="mm") -> int:
   """Convert value in given unit to EMU."""
   return mm_to_emu(to_mm(value, unit))
 
-#--------------------------------------------------------------------------- Typographic ladder
+#------------------------------------------------------------------------------- Typographic ladder
 
 # Word's font-size dropdown values - the de facto standard typographic
 # ladder. Jumps are non-linear: 12→14→16 skips 13/15 because those don't
@@ -92,13 +97,13 @@ def tight_line_height_pt(size_pt:float) -> float:
   factor = 1.15 - (size_pt - 11) / (24 - 11) * 0.15
   return round(size_pt * factor, 2)
 
-#--------------------------------------------------------------------------------------- Colors
+#------------------------------------------------------------------------------------------- Colors
 
 _HEX_DIGITS = set("0123456789abcdefABCDEF")
 
 def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
   """Parse `(r,g,b)` tuple or hex string to 0-1 floats. Mirrors
-  `pdfmarq.parse_color` - 0-255 conversion to OOXML happens at the
+  0-1 per channel - 0-255 conversion to OOXML happens at the
   boundary in `rgb255()`, keeping user-facing values consistently 0-1.
   """
   if color is None:
@@ -132,7 +137,7 @@ def color_hex(color:tuple|str) -> str:
   r, g, b = rgb255(color)
   return f"{r:02X}{g:02X}{b:02X}"
 
-#--------------------------------------------------------------------------------------- Margin
+#------------------------------------------------------------------------------------------- Margin
 
 def parse_margin(margin:float|tuple) -> tuple[float, float, float, float]:
   """Parse margin to `(top, right, bot, left)` tuple. CSS-style.
@@ -154,7 +159,7 @@ def parse_margin(margin:float|tuple) -> tuple[float, float, float, float]:
     if n == 4: return (margin[0], margin[1], margin[2], margin[3])
   raise ValueError(f"Invalid margin: {margin}")
 
-#------------------------------------------------------------------------------------ Alignment
+#---------------------------------------------------------------------------------------- Alignment
 
 def align_to_docx(align:str|None):
   """Map docmarq align constant to `python-docx` `WD_ALIGN_PARAGRAPH` value."""

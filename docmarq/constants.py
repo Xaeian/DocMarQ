@@ -7,7 +7,7 @@ from dataclasses import dataclass
 EMU_PER_MM = 36000
 EMU_PER_PT = 12700 # 1 pt = 1/72 inch
 
-#---------------------------------------------------------------------------------------- Units
+#-------------------------------------------------------------------------------------------- Units
 
 class Unit:
   """Unit conversion factors to millimeters."""
@@ -17,7 +17,7 @@ class Unit:
   PT = 25.4 / 72
   PX = 25.4 / 96
 
-#------------------------------------------------------------------------------------- PageSize
+#----------------------------------------------------------------------------------------- PageSize
 
 @dataclass
 class PageSize:
@@ -34,16 +34,34 @@ A5 = PageSize(148, 210)
 LETTER = PageSize(215.9, 279.4)
 LEGAL = PageSize(215.9, 355.6)
 
-#---------------------------------------------------------------------------------------- Align
+# Named presets are the only page sizes callers can select by string. Arbitrary
+# `[w, h]` stays available through `PageSize(w, h)`, where the units are
+# explicit and a typo cannot silently produce a 5x5000mm page.
+PAGE_PRESETS: dict[str, PageSize] = {
+  "A4": A4, "A3": A3, "A5": A5, "LETTER": LETTER, "LEGAL": LEGAL,
+}
+
+def page_size(name:str) -> PageSize:
+  """Resolve a preset name to a `PageSize`, case-insensitively.
+
+  Raises `ValueError` for an unknown name - callers validate user input at
+  their own boundary, so reaching here with a bad name is a programming error.
+  """
+  key = str(name).strip().upper()
+  if key not in PAGE_PRESETS:
+    raise ValueError(f"Unknown page preset {name!r}; supported: {sorted(PAGE_PRESETS)}")
+  return PAGE_PRESETS[key]
+
+#-------------------------------------------------------------------------------------------- Align
 
 class Align:
-  """Text/element alignment constants. Match pdfmarq values for cross-lib reuse."""
+  """Text/element alignment constants."""
   LEFT = "L"
   RIGHT = "R"
   CENTER = "C"
   JUSTIFY = "J"
 
-#--------------------------------------------------------------------------------------- Colors
+#------------------------------------------------------------------------------------------- Colors
 
 class Colors:
   """Predefined colors as (r, g, b) tuples (0-1 range)."""
@@ -56,7 +74,7 @@ class Colors:
   LIGHT_GREY = (0.8, 0.8, 0.8)
   DARK_GREY = (0.3, 0.3, 0.3)
 
-#------------------------------------------------------------------------------------- Defaults
+#----------------------------------------------------------------------------------------- Defaults
 
 class Defaults:
   """Default values for DOCX generation."""
@@ -68,11 +86,10 @@ class Defaults:
   FONT_MODE = "Regular"
   LINE_HEIGHT = 1.15
   UNIT = "mm"
-  # Heading palette - GitHub-light, mirrors `pdfmarq.MarkdownStyle`
+  # Heading palette - GitHub-light
   HEAD_COLOR = (0.09, 0.11, 0.13) # near-black #1f2328
   RULE_COLOR = (0.82, 0.84, 0.87) # light grey #d0d7de (h1/h2 underline)
-  # h1..h6 sizes in pt. Matches `pdfmarq.MarkdownStyle.h{1-6}_size` so
-  # the same markdown source renders at the same scale in both libs.
+  # h1..h6 sizes in pt.
   HEAD_SIZES = (20, 16, 13, 11, 11, 11)
   HEAD_UNDERLINE_LEVELS = (1, 2) # which heading levels get bottom border
   # Inline `code` runs; 0-1 tuples so `color_hex` emits `1F2328` / `F2F4F6`.

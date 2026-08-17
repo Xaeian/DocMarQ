@@ -20,7 +20,7 @@ from .tables import (
   set_cell_margins, set_cell_vertical_align,
 )
 
-#---------------------------------------------------------------------------------------- DOCX
+#--------------------------------------------------------------------------------------------- DOCX
 
 class DOCX:
   """Main DOCX generator with fluent API.
@@ -41,6 +41,9 @@ class DOCX:
     template: str|None = None,
     neutral_style: bool = True,
     gutter: float = 0,
+    body_family: str = Defaults.FONT_FAMILY,
+    head_family: str|None = None,
+    body_size: float = Defaults.FONT_SIZE,
   ):
     self.path = path
     self.unit = unit
@@ -54,6 +57,8 @@ class DOCX:
     self._doc = Document(template) if template else Document()
     self._apply_section_geometry()
     self._style = Style().with_defaults()
+    self._style.font_family = body_family
+    self._style.font_size = body_size
     self._metadata = Metadata()
     self._current_para = None       # open paragraph; runs append here
     self._para_default_color = None # per-paragraph color override; reset on flush
@@ -61,9 +66,9 @@ class DOCX:
     self._extra_block_after = 0     # pt - one-shot space_before bonus (see _track_block_spacing)
     self._bookmark_id = 0
     if neutral_style:
-      self._override_heading_styles()
+      self._override_heading_styles(body_family, head_family or body_family)
 
-  #---------------------------------------------------------------------------- Context manager
+  #-------------------------------------------------------------------------------- Context manager
 
   def __enter__(self) -> "DOCX":
     return self
@@ -72,7 +77,7 @@ class DOCX:
     if exc_type is None:
       self.save()
 
-  #--------------------------------------------------------------------------------- Properties
+  #------------------------------------------------------------------------------------- Properties
 
   @property
   def page_width(self) -> float:
@@ -100,12 +105,15 @@ class DOCX:
     """Destination file path. Symmetric with `PDF.output_path`."""
     return self.path
 
-  #--------------------------------------------------------------------- Section / page setup
+  #--------------------------------------------------------------------------- Section / page setup
 
-  def _override_heading_styles(self):
+  def _override_heading_styles(self, body_family:str, head_family:str):
     """Recolor Word's built-in Heading 1..6 to the GitHub-light palette:
-    near-black text, pdfmarq sizes/spacing, thin bottom rule on h1/h2.
+    near-black text, thin bottom rule on h1/h2.
     `font.color.rgb` pins the color so it holds regardless of the theme.
+
+    Families arrive as parameters so `MarkdownStyle.body_family` and
+    `head_family` reach Word's `Normal` and `Heading n` styles.
     """
     near_black = RGBColor(*rgb255(Defaults.HEAD_COLOR))
     rule_hex = color_hex(Defaults.RULE_COLOR)
@@ -120,10 +128,10 @@ class DOCX:
       st.font.color.rgb = near_black
       st.font.size = Pt(size_pt)
       st.font.bold = True
-      st.font.name = Defaults.FONT_FAMILY
+      st.font.name = head_family
       # `st.font.name` sets only ascii/hAnsi and leaves the theme refs, which
       # resolve to Calibri Light; `_force_font` strips them so the body font wins.
-      _force_font(st, Defaults.FONT_FAMILY)
+      _force_font(st, head_family)
       before_pt, after_pt = spacing_pt[i-1]
       st.paragraph_format.space_before = Pt(before_pt)
       st.paragraph_format.space_after = Pt(after_pt)
@@ -133,7 +141,7 @@ class DOCX:
         _set_pbdr(st.element, rule_hex, sides=("bottom",), size_eighths=4)
     # Pin `Normal` body font too, across all script ranges.
     try:
-      _force_font(self._doc.styles["Normal"], Defaults.FONT_FAMILY)
+      _force_font(self._doc.styles["Normal"], body_family)
     except KeyError:
       pass
 
@@ -174,14 +182,14 @@ class DOCX:
     self._apply_section_geometry()
     return self
 
-  #----------------------------------------------------------------------------------- Style
+  #------------------------------------------------------------------------------------------ Style
 
   def font(self, family:str|None=None, size:float|None=None,
       mode:str|None=None) -> "DOCX":
     """Set default font for subsequent runs.
 
     `mode` accepts `Regular` / `Bold` / `Italic` / `BoldItalic` for parity
-    with `pdfmarq`; mapped to boolean `bold`/`italic` flags internally.
+    mapped to boolean `bold`/`italic` flags internally.
     """
     if family: self._style.font_family = family
     if size: self._style.font_size = size
@@ -201,7 +209,7 @@ class DOCX:
     self._style = self._style.copy(**overrides)
     return self
 
-  #--------------------------------------------------------------------------------- Paragraphs
+  #------------------------------------------------------------------------------------- Paragraphs
 
   def para(self, text:str|None=None, style:str|None=None,
       align:str|None=None) -> "DOCX":
@@ -328,7 +336,7 @@ class DOCX:
       code_family=self._style.code_family, code_size=self._style.code_size,
       code_color=self._style.code_color, code_bg=self._style.code_bg)
 
-  #----------------------------------------------------------------------------------- Headings
+  #--------------------------------------------------------------------------------------- Headings
 
   # Per-level (space_before, space_after) in pt - shared by the style defaults
   # in `_override_heading_styles` and the margin-collapse math in `heading()`.
@@ -350,7 +358,7 @@ class DOCX:
     self._current_para = p
     return self
 
-  #-------------------------------------------------------------------------------------- Lists
+  #------------------------------------------------------------------------------------------ Lists
 
   def bullet(self, text:str|None=None, level:int=0) -> "DOCX":
     """Bullet list item. Uses built-in `List Bullet` / `List Bullet 2..3` styles.
@@ -392,7 +400,7 @@ class DOCX:
     pf.space_after = Pt(0)
     pf.line_spacing = 1.1
 
-  #----------------------------------------------------------------------------- Block elements
+  #--------------------------------------------------------------------------------- Block elements
 
   def code_block(self, content:str, language:str|None=None,
       bg_color:tuple|str=(0.96, 0.97, 0.98),
@@ -458,7 +466,7 @@ class DOCX:
     self._track_block_spacing(4)
     return self
 
-  #------------------------------------------------------------------------------------- Tables
+  #----------------------------------------------------------------------------------------- Tables
 
   def table(
     self,
@@ -571,7 +579,7 @@ class DOCX:
       pf.space_after = Pt(0)
       pf.line_spacing = 1.15
 
-  #------------------------------------------------------------------------------------ Images
+  #----------------------------------------------------------------------------------------- Images
 
   def image(self, path:str, width:float|None=None, height:float|None=None,
       align:str|None=None) -> "DOCX":
@@ -591,7 +599,7 @@ class DOCX:
     self._track_block_spacing(0)
     return self
 
-  #------------------------------------------------------------------------------- Page breaks
+  #------------------------------------------------------------------------------------ Page breaks
 
   def page_break(self) -> "DOCX":
     """Insert a hard page break."""
@@ -600,7 +608,7 @@ class DOCX:
     p.add_run().add_break(WD_BREAK.PAGE)
     return self
 
-  #-------------------------------------------------------------------------------- Bookmarks
+  #-------------------------------------------------------------------------------------- Bookmarks
 
   def bookmark(self, name:str) -> "DOCX":
     """Mark a bookmark anchor at the current point (zero-width range).
@@ -683,7 +691,7 @@ class DOCX:
       _inject_page_fields(p, "{page} / {pages}")
     return self
 
-  #------------------------------------------------------------------------------------ Metadata
+  #--------------------------------------------------------------------------------------- Metadata
 
   def metadata(self, title:str|None=None, author:str|None=None,
       subject:str|None=None, keywords:str|None=None,
@@ -697,7 +705,7 @@ class DOCX:
     if category: self._metadata.category = category
     return self
 
-  #-------------------------------------------------------------------------------------- Save
+  #------------------------------------------------------------------------------------------- Save
 
   def save(self) -> "DOCX":
     """Write the document to disk."""
@@ -706,7 +714,7 @@ class DOCX:
     self._doc.save(self.path)
     return self
 
-#--------------------------------------------------------------------------------- Page fields
+#-------------------------------------------------------------------------------------- Page fields
 
 def _inject_page_fields(p, template:str):
   """Insert Word `PAGE`/`NUMPAGES` fields where `{page}`/`{pages}` appear.
@@ -734,7 +742,7 @@ def _append_field(p, instr:str):
   fld.append(r)
   p._element.append(fld)
 
-#---------------------------------------------------------------------- Paragraph shading/border
+#------------------------------------------------------------------------- Paragraph shading/border
 
 def _apply_paragraph_shading(p, hex_color:str):
   """Set background fill on a paragraph via raw `<w:shd>` in `pPr`."""
@@ -801,7 +809,7 @@ def _force_font(style, font_name:str):
   for direct_attr in ("ascii", "hAnsi", "eastAsia", "cs"):
     rfonts.set(qn(f"w:{direct_attr}"), font_name)
 
-#-------------------------------------------------------------------------------- Table width
+#-------------------------------------------------------------------------------------- Table width
 
 # `dxa` (twentieths of a point) is the OOXML native length unit for tables.
 _DXA_PER_MM = 1440 / 25.4

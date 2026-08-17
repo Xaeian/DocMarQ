@@ -2,7 +2,7 @@
 
 """Rich inline runs - mixed-style spans within a single paragraph.
 
-Mirrors `pdfmarq.inline.RichSegment` but emits Word runs (`<w:r>`) instead of
+Emits Word runs (`<w:r>`) instead of
 PDF drawing ops. `python-docx` owns line-breaking and justification; we only
 build the run list.
 """
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from .constants import Defaults
 from .utils import color_hex, rgb255
 
-#---------------------------------------------------------------------------------- RichSegment
+#-------------------------------------------------------------------------------------- RichSegment
 
 @dataclass
 class RichSegment:
@@ -37,7 +37,7 @@ class RichSegment:
   superscript: bool = False # raise as superscript (footnote refs)
   subscript: bool = False # lower as subscript
 
-#------------------------------------------------------------------------------- Run rendering
+#------------------------------------------------------------------------------------ Run rendering
 
 def _apply_run_format(
   run, seg:RichSegment, default_family:str, default_size:float,

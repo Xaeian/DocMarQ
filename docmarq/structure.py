@@ -3,7 +3,7 @@
 """Document structure - metadata, bookmarks, hyperlinks."""
 from dataclasses import dataclass
 
-#------------------------------------------------------------------------------------- Metadata
+#----------------------------------------------------------------------------------------- Metadata
 
 @dataclass
 class Metadata:
@@ -25,7 +25,7 @@ class Metadata:
     if self.comments: cp.comments = self.comments
     if self.category: cp.category = self.category
 
-#------------------------------------------------------------------------------------- Bookmark
+#----------------------------------------------------------------------------------------- Bookmark
 
 @dataclass
 class Bookmark:

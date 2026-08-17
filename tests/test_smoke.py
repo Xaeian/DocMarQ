@@ -5,7 +5,7 @@
 from conftest import assert_valid_docx
 from docmarq import DOCX, Align, Styles
 
-#--------------------------------------------------------------------------------- DOCX basic
+#--------------------------------------------------------------------------------------- DOCX basic
 
 def docx_empty_produces_valid_file(tmp_path):
   path = tmp_path / "empty.docx"
@@ -70,7 +70,7 @@ def docx_metadata(tmp_path):
     doc.para("body")
   assert_valid_docx(path)
 
-#------------------------------------------------------------------------------------- Styles
+#------------------------------------------------------------------------------------------- Styles
 
 def style_presets_are_independent_copies():
   # each access must yield a fresh Style so users can't mutate shared state

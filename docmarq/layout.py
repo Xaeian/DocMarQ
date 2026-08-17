@@ -3,7 +3,7 @@
 """Page geometry - section configuration mirroring Word's section model."""
 from dataclasses import dataclass
 
-#--------------------------------------------------------------------------------- PageGeometry
+#------------------------------------------------------------------------------------- PageGeometry
 
 @dataclass
 class PageGeometry:

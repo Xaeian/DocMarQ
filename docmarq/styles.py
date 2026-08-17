@@ -4,7 +4,7 @@
 from dataclasses import dataclass, fields, replace
 from .constants import Defaults, Align
 
-#---------------------------------------------------------------------------------------- Style
+#-------------------------------------------------------------------------------------------- Style
 
 @dataclass
 class Style:
@@ -67,11 +67,11 @@ class Style:
     valid = {k: v for k, v in overrides.items() if k in {f.name for f in fields(self)}}
     return replace(self, **valid)
 
-#----------------------------------------------------------------------------------- TableStyle
+#--------------------------------------------------------------------------------------- TableStyle
 
 @dataclass
 class TableStyle:
-  """Table-specific styling. Defaults match `pdfmarq` GitHub-light palette -
+  """Table-specific styling. Defaults are the GitHub-light palette -
   light grey header, near-imperceptible zebra, light grey borders.
 
   Cell padding is split into `top`/`bot`/`h` (horizontal). Defaults are
@@ -97,7 +97,7 @@ class TableStyle:
   # an explicit float to override.
   font_size: float|None = None
 
-#-------------------------------------------------------------------------------------- Presets
+#------------------------------------------------------------------------------------------ Presets
 
 class _Preset:
   """Descriptor returning a fresh `Style` per access - prevents shared mutation."""

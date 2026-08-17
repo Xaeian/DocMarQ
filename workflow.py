@@ -21,7 +21,7 @@ from toml import get_meta
 
 p = Print()
 
-#------------------------------------------------------------------------------------- Analysis
+#----------------------------------------------------------------------------------------- Analysis
 
 def has_svglib(root:str) -> bool:
   """Check if `svglib` is in `pyproject.toml` dependencies."""
@@ -30,7 +30,7 @@ def has_svglib(root:str) -> bool:
   try: return "svglib" in FILE.load(toml)
   except Exception: return False
 
-#------------------------------------------------------------------------------------- Generate
+#----------------------------------------------------------------------------------------- Generate
 
 def generate_workflow(meta:dict, cairo:bool=False) -> str:
   """Generate publish.yml content."""
@@ -62,7 +62,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 '''
 
-#--------------------------------------------------------------------------------------- Public
+#------------------------------------------------------------------------------------------- Public
 
 def generate(package:str, output:str|None=None):
   """Generate GitHub Actions workflow for given package.
@@ -89,7 +89,7 @@ def generate(package:str, output:str|None=None):
   FILE.save(out, workflow)
   p.ok(f"Generated {c.GREY}{PATH.dirname(out)}/{c.END}{c.ORANGE}{PATH.basename(out)}{c.END}")
 
-#------------------------------------------------------------------------------------------ CLI
+#---------------------------------------------------------------------------------------------- CLI
 
 EXAMPLES = """
 examples:

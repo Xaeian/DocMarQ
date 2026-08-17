@@ -179,6 +179,7 @@ Styles.CODE      # font_family="Consolas", font_size=10
 
 ```py
 from docmarq.md import md_to_docx, MarkdownStyle, lang_style
+from docmarq import A4
 
 md_to_docx(open("doc.md").read(), "doc.docx")
 # With localization preset
@@ -186,8 +187,8 @@ style = lang_style("pl", footnote_label="Bibliografia")
 md_to_docx(text, "doc.docx", style=style)
 # Relative image paths resolved against base_dir
 md_to_docx(text, "doc.docx", base_dir="./assets")
-# Landscape via YAML frontmatter `render.landscape: true` or explicit kwarg
-md_to_docx(text, "doc.docx", landscape=True)
+# Landscape, or any preset, via `page=`
+md_to_docx(text, "doc.docx", page=A4.landscape())
 ```
 
 Supported markdown: headings, paragraphs, lists, tables, code blocks,

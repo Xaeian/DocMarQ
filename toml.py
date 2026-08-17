@@ -24,7 +24,7 @@ from xaeian import FILE, DIR, PATH, Print, Color as c
 
 p = Print()
 
-#--------------------------------------------------------------------------- Import-to-PyPI map
+#------------------------------------------------------------------------------- Import-to-PyPI map
 
 IMPORT_MAP = {
   "PIL": "Pillow",
@@ -52,7 +52,7 @@ IMPORT_MAP = {
   "fitz": "PyMuPDF",
 }
 
-#------------------------------------------------------------------------------------ Internals
+#---------------------------------------------------------------------------------------- Internals
 
 def _parse_extras(node) -> dict[str, list[str]]:
   """Extract extras from AST node value (tuple or dict)."""
@@ -88,7 +88,7 @@ def _top_level(name:str) -> str:
   """Extract top-level module from dotted import name."""
   return name.split(".")[0]
 
-#------------------------------------------------------------------------------------- Analysis
+#----------------------------------------------------------------------------------------- Analysis
 
 def scan_package(pkg_dir:str) -> tuple[set[str], set[str]]:
   """Return (modules, subpackages) present in package."""
@@ -223,7 +223,7 @@ def get_meta(pkg_dir:str) -> dict:
         }
   return meta
 
-#------------------------------------------------------------------------------------- Generate
+#----------------------------------------------------------------------------------------- Generate
 
 def generate_toml(
   pkg_name:str, meta:dict,
@@ -283,7 +283,7 @@ def generate_toml(
   lines.append('')
   return "\n".join(lines)
 
-#-------------------------------------------------------------------------------------- Logging
+#------------------------------------------------------------------------------------------ Logging
 
 def _log_summary(
   pkg_name:str, meta:dict,
@@ -308,7 +308,7 @@ def _log_summary(
     for cmd, entry in meta["scripts"].items():
       p.item(f"Script: {c.TURQUS}{cmd}{c.END} → {c.GREY}{entry}{c.END}")
 
-#--------------------------------------------------------------------------------------- Public
+#------------------------------------------------------------------------------------------- Public
 
 def generate(package:str, output:str|None=None, auto_deps:bool=False):
   """Generate pyproject.toml for given package directory.
@@ -344,7 +344,7 @@ def generate(package:str, output:str|None=None, auto_deps:bool=False):
   FILE.save(out, toml)
   p.ok(f"Generated {c.GREY}{PATH.dirname(out)}/{c.END}{c.ORANGE}{PATH.basename(out)}{c.END}")
 
-#------------------------------------------------------------------------------------------ CLI
+#---------------------------------------------------------------------------------------------- CLI
 
 EXAMPLES = """
 examples:

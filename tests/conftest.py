@@ -9,7 +9,7 @@ def pytest_pycollect_makeitem(collector, name, obj):
   if inspect.isfunction(obj) and obj.__module__ != collector.obj.__name__:
     return [] # ignore library functions imported into the test file
 
-#----------------------------------------------------------------------------------- Assertions
+#--------------------------------------------------------------------------------------- Assertions
 
 def assert_valid_docx(path:str|Path, min_size:int=2000):
   """Validate that `path` points to a real-looking DOCX file (ZIP magic `PK\\x03\\x04`)."""

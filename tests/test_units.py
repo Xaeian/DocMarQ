@@ -9,7 +9,7 @@ from docmarq.utils import (
 )
 from docmarq.constants import Align
 
-#--------------------------------------------------------------------------------------- Units
+#-------------------------------------------------------------------------------------------- Units
 
 @pytest.mark.parametrize("value, unit, expected", [
   (10, "mm", 10),
@@ -31,7 +31,7 @@ def pt_to_emu_point_is_12700():
   # 1 pt = 12700 EMU
   assert pt_to_emu(1) == 12700
 
-#-------------------------------------------------------------------------------------- Colors
+#------------------------------------------------------------------------------------------- Colors
 
 def parse_color_returns_floats():
   # regression: previously returned ints 0-255. Canonical form is now floats
@@ -69,7 +69,7 @@ def rgb255_from_hex():
 def color_hex_normalizes_to_uppercase(value, expected):
   assert color_hex(value) == expected
 
-#-------------------------------------------------------------------------------------- Margin
+#------------------------------------------------------------------------------------------- Margin
 
 @pytest.mark.parametrize("value, expected", [
   (10, (10, 10, 10, 10)),            # scalar
@@ -80,7 +80,7 @@ def color_hex_normalizes_to_uppercase(value, expected):
 def parse_margin_css_forms(value, expected):
   assert parse_margin(value) == expected
 
-#------------------------------------------------------------------------------------- Helpers
+#------------------------------------------------------------------------------------------ Helpers
 
 @pytest.mark.parametrize("body, expected", [
   (11, 10),
@@ -103,7 +103,7 @@ def smaller_size_clamps_to_floor():
 def tight_line_height_by_size(size, expected):
   assert tight_line_height(size) == expected
 
-#-------------------------------------------------------------------------------------- Align
+#-------------------------------------------------------------------------------------------- Align
 
 @pytest.mark.parametrize("attr, code", [
   ("LEFT", "L"),

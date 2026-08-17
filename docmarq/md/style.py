@@ -1,16 +1,16 @@
 # docmarq/md/style.py
 
-"""Markdown-rendering style. Mirrors `pdfmarq.MarkdownStyle` semantics but
+"""Markdown-rendering style,
 trimmed - Word handles layout/sizing itself so we don't need height/size
 fields, just color palette, fonts, and a few format toggles."""
 from dataclasses import dataclass, field
 
-#---------------------------------------------------------------------- Callout palette default
+#-------------------------------------------------------------------------- Callout palette default
 
 def _default_callout_colors() -> dict:
   """GitHub-style callout colors per type (border, text/icon).
   Each entry: lowercase type → `(border_rgb, text_rgb)` in 0..1 range.
-  Mirrors `pdfmarq.md.markdown_style._default_callout_colors`."""
+  """
   return {
     "note": ((0.035, 0.41, 0.855), (0.035, 0.41, 0.855)),  # blue
     "tip": ((0.12, 0.53, 0.24), (0.12, 0.53, 0.24)),  # green
@@ -19,7 +19,7 @@ def _default_callout_colors() -> dict:
     "caution": ((0.81, 0.13, 0.18), (0.81, 0.13, 0.18)),  # red
   }
 
-#------------------------------------------------------------------ Status badge palette default
+#--------------------------------------------------------------------- Status badge palette default
 
 def _default_status_colors() -> dict:
   """Status badge colors `(bg, text)` keyed by lowercase status name."""
@@ -31,7 +31,7 @@ def _default_status_colors() -> dict:
     "archived": ((0.92, 0.87, 0.96), (0.45, 0.25, 0.55)),
   }
 
-#-------------------------------------------------------------------------------- MarkdownStyle
+#------------------------------------------------------------------------------------ MarkdownStyle
 
 @dataclass
 class MarkdownStyle:
@@ -41,20 +41,23 @@ class MarkdownStyle:
   # don't need to install anything. Calibri is the canonical Office body
   # font; Consolas is its companion monospace.
   body_family: str = "Calibri"
-  head_family: str|None = None # `None` = heading inherits `body_family`
+  head_family: str = "Calibri"
   mono_family: str = "Consolas"
+
+  # Body size in pt.
+  body_size: float = 11
 
   # Body line-height multiplier. 1.0 = Word's "Single" rule, which renders
   # ~1.2x font size due to Calibri's internal leading - tight without being
-  # cramped. Headings have their own line spacing via Word's built-in
-  # Heading styles (see `core.py` `tight_line_height`).
+  # cramped. A renderer without paragraph spacing needs 1.4 for the same result, having no
+  # such built-in leading; the two defaults are intentionally different.
   line_height: float = 1.0
 
-  # Paragraph gap in pt (Word `space_after`). 8pt ≈ pdfmarq's 3mm body gap,
-  # so PDF and DOCX share the same vertical rhythm.
-  para_gap_pt: float = 8
+  # Paragraph gap in mm. Converted to Word's
+  # pt-based `space_after` at apply time.
+  para_gap: float = 3
 
-  #---------------------------------------------------------------------------------- Math
+  #------------------------------------------------------------------------------------------- Math
 
   # Math formulas (`$...$`, `$$...$$`) render as native Word equations (OMML)
   # - editable, selectable, scalable. Constructs outside the supported LaTeX
@@ -66,7 +69,7 @@ class MarkdownStyle:
   # fallback formula blends with the native ones around it.
   math_fontset: str = "stix"
 
-  #------------------------------------------------------------------------------- Mermaid
+  #---------------------------------------------------------------------------------------- Mermaid
 
   # Mermaid fenced blocks (```mermaid) render through the `mmdc` CLI to a
   # PNG and get embedded as a regular figure. When `mmdc` is missing or
@@ -78,7 +81,7 @@ class MarkdownStyle:
   mermaid_scale: float = 3 # oversampling factor; matches `pdfmarq` for shared cache
   mermaid_cli: str = "mmdc" # CLI binary name / path
 
-  # Colors (rgb 0-1) - mirror `pdfmarq` GitHub-light palette
+  # Colors (rgb 0-1) - GitHub-light palette
   body_color: tuple = (0.09, 0.11, 0.13) # #1f2328
   muted_color: tuple = (0.40, 0.44, 0.50) # for blockquote text
   link_color: tuple = (0.03, 0.41, 0.85) # #0969da
@@ -94,7 +97,7 @@ class MarkdownStyle:
   image_max_h: float = 120 # cap block image height
   inline_image_max_h: float = 5.5 # cap inline image height (~2ex @ 11pt)
 
-  # Local-link handling (see `pdfmarq` for the rationale).
+  # Local-link handling.
   # `[x](file.md)` with no schema gets resolved to `{link_root}/{link_base}/file.md`
   # when `link_root` is set. Without it, the text is rendered but not linked.
   link_root: str|None = None
@@ -110,7 +113,7 @@ class MarkdownStyle:
   # Callout palette (border + text colors per type)
   callout_colors: dict = field(default_factory=_default_callout_colors)
 
-  #---------------------------------------------------------------------------- Page chrome
+  #------------------------------------------------------------------------------------ Page chrome
 
   # Footer page numbering. `None` disables the footer entirely.
   page_number_label: str|None = "Page"
@@ -120,10 +123,13 @@ class MarkdownStyle:
   # document id (if frontmatter has one) or short title fragment.
   mini_banner_render: bool = True
 
-  #------------------------------------------------------------------- First-page banner
+  #------------------------------------------------------------------------------ First-page banner
 
   # Rendered as document content on page 1 when frontmatter is present.
   banner_render: bool = True
+  # Drop a leading `# title` duplicating the frontmatter title. Only applies
+  # when the banner rendered that title, otherwise the document loses its head.
+  skip_dup_title: bool = True
   banner_title_size: float = 20 # pt
   banner_meta_size: float = 9 # pt
   banner_status_colors: dict = field(default_factory=_default_status_colors)
@@ -132,10 +138,18 @@ class MarkdownStyle:
   banner_label_created: str = "Created"
   banner_label_updated: str = "Updated"
 
-  #------------------------------------------------------------------------- Footnotes
+  #-------------------------------------------------------------------------------------- Signature
+
+  # Signature line at the end of the document. Independent of `banner_render`.
+  sign_render: bool = False
+  banner_label_signature: str = "Signature"
+  banner_sign_w: float = 70 # mm
+  banner_sign_size: float = 9 # pt
+
+  #-------------------------------------------------------------------------------------- Footnotes
 
   # Footnote section heading. `None` (default) emits just a thin HR above
   # the bibliography - the smaller font signals reference matter. Set to a
   # string (e.g. `"References"`, `"Bibliografia"`) to add an H2 heading
-  # above the footnotes. Mirrors `pdfmarq.MarkdownStyle.footnote_label`.
+  # above the footnotes.
   footnote_label: str|None = None

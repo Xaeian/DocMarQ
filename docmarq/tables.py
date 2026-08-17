@@ -2,13 +2,13 @@
 
 """Table rendering helpers.
 
-Word handles column auto-layout itself - unlike `pdfmarq` we don't have to
+Word handles column auto-layout itself, so we don't have to
 solve column widths or text fitting. This module covers what Word doesn't
 hand us: zebra striping, header shading, border styling, cell padding.
 """
 from .utils import color_hex
 
-#-------------------------------------------------------------------------------- Border helpers
+#----------------------------------------------------------------------------------- Border helpers
 
 _BORDER_SIDES = ("top", "left", "bottom", "right", "insideH", "insideV")
 
@@ -97,7 +97,7 @@ def repeat_header_row(row):
   hdr.set(qn("w:val"), "true")
   tr_pr.append(hdr)
 
-#--------------------------------------------------------------------------- Cell margins / align
+#----------------------------------------------------------------------------- Cell margins / align
 
 # OOXML cell margins use `dxa` = twentieths of a point. 1 mm = 1440/25.4 dxa.
 _DXA_PER_MM = 1440 / 25.4

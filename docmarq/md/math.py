@@ -16,8 +16,7 @@ Two layers:
   2. `render_math_png` - a matplotlib (mathtext) raster fallback used when
      the converter hits a construct outside the supported subset. The
      formula is embedded as a picture so the document never shows raw
-     LaTeX. Mirrors `pdfmarq.md.math` so the same source degrades the same
-     way across the two libraries.
+     LaTeX.
 
 The converter raises `MathConversionError` for anything it can't represent;
 the renderer catches it and routes that single formula through the image
@@ -35,14 +34,14 @@ import re as _re
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-#----------------------------------------------------------------------------- Errors
+#------------------------------------------------------------------------------------------- Errors
 
 class MathConversionError(Exception):
   """Raised when a LaTeX construct falls outside the supported OMML subset.
   The renderer catches this and falls back to an image render of the whole
   formula, so callers never see raw LaTeX in the output."""
 
-#----------------------------------------------------------------------------- Symbol tables
+#------------------------------------------------------------------------------------ Symbol tables
 
 # LaTeX command → unicode glyph. Covers Greek, relations, operators, arrows,
 # set theory and the punctuation/dots that show up in real markdown math.
@@ -175,7 +174,7 @@ MATRIX_ENVS: dict[str, tuple[str|None, str|None]] = {
   "alignat": (None, None), "split": (None, None), "gathered": (None, None),
 }
 
-#----------------------------------------------------------------------------- OMML helpers
+#------------------------------------------------------------------------------------- OMML helpers
 
 def _el(tag:str, **attrs) -> "OxmlElement":
   """Create an OMML/WML element; attrs are `m:val`-style (namespace `m`)."""
@@ -245,7 +244,7 @@ class _Build:
       box.append(n)
     return box
 
-#----------------------------------------------------------------------------- Tokenizer
+#---------------------------------------------------------------------------------------- Tokenizer
 
 def _tokenize(src:str) -> list[str]:
   """Split LaTeX math source into tokens: commands (`\\frac`, `\\,`), the
@@ -290,7 +289,7 @@ def _tokenize(src:str) -> list[str]:
       i += 1
   return tokens
 
-#----------------------------------------------------------------------------- Parser
+#------------------------------------------------------------------------------------------- Parser
 
 class _Parser:
   """Recursive-descent LaTeX-math → OMML converter.
@@ -311,7 +310,7 @@ class _Parser:
     self.display = display
     self.depth = 0
 
-  #--------------------------------------------------------------- token cursor
+  #----------------------------------------------------------------------------------- token cursor
 
   # `" "` tokens are insignificant in math mode - the cursor transparently
   # skips them so parsing never sees whitespace. Text mode reads them back
@@ -339,7 +338,7 @@ class _Parser:
       raise MathConversionError(f"expected {tok!r}, got {self._peek()!r}")
     self._next()
 
-  #--------------------------------------------------------------- sequences
+  #-------------------------------------------------------------------------------------- sequences
 
   def parse_sequence(self, stops:set[str]) -> list:
     """Parse nodes until a stop token (not consumed) or EOF."""
@@ -400,7 +399,7 @@ class _Parser:
       node.append(self.b.wrap("m:sup", sup))
     return [node]
 
-  #--------------------------------------------------------------- atoms
+  #------------------------------------------------------------------------------------------ atoms
 
   def parse_atom(self) -> list:
     """Parse a single base atom (no scripts). Returns a node list so a
@@ -442,7 +441,7 @@ class _Parser:
       ch = "−"  # proper minus sign
     return self.b.run(ch)
 
-  #--------------------------------------------------------------- commands
+  #--------------------------------------------------------------------------------------- commands
 
   def _parse_command(self, cmd:str) -> list:
     name = cmd[1:]
@@ -450,8 +449,8 @@ class _Parser:
     if cmd in DELIMS and name not in SYMBOLS:
       # bare \{ \} \| \langle etc. used outside \left → literal glyph
       if cmd in ("\\{", "\\}", "\\|", "\\langle", "\\rangle", "\\vert", "\\Vert",
-                 "\\lvert", "\\rvert", "\\lVert", "\\rVert",
-                 "\\lfloor", "\\rfloor", "\\lceil", "\\rceil", "\\backslash"):
+        "\\lvert", "\\rvert", "\\lVert", "\\rVert",
+        "\\lfloor", "\\rfloor", "\\lceil", "\\rceil", "\\backslash"):
         return [self.b.run(DELIMS[cmd])]
     if name in SPACES:
       glyph = SPACES[name]
@@ -492,7 +491,7 @@ class _Parser:
       raise MathConversionError(f"stray \\{name}")
     raise MathConversionError(f"unsupported command \\{name}")
 
-  #--------------------------------------------------------------- structures
+  #------------------------------------------------------------------------------------- structures
 
   def _parse_frac(self, bar:bool):
     num = self.parse_atom()
@@ -620,7 +619,7 @@ class _Parser:
     d.append(self.b.wrap("m:e", nodes))
     return d
 
-  #--------------------------------------------------------------- big operators
+  #---------------------------------------------------------------------------------- big operators
 
   def _parse_nary(self, name:str):
     self._next()  # consume the operator command
@@ -702,7 +701,7 @@ class _Parser:
       box.append(n)
     return box
 
-  #--------------------------------------------------------------- environments
+  #----------------------------------------------------------------------------------- environments
 
   def _parse_environment(self):
     env = self._read_env_name()
@@ -806,7 +805,7 @@ class _Parser:
       return mat
     return self._delimit(beg or "", end or "", [mat])
 
-  #--------------------------------------------------------------- text helpers
+  #----------------------------------------------------------------------------------- text helpers
 
   def _grab_group_tokens(self) -> list[str]:
     """Consume a `{...}` (or a single token) and return its inner tokens."""
@@ -878,7 +877,7 @@ class _Parser:
         out.append(t)
     return "".join(out)
 
-#----------------------------------------------------------------------------- post-processing
+#---------------------------------------------------------------------------------- post-processing
 
 def _restyle_runs(nodes:list, sty:str|None, scr:str|None):
   """Apply a font style/script to every `<m:r>` descendant in `nodes`.
@@ -970,7 +969,7 @@ def _split_rows(tokens:list[str]) -> list[list[list[str]]]:
   rows = [r for r in rows if any(cell for cell in r)]
   return rows
 
-#----------------------------------------------------------------------------- Public API
+#--------------------------------------------------------------------------------------- Public API
 
 def latex_to_omath(latex:str, size_halfpt:int|None=None,
     color_hex:str|None=None, display:bool=False) -> "OxmlElement":
@@ -1020,7 +1019,7 @@ def build_omath_para(latex:str, size_halfpt:int|None=None,
   para.append(omath)
   return para
 
-#----------------------------------------------------------------------------- Image fallback
+#----------------------------------------------------------------------------------- Image fallback
 
 _BIG_DELIM_RE = _re.compile(r"\\(?:bigg?|Bigg?)[lrm]?\s*")
 _CANCEL_RE = _re.compile(r"\\(?:cancel|bcancel|xcancel)\s*")
@@ -1045,7 +1044,7 @@ def render_math_png(latex:str, fontsize_pt:float=11,
   Returns `(BytesIO, width_mm, height_mm, baseline_from_bottom_mm)` or
   `None` when matplotlib is unavailable or the formula fails to parse.
   The baseline offset lets the caller drop an inline picture so its math
-  baseline sits on the text baseline. Mirrors `pdfmarq.md.math`.
+  baseline sits on the text baseline.
   """
   try:
     import matplotlib

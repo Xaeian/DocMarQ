@@ -10,7 +10,7 @@ import io
 import os
 from dataclasses import dataclass
 
-#----------------------------------------------------------------------------- Preprocess
+#--------------------------------------------------------------------------------------- Preprocess
 
 def _svg_to_png_buffer(path:str):
   """Rasterize SVG to PNG bytes in a `BytesIO`. Returns `None` for a broken SVG.
@@ -73,7 +73,7 @@ def preprocess_to_buffer(path:str):
   except (OSError, ValueError):
     return None
 
-#----------------------------------------------------------------------------- Scaling
+#------------------------------------------------------------------------------------------ Scaling
 
 def compute_target_dims(nat_w:int, nat_h:int, content_w_mm:float,
     max_h_mm:float) -> tuple[float|None, float]:
@@ -81,7 +81,7 @@ def compute_target_dims(nat_w:int, nat_h:int, content_w_mm:float,
 
   Fits to `content_w_mm` unless the resulting height would exceed
   `max_h_mm`, in which case scales by height instead so the image never
-  blows the page. Mirrors `pdfmarq`'s figure scaling rule.
+  blows the page.
   """
   if nat_w <= 0 or nat_h <= 0:
     return (None, max_h_mm)
@@ -121,13 +121,13 @@ def scale_dims_for_buffer(buf, content_w_mm:float,
     return (None, max_h_mm)
   return compute_target_dims(nat_w, nat_h, content_w_mm, max_h_mm)
 
-#-------------------------------------------------------------------------------- Title DSL
+#---------------------------------------------------------------------------------------- Title DSL
 
 @dataclass
 class ImageDSL:
   """Parsed `![alt](src "key=value ...")` title DSL.
 
-  Mirrors `pdfmarq.md.md_images.ImageDSL` field-for-field so the same
+  Field-for-field the image DSL, so the same
   source markdown produces consistent sizing intent in both pipelines.
   """
   exact_w_mm: float|None = None
@@ -252,7 +252,7 @@ def _clamp(w:float, h:float, max_w:float, max_h:float) -> tuple[float, float]:
   s = min(sw, sh)
   return w * s, h * s
 
-#----------------------------------------------------------------------- Path resolution
+#---------------------------------------------------------------------------------- Path resolution
 
 def resolve_path(src:str, base_dir:str) -> str|None:
   """Resolve image `src` against `base_dir`. Absolute paths returned as-is.

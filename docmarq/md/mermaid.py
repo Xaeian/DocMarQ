@@ -14,8 +14,8 @@ first one that succeeds:
   3. `None` - both failed; caller falls back to a code block.
 
 Output is always PNG since python-docx can't embed SVG. Results are cached
-to `~/.cache/marq/mermaid/{hash}.png` (shared with `pdfmarq`) keyed on
-source + theme + bg + scale so re-renders are instant across both libs.
+to `~/.cache/marq/mermaid/{hash}.png`, keyed on source + theme + bg + scale,
+so a diagram is rendered once per distinct look.
 """
 import base64
 import hashlib
@@ -27,10 +27,10 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-#-------------------------------------------------------------------------------------- Cache
+#-------------------------------------------------------------------------------------------- Cache
 
-# Shared between pdfmarq and docmarq - identical diagrams render once
-# regardless of which output format triggers the build first.
+# Shared location; a hit lands only when source, theme, background and scale
+# all match, so a different scale is a different entry.
 _CACHE_DIR = Path.home() / ".cache" / "marq" / "mermaid"
 
 def _cache_key(source:str, theme:str, background:str, scale:float,
@@ -40,7 +40,7 @@ def _cache_key(source:str, theme:str, background:str, scale:float,
   payload = f"{source}\x00{theme}\x00{background}\x00{scale}\x00{font_family}".encode("utf-8")
   return hashlib.sha1(payload).hexdigest()[:16]
 
-#-------------------------------------------------------------------------------------- Font CSS
+#----------------------------------------------------------------------------------------- Font CSS
 
 def _resolve_font_ttf(font_dir:str, family:str) -> Path|None:
   """Find `<family>-Regular.ttf` under `font_dir`."""
@@ -66,7 +66,7 @@ def _cache_path(key:str) -> Path:
   _CACHE_DIR.mkdir(parents=True, exist_ok=True)
   return _CACHE_DIR / f"{key}.png"
 
-#-------------------------------------------------------------------------------------- API
+#---------------------------------------------------------------------------------------------- API
 
 def compile_to_png(source:str, cli:str="mmdc", theme:str="default",
     background:str="transparent", scale:float=2.0,
@@ -94,7 +94,7 @@ def compile_to_png(source:str, cli:str="mmdc", theme:str="default",
     return str(cached)
   return None
 
-#------------------------------------------------------------------------ Backend: mermaid-cli
+#----------------------------------------------------------------------------- Backend: mermaid-cli
 
 def _try_mmdc(source:str, out_path:Path, *, cli:str, theme:str,
     background:str, scale:float, timeout:float,
@@ -102,8 +102,8 @@ def _try_mmdc(source:str, out_path:Path, *, cli:str, theme:str,
   """Local mmdc subprocess. Returns `True` on success.
   When `font_family`+`font_dir` are set and a matching TTF is found, a
   temp CSS file with `@font-face` is injected via `--cssFile`."""
-  if shutil.which(cli) is None:
-    return False
+  mmdc = shutil.which(cli)
+  if mmdc is None: return False
   try:
     with tempfile.NamedTemporaryFile("w", suffix=".mmd", delete=False,
         encoding="utf-8") as f:
@@ -112,7 +112,7 @@ def _try_mmdc(source:str, out_path:Path, *, cli:str, theme:str,
   except OSError:
     return False
   css_path = None
-  cmd = [cli, "-i", src_path, "-o", str(out_path),
+  cmd = [mmdc, "-i", src_path, "-o", str(out_path),
     "-t", theme, "-b", background, "-s", str(scale)]
   # Puppeteer config (custom Chrome path, sandbox flags, etc.).
   # Both vars are checked: XAEIAN_MMDC_PUPPETEER_CONFIG is the pdfmarq name;
@@ -149,7 +149,7 @@ def _try_mmdc(source:str, out_path:Path, *, cli:str, theme:str,
     return False
   return True
 
-#------------------------------------------------------------------------ Backend: mermaid.ink
+#----------------------------------------------------------------------------- Backend: mermaid.ink
 
 def _try_mermaid_ink(source:str, out_path:Path, *, theme:str,
     background:str) -> bool:
@@ -176,7 +176,7 @@ def _try_mermaid_ink(source:str, out_path:Path, *, theme:str,
       print(f"[docmarq.mermaid] mermaid.ink failed: {e}")
     return False
 
-#-------------------------------------------------------------------------------------- Helpers
+#------------------------------------------------------------------------------------------ Helpers
 
 def _safe_remove(path):
   """`os.remove` that swallows missing-file errors."""

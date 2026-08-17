@@ -18,12 +18,13 @@ from markdown_it.token import Token
 from mdit_py_plugins.footnote import footnote_plugin
 from docx.shared import Pt, RGBColor
 from ..core import DOCX
-from ..constants import Align
+from ..constants import Align, PageSize, A4
+from ..utils import mm_to_pt
 from .style import MarkdownStyle
 from .tokens import get_attr, find_close, CALLOUT_RE
 from . import slug, image_utils, mermaid
 
-#--------------------------------------------------------------------------- Frontmatter helpers
+#------------------------------------------------------------------------------ Frontmatter helpers
 
 def strip_frontmatter(text:str) -> tuple[dict|None, str]:
   """Detect and strip YAML frontmatter at the start of the document.
@@ -60,19 +61,21 @@ def strip_frontmatter(text:str) -> tuple[dict|None, str]:
     )
     return None, remainder
   try:
-    data = yaml.safe_load(yaml_block) or {}
+    data = yaml.safe_load(yaml_block)
   except Exception:
-    data = None
-  return data, remainder
+    return None, remainder
+  # A YAML list or scalar parses fine but is not frontmatter; callers do
+  # `fm.get(...)`, so anything but a mapping has to read as absent.
+  return (data if isinstance(data, dict) else None), remainder
 
 def peek_frontmatter(text:str) -> dict|None:
-  """Return parsed frontmatter without consuming it. Useful for early
-  metadata inspection (e.g. `landscape:` flag) before constructing the
-  document. Symmetric with `pdfmarq.md.peek_frontmatter`."""
+  """Return parsed frontmatter without consuming it, or `None` when there is
+  none. Public so a caller can read a document's content keys and decide how to
+  render it."""
   fm, _ = strip_frontmatter(text)
   return fm
 
-#----------------------------------------------------------------------------- MarkdownRenderer
+#--------------------------------------------------------------------------------- MarkdownRenderer
 
 class MarkdownRenderer:
   """Render a `markdown-it` token stream onto a `DOCX` instance.
@@ -92,7 +95,7 @@ class MarkdownRenderer:
       font_dir: Optional TTF root. When set, mermaid diagrams render with
         `style.body_family` instead of the system default sans-serif
         (matches the rest of the document). Layout: `<font_dir>/<family>/
-        <family>-Regular.ttf` (mirrors `pdfmarq.FontManager`).
+        <family>-Regular.ttf`.
     """
     self.doc = doc
     self.style = style or MarkdownStyle()
@@ -123,34 +126,41 @@ class MarkdownRenderer:
     # dangling Word hyperlinks.
     self._known_slugs: set[str] = set()
 
-  #-------------------------------------------------------------------------------- Entry point
+  #------------------------------------------------------------------------------------ Entry point
 
   def render(self, md_text:str):
-    """Parse markdown and emit it as DOCX content. Strips YAML frontmatter
-    if present; recognized metadata keys auto-fill `doc.metadata()`. When
-    frontmatter is present and `style.banner_render` is on, renders a
-    first-page banner (title, status, author, dates) before body content.
+    """Parse markdown and emit it as DOCX content. Strips YAML frontmatter,
+    which is content only - the banner, mini-banner and signature block each
+    read it, but every visual decision comes from `style`.
     """
     fm, md_text = self._strip_frontmatter(md_text)
-    if fm:
-      self._apply_frontmatter_metadata(fm)
     self._apply_chrome(fm)
     # Body typography applied once; caller may override via `doc.style(...)`.
     self.doc.style(
       line_height=self.style.line_height,
-      space_after=self.style.para_gap_pt,
+      space_after=mm_to_pt(self.style.para_gap),
       code_family=self.style.mono_family,
       code_color=self.style.code_inline_color,
       code_bg=self.style.code_inline_bg,
     )
+    banner_title = None
     if fm and self.style.banner_render:
       self._render_banner(fm)
+      banner_title = fm.get("title")
     tokens = self._md.parse(md_text)
+    # Only when the banner actually printed the title, otherwise the document
+    # would lose its heading entirely.
+    if self.style.skip_dup_title and banner_title:
+      tokens = _skip_matching_h1(tokens, str(banner_title))
     # Pre-scan so `link_open` can validate `#anchor` hrefs before rendering.
+    # After the drop, so a link to the removed title is an unknown anchor like
+    # any other instead of a bookmark that never gets emitted.
     self._known_slugs = slug.collect_heading_slugs(tokens)
     self._render_tokens(tokens)
+    if self.style.sign_render:
+      self._render_signature_block()
 
-  #----------------------------------------------------------------------------- Page chrome
+  #------------------------------------------------------------------------------------ Page chrome
 
   def _apply_chrome(self, fm:dict|None):
     """Set up footer (page numbers, every page) and continuation header
@@ -209,7 +219,7 @@ class MarkdownRenderer:
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _inject_page_fields(p, template)
 
-  #----------------------------------------------------------------------- First-page banner
+  #------------------------------------------------------------------------------ First-page banner
 
   def _render_banner(self, fm:dict):
     """Draw a paper-style first-page masthead from YAML frontmatter.
@@ -217,7 +227,7 @@ class MarkdownRenderer:
     Two layouts:
       - With `logo: file.png` in frontmatter → 1×2 borderless table, logo
         on the left, title/status/author/dates on the right.
-      - Without logo → single-column flow _(simpler, matches pdfmarq when
+      - Without logo → single-column flow _(simpler when
         no logo is supplied)_.
 
     The horizontal rule separating banner from body is always emitted.
@@ -232,7 +242,7 @@ class MarkdownRenderer:
   def _resolve_logo_path(self, logo) -> str|None:
     """Resolve `logo:` to a local file path. `None` if unset, remote, or
     missing (banner falls back to flow layout). Missing-but-set warns so
-    typos don't silently drop the logo. Mirrors `pdfmarq` (twin libs)."""
+    typos don't silently drop the logo."""
     if not logo:
       return None
     path = image_utils.resolve_path(str(logo), self.base_dir)
@@ -356,6 +366,19 @@ class MarkdownRenderer:
       add_run: `add_run(text, bold, color, bg, size)` adds styled run.
     """
     s = self.style
+    # Issuing organization first. Word has no
+    # cheap left/right pair here, so both sit on one line with the same
+    # separator the identifier row uses.
+    entity = fm.get("entity")
+    address = fm.get("address")
+    if entity or address:
+      new_para(space_after=1)
+      if entity:
+        add_run(str(entity), bold=True, size=s.banner_meta_size)
+        if address:
+          add_run("  •  ", color=s.muted_color, size=s.banner_meta_size)
+      if address:
+        add_run(str(address), size=s.banner_meta_size, color=s.muted_color)
     title = fm.get("title")
     if title:
       # `EXACTLY` bypasses Calibri's ~1.2× internal leading so large title
@@ -398,6 +421,36 @@ class MarkdownRenderer:
       add_run("  •  ".join(parts),
         size=s.banner_meta_size, color=s.muted_color)
 
+  #-------------------------------------------------------------------------------------- Signature
+
+  def _render_signature_block(self):
+    """Blank signing space, a rule, and a label, right-aligned at the very end.
+
+    The rule is a paragraph bottom border indented from the left, not a table:
+    Word spans paragraph borders across the text area minus indents, so a left
+    indent of `content_width - banner_sign_w` gives exactly the wanted width.
+    """
+    from docx.shared import Mm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from ..core import _set_pbdr
+    from ..utils import color_hex, rgb255
+    s = self.style
+    indent = max(0, self.doc._page.content_width - s.banner_sign_w)
+    rule = self.doc._doc.add_paragraph()
+    pf = rule.paragraph_format
+    pf.left_indent = Mm(indent)
+    pf.space_before = Pt(mm_to_pt(25)) # room for a handwritten signature
+    pf.space_after = Pt(0)
+    _set_pbdr(rule._element, color_hex(s.muted_color), sides=("bottom",))
+    label = self.doc._doc.add_paragraph()
+    label.paragraph_format.left_indent = Mm(indent)
+    label.paragraph_format.space_before = Pt(1)
+    label.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = label.add_run(s.banner_label_signature)
+    run.italic = True
+    run.font.size = Pt(s.banner_sign_size)
+    run.font.color.rgb = RGBColor(*rgb255(s.muted_color))
+
   def _format_date(self, value) -> str:
     """Format a frontmatter date value using `style.date_format`. Accepts
     `datetime.date`/`datetime.datetime` (parsed by PyYAML) or raw strings."""
@@ -412,25 +465,7 @@ class MarkdownRenderer:
     """Detect and strip YAML frontmatter at the start of the document."""
     return strip_frontmatter(text)
 
-  def _apply_frontmatter_metadata(self, fm:dict):
-    """Push recognized YAML keys into `doc.metadata()`. Unknown keys silently
-    ignored; banner rendering is handled separately."""
-    meta = {}
-    for yaml_key, meta_key in (("title", "title"), ("author", "author"),
-        ("subject", "subject")):
-      v = fm.get(yaml_key)
-      if v is not None:
-        meta[meta_key] = str(v)
-    kw = fm.get("keywords")
-    if kw is not None:
-      if isinstance(kw, (list, tuple)):
-        meta["keywords"] = ", ".join(str(k) for k in kw)
-      else:
-        meta["keywords"] = str(kw)
-    if meta:
-      self.doc.metadata(**meta)
-
-  #--------------------------------------------------------------------------------- Directives
+  #------------------------------------------------------------------------------------- Directives
 
   def _find_group_close(self, tokens:list[Token], start:int) -> int:
     """Find index of matching `<!-- /group -->` for the open at `start`.
@@ -475,7 +510,7 @@ class MarkdownRenderer:
     for p in added[:-1]:
       p.paragraph_format.keep_with_next = True
 
-  #---------------------------------------------------------------------------- Block dispatch
+  #--------------------------------------------------------------------------------- Block dispatch
 
   def _render_tokens(self, tokens:list[Token]):
     i = 0
@@ -545,7 +580,7 @@ class MarkdownRenderer:
       else:
         i += 1
 
-  #-------------------------------------------------------------------------------- Headings
+  #--------------------------------------------------------------------------------------- Headings
 
   def _render_heading(self, inline_token:Token, level:int):
     """Emit a heading. Bold/italic/strike pass through; font family/size/color
@@ -593,7 +628,7 @@ class MarkdownRenderer:
       elif ct == "softbreak": p.add_run(" ")
       elif ct == "hardbreak": p.add_run("\n")
 
-  #-------------------------------------------------------------------------------- Paragraph
+  #-------------------------------------------------------------------------------------- Paragraph
 
   def _render_paragraph(self, inline_token:Token):
     """Emit a regular body paragraph and stream styled runs into it."""
@@ -675,7 +710,7 @@ class MarkdownRenderer:
       return f"{root}/{base}/{href}" if base else f"{root}/{href}"
     return None
 
-  #------------------------------------------------------------------------------------ Lists
+  #------------------------------------------------------------------------------------------ Lists
 
   def _render_list(self, tokens:list[Token], start:int, ordered:bool) -> int:
     open_type = "ordered_list_open" if ordered else "bullet_list_open"
@@ -721,7 +756,7 @@ class MarkdownRenderer:
       else:
         k += 1
 
-  #-------------------------------------------------------------------------------- Blockquote
+  #------------------------------------------------------------------------------------- Blockquote
 
   @staticmethod
   def _spacing_for(idx:int, total:int, before:float, after:float) -> tuple[float, float]:
@@ -850,7 +885,7 @@ class MarkdownRenderer:
     clone.attrs = inline_token.attrs
     return clone
 
-  #-------------------------------------------------------------------------------------- Math
+  #------------------------------------------------------------------------------------------- Math
 
   def _math_run_props(self) -> tuple[int, str]:
     """`(size_halfpt, color_hex)` for OMML runs matching body font size/color."""
@@ -908,7 +943,7 @@ class MarkdownRenderer:
     p._p.append(omath_para)
     self.doc._track_block_spacing(self.doc._style.space_after or 0)
 
-  #------------------------------------------------------------------------- Math image fallback
+  #---------------------------------------------------------------------------- Math image fallback
 
   def _append_inline_math_image(self, p, latex:str):
     """Render `latex` to a PNG and embed it inline in paragraph `p`, dropped
@@ -986,7 +1021,7 @@ class MarkdownRenderer:
         "image fallback: pip install docmarq[math]); rendering LaTeX as text")
     warnings.warn(msg, RuntimeWarning, stacklevel=2)
 
-  #------------------------------------------------------------------------------------ Images
+  #----------------------------------------------------------------------------------------- Images
 
   @staticmethod
   def _standalone_image_src(inline_token:Token) -> str|None:
@@ -1102,7 +1137,7 @@ class MarkdownRenderer:
     if a is not None:
       paragraphs[-1].alignment = a
 
-  #-------------------------------------------------------------------------------------- Mermaid
+  #---------------------------------------------------------------------------------------- Mermaid
 
   def _render_mermaid(self, source:str, info_rest:str=""):
     """Render mermaid via `mmdc` (or `mermaid.ink`) to PNG and embed.
@@ -1183,7 +1218,7 @@ class MarkdownRenderer:
         else:
           inline.insert(0, eff)
 
-  #------------------------------------------------------------------------------- Footnote block
+  #--------------------------------------------------------------------------------- Footnote block
 
   def _render_footnote_block(self, tokens:list[Token], start:int) -> int:
     """Render the footnote bibliography section appended by markdown-it.
@@ -1241,7 +1276,7 @@ class MarkdownRenderer:
       else:
         k += 1
 
-  #------------------------------------------------------------------------------------ Table
+  #------------------------------------------------------------------------------------------ Table
 
   def _render_table(self, tokens:list[Token], start:int) -> int:
     end = find_close(tokens, start, "table_open", "table_close")
@@ -1282,7 +1317,7 @@ class MarkdownRenderer:
     )
     return end + 1
 
-  #------------------------------------------------------------------------------ Helpers
+  #---------------------------------------------------------------------------------------- Helpers
 
   @staticmethod
   def _inline_to_plain(inline_token:Token) -> str:
@@ -1294,76 +1329,94 @@ class MarkdownRenderer:
       elif c.type == "math_inline":
         # Tables take plain strings; preserve LaTeX in `$...$` notation.
         parts.append(f"${c.content}$")
+      elif c.type == "image":
+        # A cell holds a string, so the picture cannot travel. Its alt text
+        # does, which keeps the cell from silently coming out empty.
+        alt = (c.content or "").strip()
+        parts.append(alt or "[image]")
       elif c.type == "softbreak": parts.append(" ")
       elif c.type == "hardbreak": parts.append("\n")
     return "".join(parts)
 
-#---------------------------------------------------------------------------------- md_to_docx
+#------------------------------------------------------------------------------------------ Helpers
+
+def _metadata_from_frontmatter(fm:dict) -> dict:
+  """Map YAML keys to `DOCX.metadata()` kwargs. Keys absent in `fm` are skipped."""
+  out: dict = {}
+  for yaml_key, meta_key in (("title", "title"), ("author", "author"), ("subject", "subject")):
+    val = fm.get(yaml_key)
+    if val is not None:
+      out[meta_key] = str(val)
+  kw = fm.get("keywords")
+  if kw is not None:
+    if isinstance(kw, (list, tuple)):
+      out["keywords"] = ", ".join(str(k) for k in kw)
+    else:
+      out["keywords"] = str(kw)
+  return out
+
+def _skip_matching_h1(tokens:list[Token], title:str) -> list[Token]:
+  """Drop first 3 tokens if they are `# <title>` matching the frontmatter title."""
+  if len(tokens) < 3: return tokens
+  t0, t1, t2 = tokens[0], tokens[1], tokens[2]
+  if (t0.type == "heading_open" and t0.tag == "h1"
+      and t1.type == "inline" and t2.type == "heading_close"
+      and (t1.content or "").strip() == title.strip()):
+    return tokens[3:]
+  return tokens
+
+#--------------------------------------------------------------------------------------- md_to_docx
 
 def md_to_docx(
   md_text: str,
   output_path: str,
+  *,
   style: MarkdownStyle|None = None,
-  width: float|None = None,
-  height: float|None = None,
-  margin: float|tuple|None = None,
-  metadata: dict|None = None,
-  landscape: bool|None = None,
+  page: PageSize = A4,
+  margin: float|tuple = 20,
+  gutter: float = 0,
   base_dir: str|None = None,
   font_dir: str|None = None,
+  metadata: dict|None = None,
 ) -> DOCX:
   """Convert markdown text to a `.docx` file.
 
-  YAML frontmatter `render:` sub-block controls page geometry, fonts,
-  chrome, and locale. See `docmarq.md.render.RenderConfig`.
+  Presentation comes from the caller, content from the document. `style` is
+  used verbatim - no layering, so a caller can set any value, including one
+  equal to a `MarkdownStyle()` default.
 
-  Precedence: `MarkdownStyle()` defaults < `render.lang` preset < other
-  `render:` keys < caller's `style=` non-default fields.
+  Frontmatter is read for content only: `title`/`author`/`subject`/`keywords`
+  seed the core properties (`metadata=` overrides per key), the rest feeds the
+  banner.
+
+  Keyword-only after `output_path`, so the parameter order cannot silently
+  diverge from `md_to_pdf`.
 
   Args:
-    md_text: Markdown source.
-    output_path: Destination `.docx` path.
-    style: Optional `MarkdownStyle`. `None` uses GitHub-light defaults.
-    width / height: Page dimensions in mm. `None` (default) reads
-      `render.page` from frontmatter, falling back to A4.
-    margin: Page margins in mm. `None` (default) reads `render.margin`,
-      falling back to 20.
-    metadata: Optional `dict` passed to `DOCX.metadata()`.
-    landscape: Flip page. `None` (default) reads `render.landscape`.
-      Top-level `landscape:` is no longer honored (warns).
-    base_dir: Root for resolving relative image paths. `None` uses cwd.
-    font_dir: Optional TTF root for mermaid diagram font sync. When set,
-      diagrams render in `style.body_family` instead of system default.
+    page: `PageSize` in mm. `page_size("a3")` resolves a preset name,
+      `A4.landscape()` flips it, `PageSize(200, 250)` is a custom sheet.
+    margin: mm, scalar or CSS-order 1-4 sequence.
+    gutter: binding margin in mm - Word's native gutter, which mirrors on
+      duplex.
+    base_dir: root for relative image paths. `None` uses cwd.
+    font_dir: TTF root for mermaid diagram font sync. When set, diagrams
+      render in `style.body_family` instead of the system default.
   """
-  from .render import (
-    parse_render_block, build_style, warn_top_level_landscape,
+  eff_style = style or MarkdownStyle()
+  doc = DOCX(
+    output_path, width=page.width, height=page.height,
+    margin=margin, gutter=gutter,
+    body_family=eff_style.body_family, head_family=eff_style.head_family,
+    body_size=eff_style.body_size,
   )
+  # Frontmatter first, caller second, so an explicit `metadata=` wins per key
+  # exactly as it does in `md_to_pdf`.
   fm = peek_frontmatter(md_text)
-  warn_top_level_landscape(fm)
-  render = parse_render_block(fm)
-  if width is None:
-    width = render.page.width if render.page else 210
-  if height is None:
-    height = render.page.height if render.page else 297
-  if margin is None:
-    margin = render.margin if render.margin is not None else 20
-  if landscape is None:
-    landscape = bool(render.landscape)
-  if landscape:
-    width, height = height, width
-  eff_style = build_style(fm, style, render)
-  doc = DOCX(output_path, width=width, height=height, margin=margin,
-    gutter=render.gutter or 0)
-  # Render-block typography that doesn't live on `MarkdownStyle` is applied
-  # via the fluent doc API instead. Word picks these up for subsequent runs.
-  # Typography from render block that isn't on MarkdownStyle goes via doc API.
-  if render.font_size is not None:
-    doc.font(size=render.font_size)
-  if render.line_height is not None:
-    doc.style(line_height=render.line_height)
+  meta = _metadata_from_frontmatter(fm) if fm else {}
   if metadata:
-    doc.metadata(**metadata)
-  renderer = MarkdownRenderer(doc, eff_style, base_dir=base_dir, font_dir=font_dir)
-  renderer.render(md_text)
+    meta.update(metadata)
+  if meta:
+    doc.metadata(**meta)
+  MarkdownRenderer(doc, eff_style, base_dir=base_dir, font_dir=font_dir).render(md_text)
   doc.save()
   return doc

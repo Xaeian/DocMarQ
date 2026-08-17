@@ -12,7 +12,7 @@ Each preset is a dict of fields applied to a fresh `MarkdownStyle` via
 
 from .style import MarkdownStyle
 
-#---------------------------------------------------------------------------------- Presets
+#------------------------------------------------------------------------------------------ Presets
 
 # `en` keeps the `MarkdownStyle` defaults - empty preset is intentional.
 LANG_PRESETS:dict[str, dict] = {
@@ -23,6 +23,7 @@ LANG_PRESETS:dict[str, dict] = {
     "banner_label_author": "Autor",
     "banner_label_created": "Utworzono",
     "banner_label_updated": "Zaktualizowano",
+    "banner_label_signature": "Podpis",
     "callout_label_note": "Notatka",
     "callout_label_tip": "Wskazówka",
     "callout_label_important": "Ważne",
@@ -35,6 +36,7 @@ LANG_PRESETS:dict[str, dict] = {
     "banner_label_author": "Autor",
     "banner_label_created": "Erstellt",
     "banner_label_updated": "Aktualisiert",
+    "banner_label_signature": "Unterschrift",
     "callout_label_note": "Hinweis",
     "callout_label_tip": "Tipp",
     "callout_label_important": "Wichtig",
@@ -47,6 +49,7 @@ LANG_PRESETS:dict[str, dict] = {
     "banner_label_author": "Auteur",
     "banner_label_created": "Créé",
     "banner_label_updated": "Mis à jour",
+    "banner_label_signature": "Signature",
     "callout_label_note": "Note",
     "callout_label_tip": "Astuce",
     "callout_label_important": "Important",
@@ -59,6 +62,7 @@ LANG_PRESETS:dict[str, dict] = {
     "banner_label_author": "Autor",
     "banner_label_created": "Creado",
     "banner_label_updated": "Actualizado",
+    "banner_label_signature": "Firma",
     "callout_label_note": "Nota",
     "callout_label_tip": "Consejo",
     "callout_label_important": "Importante",
@@ -71,6 +75,7 @@ LANG_PRESETS:dict[str, dict] = {
     "banner_label_author": "Autore",
     "banner_label_created": "Creato",
     "banner_label_updated": "Aggiornato",
+    "banner_label_signature": "Firma",
     "callout_label_note": "Nota",
     "callout_label_tip": "Suggerimento",
     "callout_label_important": "Importante",
@@ -83,6 +88,7 @@ LANG_PRESETS:dict[str, dict] = {
     "banner_label_author": "Autor",
     "banner_label_created": "Vytvořeno",
     "banner_label_updated": "Aktualizováno",
+    "banner_label_signature": "Podpis",
     "callout_label_note": "Poznámka",
     "callout_label_tip": "Tip",
     "callout_label_important": "Důležité",
@@ -95,6 +101,7 @@ LANG_PRESETS:dict[str, dict] = {
     "banner_label_author": "Autor",
     "banner_label_created": "Vytvorené",
     "banner_label_updated": "Aktualizované",
+    "banner_label_signature": "Podpis",
     "callout_label_note": "Poznámka",
     "callout_label_tip": "Tip",
     "callout_label_important": "Dôležité",
@@ -103,7 +110,7 @@ LANG_PRESETS:dict[str, dict] = {
   },
 }
 
-#---------------------------------------------------------------------------------- Builder
+#------------------------------------------------------------------------------------------ Builder
 
 def lang_style(lang:str, **overrides) -> MarkdownStyle:
   """Build a `MarkdownStyle` from a language preset + caller overrides.

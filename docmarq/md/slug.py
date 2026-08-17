@@ -10,7 +10,7 @@ instead of producing dangling jumps.
 import urllib.parse
 from markdown_it.token import Token
 
-#-------------------------------------------------------------------------------------- Slugify
+#------------------------------------------------------------------------------------------ Slugify
 
 def slugify_inline(inline_token:Token) -> str:
   """GitHub-style slug from an inline token's children. Lower-case, spaces
@@ -46,7 +46,7 @@ def collect_heading_slugs(tokens:list[Token]) -> set[str]:
         slugs.add(slug)
   return slugs
 
-#----------------------------------------------------------------------------- Anchor lookup
+#------------------------------------------------------------------------------------ Anchor lookup
 
 def resolve_anchor(href:str, known:set[str]) -> str|None:
   """Map a `#slug` href to a known heading bookmark name. Returns the slug
