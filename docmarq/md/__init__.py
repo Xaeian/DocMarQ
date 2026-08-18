@@ -6,7 +6,7 @@ a larger document. Requires the `md` extra."""
 
 #----------------------------------------------------------------------------- Extras for auto-toml
 
-__extras__ = ("md", ["markdown-it-py", "mdit-py-plugins", "PyYAML", "svglib", "rlPyCairo"])
+__extras__ = ("md", ["markdown-it-py", "mdit-py-plugins", "PyYAML"])
 
 #--------------------------------------------------------------------------------------- Public API
 

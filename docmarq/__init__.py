@@ -17,17 +17,17 @@ Example:
 
 #--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __repo__ = "Xaeian/docmarq"
 __python__ = ">=3.10"
 __description__ = "DOCX generation library with fluent API"
 __author__ = "Xaeian"
 __keywords__ = ["docx", "word", "ooxml", "document", "generation"]
-__dependencies__ = ["python-docx"]
+__dependencies__ = ["python-docx", "svglib", "rlPyCairo", "Pillow"]
 # pip-name → import-name mapping. `python-docx` is the pip package but
 # the import is `import docx`; the hint surfaces in dependency diagnostics
 # so users debugging `No module named 'docx'` see the right install command.
-__import_names__ = {"python-docx": "docx"}
+__import_names__ = {"python-docx": "docx", "Pillow": "PIL"}
 
 #--------------------------------------------------------------------------------------- Public API
 

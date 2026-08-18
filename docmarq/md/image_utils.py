@@ -10,26 +10,34 @@ import io
 import os
 from dataclasses import dataclass
 
+SVG_TARGET_PX = 2400  # longest raster side for SVG → PNG (~360 DPI at A4 content width)
+
 #--------------------------------------------------------------------------------------- Preprocess
 
 def _svg_to_png_buffer(path:str):
   """Rasterize SVG to PNG bytes in a `BytesIO`. Returns `None` for a broken SVG.
 
-  python-docx has no native SVG support, so we go SVG → reportlab `Drawing`
-  → PNG via `renderPM` (rlPyCairo backend). DPI of 192 (~2x screen) keeps
-  the raster crisp when Word scales it inside the page width.
+  python-docx has no native SVG support: SVG → reportlab `Drawing` → PNG via
+  `renderPM`. Scaled to `SVG_TARGET_PX` so small-viewBox files stay sharp
+  at page width.
   """
   try:
     import rlPyCairo  # renderPM loads its backend lazily - check here, fail fast
     from svglib.svglib import svg2rlg
     from reportlab.graphics import renderPM
   except ImportError:
-    raise ImportError("Install with: pip install docmarq[md]")
+    raise ImportError("Install with: pip install svglib rlPyCairo")
   try:
     drawing = svg2rlg(path)
     if drawing is None:
       return None
-    png_bytes = renderPM.drawToString(drawing, fmt="PNG", dpi=192)
+    longest = max(drawing.width, drawing.height)
+    if longest > 0:
+      s = SVG_TARGET_PX / longest
+      drawing.scale(s, s)
+      drawing.width *= s
+      drawing.height *= s
+    png_bytes = renderPM.drawToString(drawing, fmt="PNG")
   except Exception:
     return None
   return io.BytesIO(png_bytes)

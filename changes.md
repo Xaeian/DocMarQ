@@ -1,5 +1,10 @@
 # Changes `docmarq`
 
+## `0.3.1` Sharp SVG
+
+- SVG → PNG at higher resolution
+- `svglib`, `rlPyCairo`, `Pillow` as core deps
+
 ## `0.3.0` Caller-owned styling
 
 - Breaking: `render:` block dropped, `page=A4` replaces `width` / `height` / `landscape`, `para_gap_pt` → `para_gap`

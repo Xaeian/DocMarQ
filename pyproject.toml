@@ -4,19 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docmarq"
-version = "0.3.0"
+version = "0.3.1"
 description = "DOCX generation library with fluent API"
 readme = "readme.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [{name = "Xaeian"}]
 keywords = ["docx", "word", "ooxml", "document", "generation"]
-dependencies = ["python-docx"]
+dependencies = ["python-docx", "svglib", "rlPyCairo", "Pillow"]
 
 [project.optional-dependencies]
 math = ["matplotlib"]
-md = ["PyYAML", "markdown-it-py", "mdit-py-plugins", "rlPyCairo", "svglib"]
-all = ["PyYAML", "markdown-it-py", "matplotlib", "mdit-py-plugins", "rlPyCairo", "svglib"]
+md = ["PyYAML", "markdown-it-py", "mdit-py-plugins"]
+all = ["PyYAML", "markdown-it-py", "matplotlib", "mdit-py-plugins"]
 
 [project.urls]
 Repository = "https://github.com/Xaeian/docmarq"
