@@ -31,6 +31,16 @@ def _default_status_colors() -> dict:
     "archived": ((0.92, 0.87, 0.96), (0.45, 0.25, 0.55)),
   }
 
+#------------------------------------------------------------------------------ Sign labels default
+
+def _default_sign_labels() -> dict:
+  """Standard signing scenarios: name → one label per line."""
+  return {
+    "signature": ["Signature"],
+    "approval": ["Prepared by", "Approved by"],
+    "contract": ["Client", "Contractor"],
+  }
+
 #------------------------------------------------------------------------------------ MarkdownStyle
 
 @dataclass
@@ -40,9 +50,9 @@ class MarkdownStyle:
   # Fonts - both ship with Windows out of the box (Vista+) so Word users
   # don't need to install anything. Calibri is the canonical Office body
   # font; Consolas is its companion monospace.
-  body_family: str = "Calibri"
-  head_family: str = "Calibri"
-  mono_family: str = "Consolas"
+  font_body: str = "Calibri"
+  font_head: str = "Calibri"
+  font_mono: str = "Consolas"
 
   # Body size in pt.
   body_size: float = 11
@@ -120,12 +130,12 @@ class MarkdownStyle:
 
   # Mini-banner on continuation pages (page 2+). Word header gets the
   # document id (if frontmatter has one) or short title fragment.
-  mini_banner_render: bool = True
+  banner_compact: bool = True
 
   #------------------------------------------------------------------------------ First-page banner
 
   # Rendered as document content on page 1 when frontmatter is present.
-  banner_render: bool = True
+  banner: bool = True
   # Drop a leading `# title` duplicating the frontmatter title. Only applies
   # when the banner rendered that title, otherwise the document loses its head.
   skip_dup_title: bool = True
@@ -139,11 +149,13 @@ class MarkdownStyle:
 
   #-------------------------------------------------------------------------------------- Signature
 
-  # Signature line at the end of the document. Independent of `banner_render`.
-  sign_render: bool = False
-  banner_label_signature: str = "Signature"
-  banner_sign_w: float = 70 # mm
-  banner_sign_size: float = 9 # pt
+  # Signing lines at the very end, independent of `banner`. `True` or a
+  # `sign_labels` scenario draws its labels; a list draws custom ones verbatim.
+  sign: bool|str|list = False
+  sign_labels: dict = field(default_factory=_default_sign_labels)
+  sign_gap: float = 25 # mm - blank space above the line, for the handwriting
+  sign_w: float = 70 # mm - width of one line
+  sign_size: float = 9 # pt - label
 
   #-------------------------------------------------------------------------------------- Footnotes
 
@@ -152,3 +164,10 @@ class MarkdownStyle:
   # string (e.g. `"References"`, `"Bibliografia"`) to add an H2 heading
   # above the footnotes.
   footnote_label: str|None = None
+
+  def sign_lines(self) -> list[str]:
+    """Labels to draw: a scenario from `sign_labels`, or a list verbatim."""
+    if not self.sign: return []
+    if isinstance(self.sign, (list, tuple)): return [str(x) for x in self.sign]
+    key = "signature" if self.sign is True else str(self.sign).lower()
+    return list(self.sign_labels.get(key, [str(self.sign)]))

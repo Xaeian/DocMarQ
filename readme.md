@@ -47,8 +47,8 @@ with DOCX("report.docx") as doc:
 from docmarq.md import md_to_docx, MarkdownStyle
 # Markdown to DOCX
 style = MarkdownStyle(
-  body_family="Calibri",
-  mono_family="Consolas",
+  font_body="Calibri",
+  font_mono="Consolas",
   line_height=1.4,
 )
 md_to_docx(open("doc.md").read(), "doc.docx", style=style)

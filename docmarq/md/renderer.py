@@ -93,7 +93,7 @@ class MarkdownRenderer:
       base_dir: Root for resolving relative image paths
         (e.g. `![alt](./img/x.png)`). Defaults to current working dir.
       font_dir: Optional TTF root. When set, mermaid diagrams render with
-        `style.body_family` instead of the system default sans-serif
+        `style.font_body` instead of the system default sans-serif
         (matches the rest of the document). Layout: `<font_dir>/<family>/
         <family>-Regular.ttf`.
     """
@@ -130,7 +130,7 @@ class MarkdownRenderer:
 
   def render(self, md_text:str):
     """Parse markdown and emit it as DOCX content. Strips YAML frontmatter,
-    which is content only - the banner, mini-banner and signature block each
+    which is content only - the banner, compact banner and signature block each
     read it, but every visual decision comes from `style`.
     """
     fm, md_text = self._strip_frontmatter(md_text)
@@ -139,12 +139,12 @@ class MarkdownRenderer:
     self.doc.style(
       line_height=self.style.line_height,
       space_after=mm_to_pt(self.style.para_gap),
-      code_family=self.style.mono_family,
+      code_family=self.style.font_mono,
       code_color=self.style.code_inline_color,
       code_bg=self.style.code_inline_bg,
     )
     banner_title = None
-    if fm and self.style.banner_render:
+    if fm and self.style.banner:
       self._render_banner(fm)
       banner_title = fm.get("title")
     tokens = self._md.parse(md_text)
@@ -156,7 +156,7 @@ class MarkdownRenderer:
     # unknown anchor like any other.
     self._known_slugs = slug.collect_heading_slugs(tokens)
     self._render_tokens(tokens)
-    if self.style.sign_render:
+    if self.style.sign:
       self._render_signature_block()
 
   #------------------------------------------------------------------------------------ Page chrome
@@ -177,13 +177,13 @@ class MarkdownRenderer:
       if s.page_number_total:
         footer_template += " / {pages}"
     head_text = None  # id wins over title for the continuation header
-    if s.mini_banner_render and fm:
+    if s.banner_compact and fm:
       head_text = fm.get("id") or fm.get("title")
       if head_text:
         head_text = str(head_text)
     # Split first/default only when the banner occupies page 1 - keeps
     # the continuation header off the banner page.
-    use_different_first = bool(fm and s.banner_render and head_text)
+    use_different_first = bool(fm and s.banner and head_text)
     if use_different_first:
       sec.different_first_page_header_footer = True
       sec.first_page_header.paragraphs[0].text = ""  # banner is the masthead
@@ -423,31 +423,55 @@ class MarkdownRenderer:
   #-------------------------------------------------------------------------------------- Signature
 
   def _render_signature_block(self):
-    """Blank signing space, a rule, and a label, right-aligned at the very end.
+    """Signing lines at the very end.
 
-    The rule is a paragraph bottom border indented from the left, not a table:
-    Word spans paragraph borders across the text area minus indents, so a left
-    indent of `content_width - banner_sign_w` gives exactly the wanted width.
+    One is a paragraph bottom border: Word spans it across the text area minus
+    indents, so a left indent of `content_width - sign_w` gives exactly the
+    wanted width. Several span margin to margin as a borderless table of line
+    columns separated by spacer columns.
     """
+    s = self.style
+    labels = s.sign_lines()
+    content_w = self.doc._page.content_width
+    doc = self.doc._doc
+    n = len(labels)
+    if n == 1:
+      self._sign_column(doc.add_paragraph(), doc.add_paragraph(), labels[0],
+        max(0, content_w - s.sign_w))
+      return
+    from ..tables import remove_table_borders, set_cell_margins
+    from ..core import _set_table_widths
+    line_w = min(s.sign_w, content_w / n - 6)  # keeps at least 6mm between lines
+    gap = (content_w - n * line_w) / (n - 1)
+    widths = [line_w if i % 2 == 0 else gap for i in range(2 * n - 1)]
+    tbl = doc.add_table(rows=1, cols=len(widths))
+    _set_table_widths(tbl, widths)
+    remove_table_borders(tbl)
+    cells = tbl.rows[0].cells
+    for cell in cells:
+      set_cell_margins(cell, top=0, right=0, bot=0, left=0)
+    for i, label in enumerate(labels):
+      cell = cells[2 * i]
+      self._sign_column(cell.paragraphs[0], cell.add_paragraph(), label, 0)
+
+  def _sign_column(self, rule, caption, label:str, indent:float):
+    """One signing column: blank space, a bottom rule, an italic label under it."""
     from docx.shared import Mm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from ..core import _set_pbdr
     from ..utils import color_hex, rgb255
     s = self.style
-    indent = max(0, self.doc._page.content_width - s.banner_sign_w)
-    rule = self.doc._doc.add_paragraph()
     pf = rule.paragraph_format
     pf.left_indent = Mm(indent)
-    pf.space_before = Pt(mm_to_pt(25)) # room for a handwritten signature
+    pf.space_before = Pt(mm_to_pt(s.sign_gap)) # room for a handwritten signature
     pf.space_after = Pt(0)
     _set_pbdr(rule._element, color_hex(s.muted_color), sides=("bottom",))
-    label = self.doc._doc.add_paragraph()
-    label.paragraph_format.left_indent = Mm(indent)
-    label.paragraph_format.space_before = Pt(1)
-    label.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = label.add_run(s.banner_label_signature)
+    caption.paragraph_format.left_indent = Mm(indent)
+    caption.paragraph_format.space_before = Pt(1)
+    caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = caption.add_run(label)
     run.italic = True
-    run.font.size = Pt(s.banner_sign_size)
+    run.font.size = Pt(s.sign_size)
     run.font.color.rgb = RGBColor(*rgb255(s.muted_color))
 
   def _format_date(self, value) -> str:
@@ -543,7 +567,7 @@ class MarkdownRenderer:
             language=lang,
             bg_color=self.style.code_block_bg,
             border_color=self.style.code_block_border,
-            font_family=self.style.mono_family,
+            font_family=self.style.font_mono,
           )
         i += 1
       elif tt == "math_block":
@@ -596,20 +620,20 @@ class MarkdownRenderer:
 
   def _add_runs_to_heading(self, p, inline_token:Token):
     """Walk inline children and add runs to a Heading paragraph. Inherits
-    size/color from the Heading style; overrides font when `head_family` set."""
+    size/color from the Heading style; overrides font when `font_head` set."""
     state = {"bold": False, "italic": False, "strike": False}
-    head_family = self.style.head_family
+    font_head = self.style.font_head
     for c in (inline_token.children or []):
       ct = c.type
       if ct == "text":
         run = p.add_run(c.content)
-        if head_family: run.font.name = head_family
+        if font_head: run.font.name = font_head
         if state["bold"]: run.bold = True
         if state["italic"]: run.italic = True
         if state["strike"]: run.font.strike = True
       elif ct == "code_inline":
         run = p.add_run(c.content)
-        run.font.name = self.style.mono_family
+        run.font.name = self.style.font_mono
         if state["bold"]: run.bold = True
         if state["italic"]: run.italic = True
         if state["strike"]: run.font.strike = True
@@ -1148,7 +1172,7 @@ class MarkdownRenderer:
     png_path = mermaid.compile_to_png(source,
       cli=s.mermaid_cli, theme=s.mermaid_theme,
       background=s.mermaid_background, scale=s.mermaid_scale,
-      font_family=s.body_family, font_dir=self.font_dir,
+      font_family=s.font_body, font_dir=self.font_dir,
     )
     dsl = image_utils.parse_image_dsl(info_rest) if info_rest else None
     if png_path is None or not self._try_insert_image(png_path, dsl=dsl):
@@ -1162,7 +1186,7 @@ class MarkdownRenderer:
       language="mermaid",
       bg_color=self.style.code_block_bg,
       border_color=self.style.code_block_border,
-      font_family=self.style.mono_family,
+      font_family=self.style.font_mono,
     )
 
   def _insert_picture(self, src, width_mm:float|None, height_mm:float|None):
@@ -1398,13 +1422,13 @@ def md_to_docx(
       duplex.
     base_dir: root for relative image paths. `None` uses cwd.
     font_dir: TTF root for mermaid diagram font sync. When set, diagrams
-      render in `style.body_family` instead of the system default.
+      render in `style.font_body` instead of the system default.
   """
   eff_style = style or MarkdownStyle()
   doc = DOCX(
     output_path, width=page.width, height=page.height,
     margin=margin, gutter=gutter,
-    body_family=eff_style.body_family, head_family=eff_style.head_family,
+    font_body=eff_style.font_body, font_head=eff_style.font_head,
     body_size=eff_style.body_size,
   )
   # Frontmatter first, caller second, so an explicit `metadata=` wins per key

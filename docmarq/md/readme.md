@@ -50,7 +50,7 @@ logo: ./ranger-badge.svg
 
 DOCX core properties _(`/Title`, `/Author`, `/Subject`, `/Keywords`)_ auto-fill from matching YAML keys. Pass `metadata={...}` to `md_to_docx()` to override per-key.
 
-If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Only applies when the banner actually printed that title, so `banner_render=False` never costs you the heading.
+If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Only applies when the banner actually printed that title, so `banner=False` never costs you the heading.
 
 ## Presentation
 
@@ -61,14 +61,19 @@ from docmarq.md import md_to_docx, lang_style
 from docmarq.constants import A4, page_size
 
 style = lang_style("pl",  # banner/footer labels
-  body_family="Calibri", head_family="Calibri", mono_family="Consolas",
+  font_body="Calibri", font_head="Calibri", font_mono="Consolas",
   body_size=11, line_height=1.0, image_max_h=120,
-  banner_render=True, mini_banner_render=True, sign_render=True,
+  banner=True, banner_compact=True, sign="approval",
   mermaid_theme="default",
 )
 md_to_docx(md, "out.docx", style=style,
   page=A4, margin=25, gutter=0, base_dir=".", font_dir="./fonts")
 ```
+
+`sign` takes `True` for one line, a `sign_labels` scenario _(`signature`, `approval`,
+`contract`, localized by the language preset)_, or a list of custom labels drawn side
+by side, sharing the content width.
+
 
 `page` is a `PageSize` in mm: `A4`, `A4.landscape()`, `page_size("a3")` for a preset name (`A4`/`A3`/`A5`/`LETTER`/`LEGAL`, raises on anything else), or `PageSize(200, 250)` for a custom sheet.
 
@@ -81,7 +86,7 @@ Same field names, deliberately different values - do not "fix" these:
 | Field | pdfmarq | docmarq | Why |
 | --- | --- | --- | --- |
 | `line_height` | `1.4` | `1.0` | Word's "Single" already adds ~1.2× leading; pdfmarq has none |
-| `body_family` / `mono_family` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on the reader's machine |
+| `font_body` / `font_mono` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on the reader's machine |
 | `gutter` | folded into the left margin | Word's native gutter | Word mirrors it on duplex, a PDF margin cannot |
 | `math_fontset` | `stixsans` | `stix` | fallback formulas blend with Word's serif Cambria Math |
 | `syntax_theme` | Pygments style name | _absent_ | docmarq has no syntax highlighting, so it has no dead field for it |
@@ -134,11 +139,11 @@ Labels in the banner, footer, and callouts are style fields. Defaults are Englis
 
 ```py
 from docmarq.md import lang_style, md_to_docx
-style = lang_style("pl", body_family="Calibri")
+style = lang_style("pl", font_body="Calibri")
 md_to_docx(md_text, "out.docx", style=style)
 ```
 
-Built-in presets ship in `docmarq/md/presets.py` and cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`. Each preset configures `page_number_label`, `date_format`, banner labels _(author / created / updated / signature)_, and callout labels _(note / tip / important / warning / caution)_.
+Built-in presets ship in `docmarq/md/presets.py` and cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`. Each preset configures `page_number_label`, `date_format`, banner labels _(author / created / updated)_, signing scenarios _(`sign_labels`)_, and callout labels _(note / tip / important / warning / caution)_.
 
 For ad-hoc overrides without a preset, set fields directly:
 
@@ -239,7 +244,7 @@ with DOCX("out.docx") as doc:
   doc.font("Calibri", 28, "Bold").para("Title", align="C")
   doc.page_break()
   # Markdown body (no banner - we already have a custom cover)
-  MarkdownRenderer(doc, MarkdownStyle(banner_render=False)).render(open("body.md").read())
+  MarkdownRenderer(doc, MarkdownStyle(banner=False)).render(open("body.md").read())
 ```
 
 ## Math formulas

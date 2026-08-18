@@ -19,7 +19,7 @@ p = Print()
 
 LANG = "en" # en | pl | de | fr | es | it | cs | sk
 LINK_ROOT = "https://github.com/{owner}/docs/blob/main"
-FONTS = dict(body_family="Calibri", mono_family="Consolas")
+FONTS = dict(font_body="Calibri", font_mono="Consolas")
 
 #----------------------------------------------------------------------------------------- Renderer
 

@@ -154,7 +154,7 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
     `scale`          float multiplier on natural size (absolute priority)
     `align`          `L` / `C` / `R` block-level horizontal alignment
 
-  Title with no `=` token is treated as opaque (legacy "caption" titles).
+  Title with no `=` token is treated as opaque (a plain caption).
   Unknown keys / malformed values / non-positive numerics each warn once
   and the key is dropped; parsing never raises.
   """

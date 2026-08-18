@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docmarq"
-version = "0.3.1"
+version = "0.3.2"
 description = "DOCX generation library with fluent API"
 readme = "readme.md"
 license = {text = "MIT"}

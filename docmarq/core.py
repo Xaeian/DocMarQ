@@ -41,8 +41,8 @@ class DOCX:
     template: str|None = None,
     neutral_style: bool = True,
     gutter: float = 0,
-    body_family: str = Defaults.FONT_FAMILY,
-    head_family: str|None = None,
+    font_body: str = Defaults.FONT_FAMILY,
+    font_head: str|None = None,
     body_size: float = Defaults.FONT_SIZE,
   ):
     self.path = path
@@ -57,7 +57,7 @@ class DOCX:
     self._doc = Document(template) if template else Document()
     self._apply_section_geometry()
     self._style = Style().with_defaults()
-    self._style.font_family = body_family
+    self._style.font_family = font_body
     self._style.font_size = body_size
     self._metadata = Metadata()
     self._current_para = None       # open paragraph; runs append here
@@ -66,7 +66,7 @@ class DOCX:
     self._extra_block_after = 0     # pt - one-shot space_before bonus (see _track_block_spacing)
     self._bookmark_id = 0
     if neutral_style:
-      self._override_heading_styles(body_family, head_family or body_family)
+      self._override_heading_styles(font_body, font_head or font_body)
 
   #-------------------------------------------------------------------------------- Context manager
 
@@ -107,13 +107,13 @@ class DOCX:
 
   #--------------------------------------------------------------------------- Section / page setup
 
-  def _override_heading_styles(self, body_family:str, head_family:str):
+  def _override_heading_styles(self, font_body:str, font_head:str):
     """Recolor Word's built-in Heading 1..6 to the GitHub-light palette:
     near-black text, thin bottom rule on h1/h2.
     `font.color.rgb` pins the color so it holds regardless of the theme.
 
-    Families arrive as parameters so `MarkdownStyle.body_family` and
-    `head_family` reach Word's `Normal` and `Heading n` styles.
+    Families arrive as parameters so `MarkdownStyle.font_body` and
+    `font_head` reach Word's `Normal` and `Heading n` styles.
     """
     near_black = RGBColor(*rgb255(Defaults.HEAD_COLOR))
     rule_hex = color_hex(Defaults.RULE_COLOR)
@@ -128,10 +128,10 @@ class DOCX:
       st.font.color.rgb = near_black
       st.font.size = Pt(size_pt)
       st.font.bold = True
-      st.font.name = head_family
+      st.font.name = font_head
       # `st.font.name` sets only ascii/hAnsi and leaves the theme refs, which
       # resolve to Calibri Light; `_force_font` strips them so the body font wins.
-      _force_font(st, head_family)
+      _force_font(st, font_head)
       before_pt, after_pt = spacing_pt[i-1]
       st.paragraph_format.space_before = Pt(before_pt)
       st.paragraph_format.space_after = Pt(after_pt)
@@ -141,7 +141,7 @@ class DOCX:
         _set_pbdr(st.element, rule_hex, sides=("bottom",), size_eighths=4)
     # Pin `Normal` body font too, across all script ranges.
     try:
-      _force_font(self._doc.styles["Normal"], body_family)
+      _force_font(self._doc.styles["Normal"], font_body)
     except KeyError:
       pass
 

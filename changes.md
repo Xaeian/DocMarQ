@@ -1,5 +1,10 @@
 # Changes `docmarq`
 
+## `0.3.2` Naming
+
+- Style fields renamed: `font_body`, `banner`, `banner_compact`, `sign`
+- Sign scenarios from `sign_labels`
+
 ## `0.3.1` Sharp SVG
 
 - SVG → PNG at higher resolution
