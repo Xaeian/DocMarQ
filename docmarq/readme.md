@@ -110,7 +110,7 @@ doc.color((0.03, 0.41, 0.85))  # tuple 0-1
 from docmarq import parse_color, rgb255, color_hex
 parse_color("#1f2328")    # → (0.121, 0.137, 0.156) floats 0-1
 rgb255((0.03, 0.41, 0.85))    # → (8, 105, 217) ints for python-docx
-color_hex((0.03, 0.41, 0.85)) # → "0969D9" uppercase, no '#'
+color_hex((0.03, 0.41, 0.85)) # → "0869D9" uppercase, no '#'
 ```
 
 ## Images

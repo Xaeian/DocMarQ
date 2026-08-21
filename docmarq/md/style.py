@@ -81,10 +81,16 @@ class MarkdownStyle:
   #---------------------------------------------------------------------------------------- Mermaid
 
   # Mermaid fenced blocks (```mermaid) render through the `mmdc` CLI to a
-  # PNG and get embedded as a regular figure. When `mmdc` is missing or
-  # the diagram fails to compile, falls back to rendering the source as
-  # a regular code block so the document still produces output.
+  # PNG and get embedded as a regular figure. When `mmdc` is missing or the
+  # diagram fails to compile, the mermaid.ink HTTP service is tried next
+  # (see `mermaid_remote`), and only then does the source degrade to a
+  # regular code block. `mermaid_enable=False` skips straight to the code
+  # block without touching either backend.
   mermaid_enable: bool = True
+  # Allow the mermaid.ink fallback. It uploads the diagram source to a
+  # public third-party service and warns once per process; False keeps
+  # rendering strictly local.
+  mermaid_remote: bool = True
   mermaid_theme: str = "default" # mmdc theme: default / dark / forest / neutral
   mermaid_background: str = "transparent" # bg color; transparent matches page
   mermaid_scale: float = 3 # PNG oversampling factor
@@ -104,6 +110,8 @@ class MarkdownStyle:
 
   # Image sizing (mm)
   image_max_h: float = 120 # cap block image height
+  # Inert: inline images render as italic alt text, which no height cap
+  # applies to. Block figures answer to `image_max_h`.
   inline_image_max_h: float = 5.5 # cap inline image height (~2ex @ 11pt)
 
   # Local-link handling.

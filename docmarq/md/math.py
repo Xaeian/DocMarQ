@@ -88,7 +88,6 @@ SYMBOLS: dict[str, str] = {
   # dots
   "ldots": "…", "dots": "…", "cdots": "⋯", "vdots": "⋮", "ddots": "⋱",
   # named numbers / constants often used
-  "pi ": "π",
 }
 
 # Dots/spacing that just emit literal glyphs handled above; spacing commands:

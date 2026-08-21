@@ -89,6 +89,7 @@ Same field names, deliberately different values - do not "fix" these:
 | `font_body` / `font_mono` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on the reader's machine |
 | `gutter` | folded into the left margin | Word's native gutter | Word mirrors it on duplex, a PDF margin cannot |
 | `math_fontset` | `stixsans` | `stix` | fallback formulas blend with Word's serif Cambria Math |
+| `mermaid_remote` | - | `True` | allow the mermaid.ink fallback; `False` keeps diagram source on the machine |
 | `syntax_theme` | Pygments style name | _absent_ | docmarq has no syntax highlighting, so it has no dead field for it |
 
 ## Internal links
@@ -296,6 +297,9 @@ it, unconvertible formulas degrade to italic LaTeX source text.
 Installed by `pip install docmarq[md]`:
 - `markdown-it-py`, `mdit-py-plugins`: parser + GFM plugins
 - `PyYAML`: frontmatter
-- `mermaid-cli` via npm for ` ```mermaid ` blocks: `npm install -g @mermaid-js/mermaid-cli` _(System tool, **not on PyPI**)_. Falls back to `mermaid.ink` HTTP service when `mmdc` is absent but network is available.
+- `mermaid-cli` via npm for ` ```mermaid ` blocks: `npm install -g @mermaid-js/mermaid-cli` _(System tool, **not on PyPI**)_.
+  Without it the diagram source goes to the `mermaid.ink` HTTP service, which
+  warns once per process; `mermaid_remote=False` keeps it offline and renders a
+  code block instead.
 
-If a dep is missing, the feature silently degrades _(mermaid block renders as a regular code block)_.
+If a dep is missing, the feature degrades and says so _(mermaid block renders as a regular code block)_.

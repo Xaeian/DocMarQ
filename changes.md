@@ -1,5 +1,12 @@
 # Changes `docmarq`
 
+## `0.3.3` Numbering & lists
+
+- Ordered lists keep the author's numbering, `ordered(start=)`
+- SVG rasterizer moved to `docmarq.svg`, usable without markdown
+- `mermaid_remote=False` keeps diagram source off the network
+- Fix: paragraph properties in OOXML order, blocks inside list items
+
 ## `0.3.2` Naming
 
 - Style fields renamed: `font_body`, `banner`, `banner_compact`, `sign`

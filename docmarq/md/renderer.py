@@ -62,11 +62,19 @@ def strip_frontmatter(text:str) -> tuple[dict|None, str]:
     return None, remainder
   try:
     data = yaml.safe_load(yaml_block)
-  except Exception:
+  except Exception as e:
+    import warnings
+    warnings.warn(
+      f"invalid YAML frontmatter, block ignored: {e}",
+      RuntimeWarning, stacklevel=2,
+    )
     return None, remainder
-  # A YAML list or scalar parses fine but is not frontmatter; callers do
-  # `fm.get(...)`, so anything but a mapping has to read as absent.
-  return (data if isinstance(data, dict) else None), remainder
+  if not isinstance(data, dict):
+    # A YAML list or scalar parses fine but is not frontmatter: the opener
+    # is a horizontal rule and everything down to the next `---` is
+    # ordinary content, so the text is handed back whole.
+    return None, text
+  return data, remainder
 
 def peek_frontmatter(text:str) -> dict|None:
   """Return parsed frontmatter without consuming it, or `None` when there is
@@ -315,8 +323,13 @@ class MarkdownRenderer:
     try:
       run.add_picture(buf if buf is not None else logo_path, width=w_emu)
       self._pin_inline_picture_offsets(run)
-    except (OSError, ValueError, UnrecognizedImageError):
-      pass
+    except (OSError, ValueError, UnrecognizedImageError) as e:
+      import warnings
+      warnings.warn(
+        f"frontmatter logo {logo_path!r} could not be embedded, banner "
+        f"renders without it: {e}",
+        RuntimeWarning, stacklevel=2,
+      )
 
   def _fill_cell_banner_text(self, cell, fm:dict):
     """Banner-content adapter that writes into a table cell using
@@ -431,6 +444,7 @@ class MarkdownRenderer:
     columns separated by spacer columns.
     """
     s = self.style
+    self.doc._flush_para()
     labels = s.sign_lines()
     content_w = self.doc._page.content_width
     doc = self.doc._doc
@@ -741,21 +755,40 @@ class MarkdownRenderer:
     end = find_close(tokens, start, open_type, close_type)
     depth = self._list_depth
     self._list_depth += 1
+    # Only the first item opens a numbering instance; the rest continue it.
+    num_start = _list_start(tokens[start]) if ordered else None
     j = start + 1
     while j < end:
       if tokens[j].type == "list_item_open":
         item_end = find_close(tokens, j, "list_item_open", "list_item_close")
-        self._render_list_item(tokens, j + 1, item_end, ordered, depth)
+        self._render_list_item(tokens, j + 1, item_end, ordered, depth, num_start)
+        num_start = None
         j = item_end + 1
       else:
         j += 1
     self._list_depth -= 1
     return end + 1
 
+  # Block tokens a list item can hold besides paragraphs and nested lists.
+  # Each maps to its closing token, or to `None` when the block is a single
+  # self-contained token.
+  _ITEM_BLOCK_CLOSE = {
+    "fence": None,
+    "code_block": None,
+    "math_block": None,
+    "hr": None,
+    "html_block": None,
+    "blockquote_open": "blockquote_close",
+    "table_open": "table_close",
+    "dl_open": "dl_close",
+  }
+
   def _render_list_item(self, tokens:list[Token], start:int, end:int,
-      ordered:bool, depth:int):
+      ordered:bool, depth:int, num_start:int|None=None):
     """Render one list item. First inline content goes into a list-styled
-    paragraph; nested lists recurse with deeper depth."""
+    paragraph; nested lists recurse with deeper depth. Code, quotes, tables
+    and math under the bullet go through the top-level block dispatch, so a
+    list item carries the same content a document body can."""
     first_block = True
     k = start
     while k < end:
@@ -765,7 +798,7 @@ class MarkdownRenderer:
         inline = tokens[k+1]
         if first_block:
           if ordered:
-            self.doc.ordered(level=depth)
+            self.doc.ordered(level=depth, start=num_start)
           else:
             self.doc.bullet(level=depth)
           self._add_runs_to_current_para(inline)
@@ -776,6 +809,11 @@ class MarkdownRenderer:
         k += 3
       elif tt == "bullet_list_open": k = self._render_list(tokens, k, ordered=False)
       elif tt == "ordered_list_open": k = self._render_list(tokens, k, ordered=True)
+      elif tt in self._ITEM_BLOCK_CLOSE:
+        close = self._ITEM_BLOCK_CLOSE[tt]
+        stop = k if close is None else find_close(tokens, k, tt, close)
+        self._render_tokens(tokens[k:stop+1])
+        k = stop + 1
       else:
         k += 1
 
@@ -1173,6 +1211,7 @@ class MarkdownRenderer:
       cli=s.mermaid_cli, theme=s.mermaid_theme,
       background=s.mermaid_background, scale=s.mermaid_scale,
       font_family=s.font_body, font_dir=self.font_dir,
+      remote=s.mermaid_remote,
     )
     dsl = image_utils.parse_image_dsl(info_rest) if info_rest else None
     if png_path is None or not self._try_insert_image(png_path, dsl=dsl):
@@ -1344,11 +1383,20 @@ class MarkdownRenderer:
 
   @staticmethod
   def _inline_to_plain(inline_token:Token) -> str:
-    """Flatten an inline token into a plain string for cells/short snippets."""
+    """Flatten an inline token into a plain string for cells/short snippets.
+
+    A cell holds text, so formatting that needs its own XML does not
+    survive: a link keeps its words and loses the href, an image leaves its
+    alt text, and math stays in `$...$` notation. Footnote references keep
+    their `[n]` marker so the note at the end of the document still has
+    something pointing at it.
+    """
     parts = []
     for c in (inline_token.children or []):
       if c.type in ("text", "code_inline"):
         parts.append(c.content)
+      elif c.type == "footnote_ref":
+        parts.append(f"[{(c.meta or {}).get('label') or ''}]")
       elif c.type == "math_inline":
         # Tables take plain strings; preserve LaTeX in `$...$` notation.
         parts.append(f"${c.content}$")
@@ -1361,6 +1409,20 @@ class MarkdownRenderer:
     return "".join(parts)
 
 #------------------------------------------------------------------------------------------ Helpers
+
+def _list_start(token:Token) -> int:
+  """Opening number of an ordered list from its `start` attribute.
+
+  CommonMark lets a list open at any number ("5."); markdown-it puts it on
+  the token only when it differs from 1.
+  """
+  raw = get_attr(token, "start")
+  if raw is None:
+    return 1
+  try:
+    return max(1, int(raw))
+  except (TypeError, ValueError):
+    return 1
 
 def _metadata_from_frontmatter(fm:dict) -> dict:
   """Map YAML keys to `DOCX.metadata()` kwargs. Keys absent in `fm` are skipped."""

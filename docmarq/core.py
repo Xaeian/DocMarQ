@@ -15,6 +15,7 @@ from .styles import Style, TableStyle
 from .layout import PageGeometry
 from .structure import Metadata
 from .inline import RichSegment, _apply_run_format
+from .svg import svg_to_png_buffer, is_svg
 from .tables import (
   apply_table_borders, apply_cell_shading, set_cell_align, repeat_header_row,
   set_cell_margins, set_cell_vertical_align,
@@ -61,6 +62,7 @@ class DOCX:
     self._style.font_size = body_size
     self._metadata = Metadata()
     self._current_para = None       # open paragraph; runs append here
+    self._num_ids: dict[int, int|None] = {} # list level → numbering instance
     self._para_default_color = None # per-paragraph color override; reset on flush
     self._last_space_after = 0      # pt - previous block's space_after (margin collapse)
     self._extra_block_after = 0     # pt - one-shot space_before bonus (see _track_block_spacing)
@@ -302,18 +304,41 @@ class DOCX:
     if extra_for_next:
       self._extra_block_after = extra_for_next
 
+  @staticmethod
+  def _style_owns_font(p) -> bool:
+    """True when the paragraph style carries its own font.
+
+    Runs appended to such a paragraph inherit family, size and color from
+    the style; writing body values onto them would show a heading in body
+    type.
+    """
+    try:
+      name = p.style.name or ""
+    except Exception:
+      return False
+    return name.startswith("Heading") or name in ("Title", "Subtitle")
+
   def _add_run(self, p, seg:RichSegment):
     """Add a run with `seg` styling, falling back to current `_style`."""
     if seg.break_line:
       p.add_run().add_break(WD_BREAK.LINE)
+    if seg.link_url or seg.link_target:
+      # `w:hyperlink` wraps its own run, so the link path replaces the
+      # plain run entirely.
+      self._add_hyperlink(p, seg.text, url=seg.link_url, target=seg.link_target)
+      return
     run = p.add_run(seg.text)
-    # Effective family/size: segment wins, else current style
-    family = seg.family or self._style.font_family
-    size = seg.size or self._style.font_size
+    # Effective family/size: segment wins, else current style. A styled
+    # paragraph (heading) contributes neither, so its own font survives.
+    inherited = self._style_owns_font(p)
+    family = seg.family or (None if inherited else self._style.font_family)
+    size = seg.size or (None if inherited else self._style.font_size)
     # Color resolution priority: explicit segment color > per-paragraph default
     # (set by `blockquote()` etc.) > current `_style.color`.
     if seg.color is not None:
       eff_color = seg.color
+    elif inherited:
+      eff_color = None
     elif self._para_default_color is not None:
       eff_color = self._para_default_color
     else:
@@ -368,10 +393,8 @@ class DOCX:
     """
     self._flush_para()
     style_name = "List Bullet" if level == 0 else f"List Bullet {level + 1}"
-    try:
-      p = self._doc.add_paragraph(text or "", style=style_name)
-    except KeyError:
-      p = self._doc.add_paragraph(text or "", style="List Bullet")
+    p = self._doc.add_paragraph(
+      text or "", style=self._known_style(style_name, "List Bullet"))
     self._tighten_list_spacing(p)
     # Items pack tight (0/0); the last one needs air before the next block.
     # Which item is last isn't known yet, so every item parks the bonus -
@@ -380,18 +403,107 @@ class DOCX:
     self._current_para = p
     return self
 
-  def ordered(self, text:str|None=None, level:int=0) -> "DOCX":
-    """Ordered list item. Uses built-in `List Number` / `List Number 2..3`."""
+  def ordered(self, text:str|None=None, level:int=0,
+      start:int|None=None) -> "DOCX":
+    """Ordered list item. Uses built-in `List Number` / `List Number 2..3`.
+
+    `start` opens a new list counted from that number; items that follow
+    without it continue the same list. The numbering of the built-in styles
+    is shared, so every ordered list in a document runs as one sequence
+    until one of them asks for its own instance.
+    """
     self._flush_para()
-    style_name = "List Number" if level == 0 else f"List Number {level + 1}"
-    try:
-      p = self._doc.add_paragraph(text or "", style=style_name)
-    except KeyError:
-      p = self._doc.add_paragraph(text or "", style="List Number")
+    style_name = self._known_style(
+      "List Number" if level == 0 else f"List Number {level + 1}",
+      "List Number")
+    p = self._doc.add_paragraph(text or "", style=style_name)
+    if start is not None:
+      self._num_ids[level] = self._fresh_num_id(style_name, start)
+    num_id = self._num_ids.get(level)
+    if num_id is not None:
+      self._set_para_num(p, num_id)
     self._tighten_list_spacing(p)
     self._track_block_spacing(0, extra_for_next=4)
     self._current_para = p
     return self
+
+  def _style_abstract_num(self, style_name:str):
+    """`(numbering_element, abstractNumId)` behind a list style, or `None`.
+
+    `None` covers every way the lookup can come up empty: a document with
+    no numbering part, a style without `numPr`, or a `numId` naming an
+    instance that is not there.
+    """
+    try:
+      numbering = self._doc.part.numbering_part.element
+      pPr = self._doc.styles[style_name].element.find(qn("w:pPr"))
+      src_id = pPr.find(qn("w:numPr")).find(qn("w:numId")).get(qn("w:val"))
+    except Exception:
+      return None
+    for num in numbering.findall(qn("w:num")):
+      if num.get(qn("w:numId")) != src_id:
+        continue
+      abstract = num.find(qn("w:abstractNumId"))
+      if abstract is not None:
+        return numbering, abstract.get(qn("w:val"))
+    return None
+
+  def _fresh_num_id(self, style_name:str, start:int) -> int|None:
+    """New numbering instance cloned from `style_name`, counting from `start`.
+
+    `w:numId` is what Word counts by, so lists sharing one instance run as a
+    single sequence. A new instance pointing at the same abstract definition
+    keeps the look and gets its own counter. `None` when the document has no
+    numbering to extend, which leaves the style's own numbering in place.
+    """
+    found = self._style_abstract_num(style_name)
+    if found is None:
+      return None
+    numbering, abstract_id = found
+    taken = [int(n.get(qn("w:numId"))) for n in numbering.findall(qn("w:num"))]
+    new_id = max(taken, default=0) + 1
+    num = OxmlElement("w:num")
+    num.set(qn("w:numId"), str(new_id))
+    abstract = OxmlElement("w:abstractNumId")
+    abstract.set(qn("w:val"), abstract_id)
+    num.append(abstract)
+    # `startOverride` is written even for 1: it states the restart rather
+    # than leaning on the abstract definition's own start value.
+    override = OxmlElement("w:lvlOverride")
+    override.set(qn("w:ilvl"), "0")
+    start_el = OxmlElement("w:startOverride")
+    start_el.set(qn("w:val"), str(max(1, int(start))))
+    override.append(start_el)
+    num.append(override)
+    numbering.append(num) # `w:num` entries follow every `w:abstractNum`
+    return new_id
+
+  @staticmethod
+  def _set_para_num(p, num_id:int):
+    """Point one paragraph at a numbering instance."""
+    pPr = p._element.get_or_add_pPr()
+    numPr = pPr.find(qn("w:numPr"))
+    if numPr is None:
+      numPr = OxmlElement("w:numPr")
+      _ppr_insert(pPr, numPr)
+    num_el = numPr.find(qn("w:numId"))
+    if num_el is None:
+      num_el = OxmlElement("w:numId")
+      numPr.append(num_el)
+    num_el.set(qn("w:val"), str(num_id))
+
+  def _known_style(self, wanted:str, fallback:str) -> str:
+    """`wanted` when the document defines that style, else `fallback`.
+
+    Word ships `List Bullet 2..3` but not deeper levels, and the built-in
+    set varies by template, so the level a caller asks for is checked
+    rather than assumed.
+    """
+    try:
+      self._doc.styles[wanted]
+      return wanted
+    except KeyError:
+      return fallback
 
   def _tighten_list_spacing(self, p):
     """Override Word's loose default list spacing - keep items packed."""
@@ -494,8 +606,15 @@ class DOCX:
     ncols = max(len(r) for r in rows)
     tbl = self._doc.add_table(rows=len(rows), cols=ncols)
     if word_style:
-      try: tbl.style = word_style
-      except KeyError: pass
+      try:
+        tbl.style = word_style
+      except KeyError:
+        import warnings
+        warnings.warn(
+          f"table style {word_style!r} is not defined in this document; "
+          "the table renders unstyled",
+          RuntimeWarning, stacklevel=2,
+        )
     style = style or TableStyle()
     # Cell size: explicit `style.font_size`, else one ladder step below body
     # (11→10, 14→12) via `smaller_size` - tables read better slightly smaller.
@@ -585,6 +704,9 @@ class DOCX:
       align:str|None=None) -> "DOCX":
     """Insert an image. Width/height in current unit (mm by default).
     Provide only `width` for proportional scaling.
+
+    SVG sources are rasterized first - python-docx reads raster formats
+    only. Raises `UnrecognizedImageError` for a format Word cannot embed.
     """
     self._flush_para()
     p = self._doc.add_paragraph()
@@ -594,7 +716,12 @@ class DOCX:
     kwargs = {}
     if width: kwargs["width"] = Mm(to_mm(width, self.unit))
     if height: kwargs["height"] = Mm(to_mm(height, self.unit))
-    run.add_picture(path, **kwargs)
+    source = path
+    if is_svg(path):
+      buf = svg_to_png_buffer(path)
+      if buf is not None:
+        source = buf
+    run.add_picture(source, **kwargs)
     # Treat image paragraph like a regular body block for collapse purposes.
     self._track_block_spacing(0)
     return self
@@ -744,13 +871,43 @@ def _append_field(p, instr:str):
 
 #------------------------------------------------------------------------- Paragraph shading/border
 
+# CT_PPrBase child sequence (ISO/IEC 29500-1). Word tolerates any order,
+# strict renderers may drop what arrives out of sequence, so elements built
+# by hand are placed by this table.
+_PPR_ORDER = (
+  "pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr",
+  "widowControl", "numPr", "suppressLineNumbers", "pBdr", "shd", "tabs",
+  "suppressAutoHyphens", "kinsoku", "wordWrap", "overflowPunct",
+  "topLinePunct", "autoSpaceDE", "autoSpaceDN", "bidi", "adjustRightInd",
+  "snapToGrid", "spacing", "ind", "contextualSpacing", "mirrorIndents",
+  "suppressOverlap", "jc", "textDirection", "textAlignment",
+  "textboxTightWrap", "outlineLvl", "divId", "cnfStyle", "rPr", "sectPr",
+  "pPrChange",
+)
+
+def _ppr_insert(pPr, el):
+  """Insert `el` into `pPr` at its schema position.
+
+  Elements outside `_PPR_ORDER` go last - the tail of the sequence is the
+  only place a name of unknown rank cannot break a known one.
+  """
+  def rank(tag:str) -> int:
+    name = tag.split("}")[-1]
+    return _PPR_ORDER.index(name) if name in _PPR_ORDER else len(_PPR_ORDER)
+  target = rank(el.tag)
+  for child in pPr:
+    if rank(child.tag) > target:
+      child.addprevious(el)
+      return
+  pPr.append(el)
+
 def _apply_paragraph_shading(p, hex_color:str):
   """Set background fill on a paragraph via raw `<w:shd>` in `pPr`."""
   pPr = p._element.get_or_add_pPr()
   shd = pPr.find(qn("w:shd"))
   if shd is None:
     shd = OxmlElement("w:shd")
-    pPr.append(shd)
+    _ppr_insert(pPr, shd)
   shd.set(qn("w:val"), "clear")
   shd.set(qn("w:color"), "auto")
   shd.set(qn("w:fill"), hex_color)
@@ -773,7 +930,7 @@ def _set_pbdr(element, hex_color:str, sides:tuple=_BORDER_SIDES_ALL,
   pBdr = pPr.find(qn("w:pBdr"))
   if pBdr is None:
     pBdr = OxmlElement("w:pBdr")
-    pPr.append(pBdr)
+    _ppr_insert(pPr, pBdr)
   for side in sides:
     el = pBdr.find(qn(f"w:{side}"))
     if el is None:

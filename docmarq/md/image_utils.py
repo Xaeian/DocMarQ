@@ -9,44 +9,15 @@ layout state.
 import io
 import os
 from dataclasses import dataclass
-
-SVG_TARGET_PX = 2400  # longest raster side for SVG → PNG (~360 DPI at A4 content width)
+from ..svg import svg_to_png_buffer, is_svg
 
 #--------------------------------------------------------------------------------------- Preprocess
-
-def _svg_to_png_buffer(path:str):
-  """Rasterize SVG to PNG bytes in a `BytesIO`. Returns `None` for a broken SVG.
-
-  python-docx has no native SVG support: SVG → reportlab `Drawing` → PNG via
-  `renderPM`. Scaled to `SVG_TARGET_PX` so small-viewBox files stay sharp
-  at page width.
-  """
-  try:
-    import rlPyCairo  # renderPM loads its backend lazily - check here, fail fast
-    from svglib.svglib import svg2rlg
-    from reportlab.graphics import renderPM
-  except ImportError:
-    raise ImportError("Install with: pip install svglib rlPyCairo")
-  try:
-    drawing = svg2rlg(path)
-    if drawing is None:
-      return None
-    longest = max(drawing.width, drawing.height)
-    if longest > 0:
-      s = SVG_TARGET_PX / longest
-      drawing.scale(s, s)
-      drawing.width *= s
-      drawing.height *= s
-    png_bytes = renderPM.drawToString(drawing, fmt="PNG")
-  except Exception:
-    return None
-  return io.BytesIO(png_bytes)
 
 def preprocess_to_buffer(path:str):
   """Open `path`, crop alpha-transparent borders, re-save as PNG into a
   `BytesIO`. Returns the buffer or `None` if Pillow / file unavailable.
 
-  SVG inputs route through `_svg_to_png_buffer` first since neither Pillow
+  SVG inputs route through `svg_to_png_buffer` first since neither Pillow
   nor python-docx can read them natively.
 
   Word honors the declared bounding box including transparent margins, so
@@ -58,8 +29,8 @@ def preprocess_to_buffer(path:str):
   """
   if not os.path.isfile(path):
     return None
-  if path.lower().endswith(".svg"):
-    return _svg_to_png_buffer(path)
+  if is_svg(path):
+    return svg_to_png_buffer(path)
   try:
     from PIL import Image
   except ImportError:
@@ -102,32 +73,6 @@ def compute_target_dims(nat_w:int, nat_h:int, content_w_mm:float,
     width = content_w_mm
     height = height_full
   return (width, height)
-
-def scale_dims_for_path(path:str, content_w_mm:float,
-    max_h_mm:float) -> tuple[float|None, float]:
-  """`compute_target_dims` driven by a file's natural dimensions."""
-  try:
-    from PIL import Image
-    im = Image.open(path)
-    nat_w, nat_h = im.size
-  except (ImportError, OSError, ValueError):
-    return (None, max_h_mm)
-  return compute_target_dims(nat_w, nat_h, content_w_mm, max_h_mm)
-
-def scale_dims_for_buffer(buf, content_w_mm:float,
-    max_h_mm:float) -> tuple[float|None, float]:
-  """`compute_target_dims` driven by a `BytesIO`. Resets buffer position
-  when done so the caller can `add_picture` from it.
-  """
-  try:
-    from PIL import Image
-    buf.seek(0)
-    im = Image.open(buf)
-    nat_w, nat_h = im.size
-    buf.seek(0)
-  except (ImportError, OSError, ValueError):
-    return (None, max_h_mm)
-  return compute_target_dims(nat_w, nat_h, content_w_mm, max_h_mm)
 
 #---------------------------------------------------------------------------------------- Title DSL
 
