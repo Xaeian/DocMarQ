@@ -34,17 +34,17 @@ class DOCX:
   """
   def __init__(
     self,
-    path: str,
-    width: float = Defaults.PAGE_WIDTH,
-    height: float = Defaults.PAGE_HEIGHT,
-    margin: float|tuple = Defaults.MARGIN,
-    unit: str = Defaults.UNIT,
-    template: str|None = None,
-    neutral_style: bool = True,
-    gutter: float = 0,
-    font_body: str = Defaults.FONT_FAMILY,
-    font_head: str|None = None,
-    body_size: float = Defaults.FONT_SIZE,
+    path:str,
+    width:float = Defaults.PAGE_WIDTH,
+    height:float = Defaults.PAGE_HEIGHT,
+    margin:float|tuple = Defaults.MARGIN,
+    unit:str = Defaults.UNIT,
+    template:str|None = None,
+    neutral_style:bool = True,
+    gutter:float = 0,
+    font_body:str = Defaults.FONT_FAMILY,
+    font_head:str|None = None,
+    body_size:float = Defaults.FONT_SIZE,
   ):
     self.path = path
     self.unit = unit
@@ -168,8 +168,10 @@ class DOCX:
     self._apply_section_geometry()
     return self
 
-  def margin(self, top:float|None=None, right:float|None=None,
-      bot:float|None=None, left:float|None=None) -> "DOCX":
+  def margin(
+    self, top:float|None=None, right:float|None=None,
+    bot:float|None=None, left:float|None=None,
+  ) -> "DOCX":
     """Update margins for the current section."""
     if top is not None: self._page.margin_top = to_mm(top, self.unit)
     if right is not None: self._page.margin_right = to_mm(right, self.unit)
@@ -186,8 +188,10 @@ class DOCX:
 
   #------------------------------------------------------------------------------------------ Style
 
-  def font(self, family:str|None=None, size:float|None=None,
-      mode:str|None=None) -> "DOCX":
+  def font(
+    self, family:str|None=None, size:float|None=None,
+    mode:str|None=None,
+  ) -> "DOCX":
     """Set default font for subsequent runs.
 
     `mode` accepts `Regular` / `Bold` / `Italic` / `BoldItalic` for parity
@@ -213,8 +217,10 @@ class DOCX:
 
   #------------------------------------------------------------------------------------- Paragraphs
 
-  def para(self, text:str|None=None, style:str|None=None,
-      align:str|None=None) -> "DOCX":
+  def para(
+    self, text:str|None=None, style:str|None=None,
+    align:str|None=None,
+  ) -> "DOCX":
     """Start a new paragraph. Closes any previous active paragraph.
 
     Args:
@@ -403,8 +409,10 @@ class DOCX:
     self._current_para = p
     return self
 
-  def ordered(self, text:str|None=None, level:int=0,
-      start:int|None=None) -> "DOCX":
+  def ordered(
+    self, text:str|None=None, level:int=0,
+    start:int|None=None,
+  ) -> "DOCX":
     """Ordered list item. Uses built-in `List Number` / `List Number 2..3`.
 
     `start` opens a new list counted from that number; items that follow
@@ -514,10 +522,12 @@ class DOCX:
 
   #--------------------------------------------------------------------------------- Block elements
 
-  def code_block(self, content:str, language:str|None=None,
-      bg_color:tuple|str=(0.96, 0.97, 0.98),
-      border_color:tuple|str=(0.82, 0.84, 0.87),
-      font_family:str="Consolas", font_size:float=9) -> "DOCX":
+  def code_block(
+    self, content:str, language:str|None=None,
+    bg_color:tuple|str=(0.96, 0.97, 0.98),
+    border_color:tuple|str=(0.82, 0.84, 0.87),
+    font_family:str="Consolas", font_size:float=9,
+  ) -> "DOCX":
     """Insert a fenced code block - monospace font, light grey background,
     thin border. `language` is accepted but not used yet (no syntax highlight).
     """
@@ -539,11 +549,13 @@ class DOCX:
     self._track_block_spacing(6)
     return self
 
-  def blockquote(self, text:str|None=None,
-      border_color:tuple|str=(0.82, 0.84, 0.87),
-      text_color:tuple|str=(0.40, 0.44, 0.50),
-      indent:float=4,
-      space_before:float=3, space_after:float=3) -> "DOCX":
+  def blockquote(
+    self, text:str|None=None,
+    border_color:tuple|str=(0.82, 0.84, 0.87),
+    text_color:tuple|str=(0.40, 0.44, 0.50),
+    indent:float=4,
+    space_before:float=3, space_after:float=3,
+  ) -> "DOCX":
     """Insert a blockquote paragraph - thick left border, muted text, indent.
 
     For multi-paragraph blockquotes / callouts pass `space_before=0` on
@@ -582,12 +594,13 @@ class DOCX:
 
   def table(
     self,
-    body: list[list[str]],
-    header: list[str]|None = None,
-    aligns: list[str]|None = None,
-    widths: list[float]|None = None, # mm per column
-    style: TableStyle|None = None,
-    word_style: str|None = None, # built-in Word table style name
+    body:list[list[str]],
+    header:list[str]|None = None,
+    aligns:list[str]|None = None,
+    widths:list[float]|None = None, # mm per column
+    style:TableStyle|None = None,
+    word_style:str|None = None,
+    # built-in Word table style name,
   ) -> "DOCX":
     """Add a table.
 
@@ -700,8 +713,10 @@ class DOCX:
 
   #----------------------------------------------------------------------------------------- Images
 
-  def image(self, path:str, width:float|None=None, height:float|None=None,
-      align:str|None=None) -> "DOCX":
+  def image(
+    self, path:str, width:float|None=None, height:float|None=None,
+    align:str|None=None,
+  ) -> "DOCX":
     """Insert an image. Width/height in current unit (mm by default).
     Provide only `width` for proportional scaling.
 
@@ -795,8 +810,10 @@ class DOCX:
     if align: p.alignment = align_to_docx(align)
     return self
 
-  def footer(self, text:str|None=None, align:str|None=None,
-      page_number:bool=False) -> "DOCX":
+  def footer(
+    self, text:str|None=None, align:str|None=None,
+    page_number:bool=False,
+  ) -> "DOCX":
     """Set the footer text for the current section.
 
     Args:
@@ -820,9 +837,11 @@ class DOCX:
 
   #--------------------------------------------------------------------------------------- Metadata
 
-  def metadata(self, title:str|None=None, author:str|None=None,
-      subject:str|None=None, keywords:str|None=None,
-      comments:str|None=None, category:str|None=None) -> "DOCX":
+  def metadata(
+    self, title:str|None=None, author:str|None=None,
+    subject:str|None=None, keywords:str|None=None,
+    comments:str|None=None, category:str|None=None,
+  ) -> "DOCX":
     """Set core document properties."""
     if title: self._metadata.title = title
     if author: self._metadata.author = author
@@ -914,8 +933,10 @@ def _apply_paragraph_shading(p, hex_color:str):
 
 _BORDER_SIDES_ALL = ("top", "left", "bottom", "right")
 
-def _set_pbdr(element, hex_color:str, sides:tuple=_BORDER_SIDES_ALL,
-    size_eighths:int=4, space:int=1):
+def _set_pbdr(
+  element, hex_color:str, sides:tuple=_BORDER_SIDES_ALL,
+  size_eighths:int=4, space:int=1,
+):
   """Set paragraph borders on a paragraph or style element via `<w:pBdr>`.
   Works on both `<w:p>` and `<w:style>` since both expose `get_or_add_pPr()`.
 

@@ -1,6 +1,7 @@
 # tests/conftest.py
 
-"""With `python_functions = ["*"]`, collect only functions defined in the test module; plus the shared DOCX validator."""
+"""Collect only functions defined in the test module, since `python_functions = ["*"]`.
+Carries the shared DOCX validator too."""
 
 import inspect
 from pathlib import Path

@@ -1,6 +1,7 @@
 # tests/test_smoke.py
 
-"""End-to-end smoke: public API produces a valid DOCX on disk (no crash, valid ZIP-magic header)."""
+"""End-to-end smoke: the public API writes a valid DOCX to disk.
+No crash, and the ZIP magic header is there."""
 
 from conftest import assert_valid_docx
 from docmarq import DOCX, Align, Styles

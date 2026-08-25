@@ -54,24 +54,40 @@ def preprocess_to_buffer(path:str):
 
 #------------------------------------------------------------------------------------------ Scaling
 
-def compute_target_dims(nat_w:int, nat_h:int, content_w_mm:float,
-    max_h_mm:float) -> tuple[float|None, float]:
+def read_dpi(path:str, default:float=96) -> float:
+  """Metadata DPI _(pHYs / JFIF)_, `default` when absent."""
+  try:
+    from PIL import Image
+    with Image.open(path) as im:
+      meta = im.info.get("dpi")
+  except (ImportError, OSError, ValueError):
+    return default
+  return meta[0] if isinstance(meta, tuple) and meta[0] else default
+
+def _upscale_cap_mm(nat_w_px:int, dpi:float|None, min_dpi:float) -> float:
+  """Widest the image may grow to before it turns soft."""
+  if not dpi or min_dpi <= 0:
+    return float("inf")
+  return nat_w_px * 25.4 / min(dpi, min_dpi)
+
+def compute_target_dims(
+  nat_w:int, nat_h:int, content_w_mm:float,
+  max_h_mm:float, dpi:float|None=96, min_dpi:float=150,
+) -> tuple[float|None, float]:
   """Width-first scaling with height cap. Preserves aspect ratio.
 
-  Fits to `content_w_mm` unless the resulting height would exceed
-  `max_h_mm`, in which case scales by height instead so the image never
-  blows the page.
+  Fills `content_w_mm` while the raster stays above `min_dpi`.
+  Vector sources _(`dpi=None`)_ and `min_dpi=0` always fill it.
+  A result taller than `max_h_mm` scales by height instead.
   """
   if nat_w <= 0 or nat_h <= 0:
     return (None, max_h_mm)
   aspect = nat_h / nat_w
-  height_full = content_w_mm * aspect
-  if height_full > max_h_mm:
+  width = min(content_w_mm, _upscale_cap_mm(nat_w, dpi, min_dpi))
+  height = width * aspect
+  if height > max_h_mm:
     height = max_h_mm
     width = height / aspect
-  else:
-    width = content_w_mm
-    height = height_full
   return (width, height)
 
 #---------------------------------------------------------------------------------------- Title DSL
@@ -158,8 +174,11 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
     elif key == "scale": out.scale = fv
   return out
 
-def apply_dsl_dims(nat_w_px:int, nat_h_px:int, content_w_mm:float,
-    max_h_mm:float, dsl:ImageDSL) -> tuple[float|None, float]:
+def apply_dsl_dims(
+  nat_w_px:int, nat_h_px:int, content_w_mm:float,
+  max_h_mm:float, dsl:ImageDSL, dpi:float|None=96,
+  min_dpi:float=150,
+) -> tuple[float|None, float]:
   """Combine DSL overrides with the default width-first / height-cap flow.
 
   Resolution order:
@@ -176,13 +195,11 @@ def apply_dsl_dims(nat_w_px:int, nat_h_px:int, content_w_mm:float,
   if dsl.max_w_mm is not None: eff_w = min(eff_w, dsl.max_w_mm)
   if dsl.max_h_mm is not None: eff_h = min(eff_h, dsl.max_h_mm)
   if nat_w_px <= 0 or nat_h_px <= 0:
-    return compute_target_dims(nat_w_px, nat_h_px, eff_w, eff_h)
+    return compute_target_dims(nat_w_px, nat_h_px, eff_w, eff_h, dpi, min_dpi)
   aspect = nat_h_px / nat_w_px
   if dsl.scale is not None:
-    # Natural size in mm at 96 DPI - matches Pillow assumption when no `dpi`
-    # metadata is present; consistent with `compute_target_dims` semantics.
-    nat_w_mm = nat_w_px * 25.4 / 96
-    nat_h_mm = nat_h_px * 25.4 / 96
+    nat_w_mm = nat_w_px * 25.4 / (dpi or 96)
+    nat_h_mm = nat_h_px * 25.4 / (dpi or 96)
     return _clamp(nat_w_mm * dsl.scale, nat_h_mm * dsl.scale, eff_w, eff_h)
   if dsl.exact_w_mm is not None and dsl.exact_h_mm is not None:
     return _clamp(dsl.exact_w_mm, dsl.exact_h_mm, eff_w, eff_h)
@@ -190,7 +207,7 @@ def apply_dsl_dims(nat_w_px:int, nat_h_px:int, content_w_mm:float,
     return _clamp(dsl.exact_w_mm, dsl.exact_w_mm * aspect, eff_w, eff_h)
   if dsl.exact_h_mm is not None:
     return _clamp(dsl.exact_h_mm / aspect, dsl.exact_h_mm, eff_w, eff_h)
-  return compute_target_dims(nat_w_px, nat_h_px, eff_w, eff_h)
+  return compute_target_dims(nat_w_px, nat_h_px, eff_w, eff_h, dpi, min_dpi)
 
 def _clamp(w:float, h:float, max_w:float, max_h:float) -> tuple[float, float]:
   """Scale down uniformly to fit `(max_w, max_h)` - no upscale."""

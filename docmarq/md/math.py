@@ -968,8 +968,10 @@ def _split_rows(tokens:list[str]) -> list[list[list[str]]]:
 
 #--------------------------------------------------------------------------------------- Public API
 
-def latex_to_omath(latex:str, size_halfpt:int|None=None,
-    color_hex:str|None=None, display:bool=False) -> "OxmlElement":
+def latex_to_omath(
+  latex:str, size_halfpt:int|None=None,
+  color_hex:str|None=None, display:bool=False,
+) -> "OxmlElement":
   """Convert LaTeX math to an `<m:oMath>` OMML element.
 
   Args:
@@ -1001,8 +1003,10 @@ def latex_to_omath(latex:str, size_halfpt:int|None=None,
   _coalesce_runs(omath)
   return omath
 
-def build_omath_para(latex:str, size_halfpt:int|None=None,
-    color_hex:str|None=None, align:str="center") -> "OxmlElement":
+def build_omath_para(
+  latex:str, size_halfpt:int|None=None,
+  color_hex:str|None=None, align:str="center",
+) -> "OxmlElement":
   """Convert LaTeX to a display `<m:oMathPara>` (centered block equation).
 
   Wraps `latex_to_omath(display=True)` in an `<m:oMathPara>` with the given
@@ -1034,8 +1038,10 @@ def _normalize_for_mathtext(latex:str) -> str:
   s = _COLOR_RE.sub("", s)      # \color{red}{x} → {x}; \textcolor{red}{x} → {x}
   return s
 
-def render_math_png(latex:str, fontsize_pt:float=11,
-    color:tuple=(0, 0, 0), fontset:str="stix", dpi:int=300):
+def render_math_png(
+  latex:str, fontsize_pt:float=11,
+  color:tuple=(0, 0, 0), fontset:str="stix", dpi:int=300,
+):
   """Render a formula to a transparent PNG via matplotlib mathtext.
 
   Returns `(BytesIO, width_mm, height_mm, baseline_from_bottom_mm)` or

@@ -1,6 +1,6 @@
 # tests/test_md_math.py
 
-"""Math (OMML): LaTeX->OMML converter structures + `md_to_docx` integration.
+"""Math (OMML): LaTeX→OMML converter structures + `md_to_docx` integration.
 
 Converter tests assert the right OMML structures appear and that unsupported
 input raises `MathConversionError` (so the renderer can fall back to an image).
@@ -65,7 +65,7 @@ def omml_nary_sum_limits(child_tags):
   assert child_tags(nary) == ["naryPr", "sub", "sup", "e"]
   pr = nary.find(qn("m:naryPr"))
   # CT_NaryPr canonical order: chr, limLoc, grow, subHide, supHide
-  assert child_tags(pr) == ["chr", "limLoc", "grow"]  # both limits present -> no hide
+  assert child_tags(pr) == ["chr", "limLoc", "grow"]  # both limits present → no hide
   assert pr.find(qn("m:limLoc")).get(qn("m:val")) == "undOvr"  # display style
 
 def omml_nary_hides_absent_limits():
@@ -128,7 +128,7 @@ def omml_lim_uses_limlow(child_tags):
   assert child_tags(ll) == ["e", "lim"]
 
 def omml_font_scripts_mapping():
-  # mathbb -> double-struck script on the run.
+  # mathbb → double-struck script on the run.
   el = latex_to_omath(r"\mathbb{R}")
   r = el.iter(qn("m:r")).__next__()
   scr = r.find(qn("m:rPr")).find(qn("m:scr"))
@@ -153,7 +153,7 @@ def omath_para_is_centered():
 @pytest.mark.parametrize("bad", [
   "", "   ",
   r"\unknowncommand{x}",
-  r"\frac{a}",                 # missing 2nd arg -> unexpected end
+  r"\frac{a}",                 # missing 2nd arg → unexpected end
   r"x }",                       # unbalanced close
   r"{x",                        # unbalanced open
   r"\left( x",                 # \left without \right
@@ -213,7 +213,7 @@ def md_math_disabled_renders_literal(tmp_path, document_xml):
   assert "x^2" in xml  # left as plain text
 
 def md_unsupported_math_falls_back_to_image(tmp_path):
-  # `\overset` is outside the OMML subset -> image fallback, never raw $.
+  # `\overset` is outside the OMML subset → image fallback, never raw $.
   path = tmp_path / "fallback.docx"
   md_to_docx(r"Inline $\overset{a}{b}$ formula.", str(path))
   assert_valid_docx(path)

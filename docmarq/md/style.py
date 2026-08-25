@@ -110,6 +110,7 @@ class MarkdownStyle:
 
   # Image sizing (mm)
   image_max_h: float = 120 # cap block image height
+  image_min_dpi: int = 150 # block image fills text width down to this; 0 = always
   # Inert: inline images render as italic alt text, which no height cap
   # applies to. Block figures answer to `image_max_h`.
   inline_image_max_h: float = 5.5 # cap inline image height (~2ex @ 11pt)

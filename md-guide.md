@@ -105,10 +105,20 @@ PDF then prints the numbers as written, while Word counts from one through its o
 
 ### Images
 
-Relative paths resolve against the markdown file's directory, and an `https://` address never loads.
+Keep the files next to the markdown and link them relatively.
+Everything the document needs has to travel with it: an absolute path, a path leading out of the document's own folder, and an `https://` address all fail to load.
+
+Give a figure its own paragraph and let it size itself.
+It fills the text width as far as its resolution allows, stops at 120mm tall and sits centred, so an exported chart spans the column while a small icon stays an icon.
+PDF and DOCX land on the same box.
+
+Images alone in a paragraph share that width: two side by side become two half-width figures, eight become two rows of four.
+An image on the same line as text stays inline at line height, and DOCX keeps only its alt text - so put the caption in the next paragraph, never beside the picture.
+
+The title slot sizes a figure by hand when the automatic size is wrong:
 
 ```md
-![diagram](schema.svg "max_w=120 max_h=80 scale=0.8 align=C")
+![diagram](schema.svg "max_h=80 align=C")
 ```
 
 | Key     | Effect                                           |
@@ -120,16 +130,9 @@ Relative paths resolve against the markdown file's directory, and an `https://` 
 | `scale` | Multiplier on the natural size, `1.0` means 100% |
 | `align` | `L`, `C` or `R`, block images default to `C`     |
 
-Sizing resolves in one order: `scale` from the natural size, then `w` and `h`, then `max_*` clamps whatever came out.
-So a cap is never overridden, an explicit `w` wider than `max_w` still lands on `max_w`, and `scale` replaces `w`/`h` rather than joining them.
+`scale` runs first from the natural size, then `w` and `h`, then `max_*` clamps the result, so a cap always wins.
 
-With no DSL at all the two formats disagree, so set `w`, `h` or `scale` whenever the size matters.
-A cap alone will not equalise them: PDF clamps the natural size, so a cap larger than the image changes nothing, while DOCX clamps the full text width, so the same cap scales the image up to it.
-PDF keeps a raster at natural size and never enlarges it, while an SVG spreads across the full text width.
-DOCX fits every block image to the text width, upwards as well, then clamps to the same 120mm height, so only wide images reach the full width and a small PNG still arrives blown up.
-
-A missing image never stops the conversion: PDF prints `[Image not found: …]`, DOCX drops in the alt text, and the document comes out looking finished with a hole in it.
-In DOCX an image also has to stand alone in its paragraph, or it turns into italic alt text.
+A missing file never stops the conversion: PDF prints `[Image not found: …]`, DOCX leaves the alt text, and the document comes out looking finished with a hole in it.
 
 ### Mermaid diagrams
 
@@ -187,5 +190,6 @@ Both must stand alone in the comment, so `<!-- pagebreak now -->` is an ordinary
 1. `title:` and `author:` are set, and `status:` is honest.
 2. `id:` is set if the document belongs to a controlled set, such as a DMS or an audit trail.
 3. `created:` untouched, `updated:` current.
-4. Every image and the logo resolve to a file that travels with the source. Check the output, because a missing one is never reported.
-5. If the document may also become DOCX, nothing from the PDF column is load-bearing.
+4. Every image and the logo sit beside the source and travel with it. Nothing points outside the document's own folder.
+5. The output has been opened once. A file that would not load leaves a placeholder, not an error.
+6. If the document may also become DOCX, nothing from the PDF column is load-bearing.

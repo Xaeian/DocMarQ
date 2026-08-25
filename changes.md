@@ -1,5 +1,13 @@
 # Changes `docmarq`
 
+## `0.3.4` Image sizing
+
+- Block images fill the text width down to `image_min_dpi`
+- Images alone in a paragraph become a row of figures, wrapping into a grid
+- Mermaid diagrams size like any other figure
+- Block images centred by default, matching `pdfmarq`
+- Fix: `scale=` assumed 96 DPI
+
 ## `0.3.3` Numbering & lists
 
 - Ordered lists keep the author's numbering, `ordered(start=)`

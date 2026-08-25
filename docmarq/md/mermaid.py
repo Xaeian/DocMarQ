@@ -38,8 +38,10 @@ from pathlib import Path
 # different entry.
 _CACHE_DIR = Path.home() / ".cache" / "marq" / "mermaid"
 
-def _cache_key(source:str, theme:str, background:str, scale:float,
-    font_family:str="", font_dir:str="", cli:str="") -> str:
+def _cache_key(
+  source:str, theme:str, background:str, scale:float,
+  font_family:str="", font_dir:str="", cli:str="",
+) -> str:
   """SHA1 over every input that affects rendering. Different theme, bg,
   scale, font (family *and* directory - the same family name can resolve to
   a different TTF) or cli must produce a different cache file.
@@ -117,11 +119,13 @@ def _warn_remote_once() -> None:
 
 #---------------------------------------------------------------------------------------------- API
 
-def compile_to_png(source:str, cli:str="mmdc", theme:str="default",
-    background:str="transparent", scale:float=3,
-    timeout:float=60,
-    font_family:str|None=None, font_dir:str|None=None,
-    remote:bool=True) -> str|None:
+def compile_to_png(
+  source:str, cli:str="mmdc", theme:str="default",
+  background:str="transparent", scale:float=3,
+  timeout:float=60,
+  font_family:str|None=None, font_dir:str|None=None,
+  remote:bool=True,
+) -> str|None:
   """Render mermaid `source` to a PNG file. Returns a path the caller can
   embed; cache hits return the cached file, cache misses try mmdc first
   then mermaid.ink. Returns `None` when no backend succeeded.
@@ -160,9 +164,11 @@ def compile_to_png(source:str, cli:str="mmdc", theme:str="default",
 
 #----------------------------------------------------------------------------- Backend: mermaid-cli
 
-def _try_mmdc(source:str, out_path:Path, *, cli:str, theme:str,
-    background:str, scale:float, timeout:float,
-    font_family:str|None=None, font_dir:str|None=None) -> bool:
+def _try_mmdc(
+  source:str, out_path:Path, *, cli:str, theme:str,
+  background:str, scale:float, timeout:float,
+  font_family:str|None=None, font_dir:str|None=None,
+) -> bool:
   """Local mmdc subprocess. Returns `True` on success.
   When `font_family`+`font_dir` are set and a matching TTF is found, a
   temp CSS file with `@font-face` is injected via `--cssFile`."""
@@ -215,8 +221,10 @@ def _try_mmdc(source:str, out_path:Path, *, cli:str, theme:str,
 
 #----------------------------------------------------------------------------- Backend: mermaid.ink
 
-def _try_mermaid_ink(source:str, out_path:Path, *, theme:str,
-    background:str) -> bool:
+def _try_mermaid_ink(
+  source:str, out_path:Path, *, theme:str,
+  background:str,
+) -> bool:
   """HTTP fallback via mermaid.ink `/img/` endpoint. Returns `True` on
   success. Uses base64-encoded source in the URL path (the API's preferred
   encoding for direct GET requests).

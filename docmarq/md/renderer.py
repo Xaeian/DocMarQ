@@ -24,6 +24,35 @@ from .style import MarkdownStyle
 from .tokens import get_attr, find_close, CALLOUT_RE
 from . import slug, image_utils, mermaid
 
+#------------------------------------------------------------------------------------ Image helpers
+
+_ROW_MIN_SLOT_MM = 20  # figures narrower than this wrap to another row
+
+def _image_row(inline_token:Token) -> list[Token]|None:
+  """Image children of a paragraph holding nothing but local images.
+  Anything else gives `None`, a remote reference included: it has no file to size."""
+  imgs = []
+  for c in inline_token.children or []:
+    if c.type == "image":
+      src = get_attr(c, "src")
+      if not src or src.startswith(("http://", "https://", "data:")): return None
+      imgs.append(c)
+    elif c.type in ("softbreak", "hardbreak"): continue
+    elif c.type == "text" and not c.content.strip(): continue
+    else: return None
+  return imgs or None
+
+def _row_columns(avail_mm:float, gap_mm:float) -> int:
+  """How many figures fit across before each falls below `_ROW_MIN_SLOT_MM`."""
+  return max(1, int((avail_mm + gap_mm) // (_ROW_MIN_SLOT_MM + gap_mm)))
+
+def _split_rows(n:int, cols:int) -> list[int]:
+  """Row sizes for `n` figures: balanced, none wider than `cols`.
+  Eight figures over seven columns is `4+4`, not `7+1`."""
+  rows = -(-n // cols)
+  base, extra = divmod(n, rows)
+  return [base + (i < extra) for i in range(rows)]
+
 #------------------------------------------------------------------------------ Frontmatter helpers
 
 def strip_frontmatter(text:str) -> tuple[dict|None, str]:
@@ -91,8 +120,10 @@ class MarkdownRenderer:
   Stateful (`_list_depth` tracks nesting), so reuse only within a single
   `render()` pass.
   """
-  def __init__(self, doc:DOCX, style:MarkdownStyle|None=None,
-      base_dir:str|None=None, font_dir:str|None=None):
+  def __init__(
+    self, doc:DOCX, style:MarkdownStyle|None=None,
+    base_dir:str|None=None, font_dir:str|None=None,
+  ):
     """Create a renderer bound to `doc`.
 
     Args:
@@ -266,8 +297,10 @@ class MarkdownRenderer:
   def _render_banner_flow(self, fm:dict):
     """Single-column banner layout (no logo). Uses the fluent `DOCX` API."""
     from docx.enum.text import WD_LINE_SPACING
-    def new_para(*, space_before:float=0, space_after:float=0,
-        line_spacing:float|None=None, line_spacing_exact_pt:float|None=None):
+    def new_para(
+      *, space_before:float=0, space_after:float=0,
+      line_spacing:float|None=None, line_spacing_exact_pt:float|None=None,
+    ):
       self.doc.para()
       pf = self.doc._current_para.paragraph_format
       pf.space_before = Pt(space_before)
@@ -340,8 +373,10 @@ class MarkdownRenderer:
     from ..inline import _apply_run_shading
     from docx.enum.text import WD_LINE_SPACING
     state = {"used_first": False, "current_p": None}
-    def new_para(*, space_before:float=0, space_after:float=0,
-        line_spacing:float|None=None, line_spacing_exact_pt:float|None=None):
+    def new_para(
+      *, space_before:float=0, space_after:float=0,
+      line_spacing:float|None=None, line_spacing_exact_pt:float|None=None,
+    ):
       if not state["used_first"]:
         p = cell.paragraphs[0]
         p.text = ""
@@ -560,12 +595,12 @@ class MarkdownRenderer:
         self._render_heading(tokens[i+1], level)
         i += 3
       elif tt == "paragraph_open":
-        # Standalone images get block treatment (embedded + centered);
-        # mixed inline content uses regular paragraph rendering.
+        # An image-only paragraph becomes a figure, or a row of them;
+        # mixed inline content stays a regular paragraph.
         inline = tokens[i+1]
-        img_src = self._standalone_image_src(inline)
-        if img_src:
-          self._render_block_image(img_src, inline)
+        imgs = _image_row(inline)
+        if imgs:
+          self._render_images(imgs)
         else:
           self._render_paragraph(inline)
         i += 3
@@ -783,8 +818,10 @@ class MarkdownRenderer:
     "dl_open": "dl_close",
   }
 
-  def _render_list_item(self, tokens:list[Token], start:int, end:int,
-      ordered:bool, depth:int, num_start:int|None=None):
+  def _render_list_item(
+    self, tokens:list[Token], start:int, end:int,
+    ordered:bool, depth:int, num_start:int|None=None,
+  ):
     """Render one list item. First inline content goes into a list-styled
     paragraph; nested lists recurse with deeper depth. Code, quotes, tables
     and math under the bullet go through the top-level block dispatch, so a
@@ -888,8 +925,10 @@ class MarkdownRenderer:
       j += 1
     return None
 
-  def _render_callout(self, tokens:list[Token], start:int, end:int,
-      kind:str) -> int:
+  def _render_callout(
+    self, tokens:list[Token], start:int, end:int,
+    kind:str,
+  ) -> int:
     """Render a GitHub callout: colored title row + body in muted blockquote.
     All paragraphs in the group share tight inner spacing so the left bar
     reads as a single continuous block regardless of body length.
@@ -1084,44 +1123,50 @@ class MarkdownRenderer:
 
   #----------------------------------------------------------------------------------------- Images
 
-  @staticmethod
-  def _standalone_image_src(inline_token:Token) -> str|None:
-    """Return image `src` when `inline_token` is exactly one image (ignoring
-    whitespace-only text children), else `None`. Determines block vs. inline
-    image treatment.
-    """
-    children = inline_token.children or []
-    seen_image = None
-    for c in children:
-      if c.type == "image":
-        if seen_image is not None:
-          return None
-        seen_image = c
-      elif c.type == "text":
-        if c.content.strip():
-          return None
-      else:
-        return None
-    if seen_image is None:
-      return None
-    return get_attr(seen_image, "src")
+  def _render_images(self, imgs:list[Token]):
+    """Draw an image-only paragraph: one figure, or a balanced grid of rows.
+    Never hands it back: a row that cannot be prepared becomes stacked figures."""
+    if len(imgs) == 1:
+      self._render_block_image(get_attr(imgs[0], "src"), imgs[0])
+      return
+    content_w = self.doc._page.content_width
+    gap = self.style.para_gap
+    sizes = _split_rows(len(imgs), _row_columns(content_w, gap))
+    slot = (content_w - gap * (sizes[0] - 1)) / sizes[0]
+    start = 0
+    for count in sizes:
+      row = imgs[start:start + count]
+      start += count
+      if not self._render_image_row(row, slot):
+        for img in row:
+          self._render_block_image(get_attr(img, "src"), img)
 
-  def _render_block_image(self, src:str, inline_token:Token):
+  def _render_image_row(self, imgs:list[Token], slot:float) -> bool:
+    """Lay one row of figures side by side, each in a `slot`-wide cell.
+    All-or-nothing: a file that will not load cancels the row."""
+    from docx.image.exceptions import UnrecognizedImageError
+    items = []
+    try:
+      for img in imgs:
+        path = image_utils.resolve_path(get_attr(img, "src") or "", self.base_dir)
+        if not path or not os.path.isfile(path):
+          return False
+        dsl = image_utils.parse_image_dsl(get_attr(img, "title"))
+        items.append(self._prepare_picture(path, slot, dsl))
+      self._insert_pictures(items)
+    except (OSError, ValueError, UnrecognizedImageError):
+      return False
+    return True
+
+  def _render_block_image(self, src:str, img:Token):
     """Embed an image as a centered block paragraph. Falls back to italic
     alt text when the file is missing. Title DSL `![alt](src "key=val")`
     controls sizing and alignment (see `image_utils.parse_image_dsl`).
     """
-    alt = ""
-    title = None
-    children = inline_token.children or []
-    if children:
-      img = next((c for c in children if c.type == "image"), None)
-      if img is not None:
-        alt = get_attr(img, "alt") or ""
-        if not alt and img.children:
-          alt = "".join(c.content for c in img.children if c.type == "text")
-        title = get_attr(img, "title")
-    dsl = image_utils.parse_image_dsl(title)
+    alt = get_attr(img, "alt") or ""
+    if not alt and img.children:
+      alt = "".join(c.content for c in img.children if c.type == "text")
+    dsl = image_utils.parse_image_dsl(get_attr(img, "title"))
     path = image_utils.resolve_path(src, self.base_dir)
     if not path or not os.path.isfile(path):
       self.doc.para()
@@ -1131,7 +1176,10 @@ class MarkdownRenderer:
       self.doc.para()
       self.doc.text(alt or f"[image: {src}]", italic=True)
 
-  def _try_insert_image(self, path:str, dsl:image_utils.ImageDSL|None=None) -> bool:
+  def _try_insert_image(
+    self, path:str, dsl:image_utils.ImageDSL|None=None,
+    generated:bool=False,
+  ) -> bool:
     """Insert image scaled per DSL overrides with `style.image_max_h` cap.
 
     Every image goes through Pillow to:
@@ -1144,48 +1192,47 @@ class MarkdownRenderer:
     `dsl.align` is applied to the paragraph after the insert.
     """
     from docx.image.exceptions import UnrecognizedImageError
-    content_w = self.doc._page.content_width
-    max_h = self.style.image_max_h
     dsl = dsl or image_utils.ImageDSL()
-    buf = image_utils.preprocess_to_buffer(path)
     try:
-      if buf is None:
-        target_w, target_h = self._compute_dims(path, content_w, max_h, dsl)
-        self._insert_picture(path, target_w, target_h)
-      else:
-        target_w, target_h = self._compute_dims_buffer(buf, content_w, max_h, dsl)
-        buf.seek(0)
-        self._insert_picture(buf, target_w, target_h)
+      item = self._prepare_picture(path, self.doc._page.content_width, dsl, generated)
+      self._insert_pictures([item])
     except (OSError, ValueError, UnrecognizedImageError):
       return False
-    self._apply_image_align(dsl.align)
+    self._apply_image_align(dsl.align or "C")
     return True
 
-  @staticmethod
-  def _compute_dims(path:str, content_w:float, max_h:float,
-      dsl:image_utils.ImageDSL) -> tuple[float|None, float]:
-    """Read natural dims from disk and apply DSL overrides."""
-    try:
-      from PIL import Image
-      with Image.open(path) as im:
-        nat_w, nat_h = im.size
-    except (ImportError, OSError, ValueError):
-      return (None, max_h)
-    return image_utils.apply_dsl_dims(nat_w, nat_h, content_w, max_h, dsl)
+  def _prepare_picture(
+    self, path:str, content_w:float, dsl,
+    generated:bool=False,
+  ) -> tuple:
+    """`(src, width_mm, height_mm)` ready for `_insert_pictures`.
+    `src` is the preprocessed buffer when Pillow could open the file, else the path.
+    `generated` marks a raster made here from vector source,
+    which carries no resolution the width has to respect."""
+    # The buffer is a re-save - DPI comes from the source. Vector has none.
+    dpi = None if generated or image_utils.is_svg(path) else image_utils.read_dpi(path)
+    buf = image_utils.preprocess_to_buffer(path)
+    src = path if buf is None else buf
+    w, h = self._compute_dims(src, content_w, self.style.image_max_h, dsl, dpi)
+    if buf is not None: buf.seek(0)
+    return src, w, h
 
-  @staticmethod
-  def _compute_dims_buffer(buf, content_w:float, max_h:float,
-      dsl:image_utils.ImageDSL) -> tuple[float|None, float]:
-    """Read natural dims from a buffer and apply DSL overrides."""
+  def _compute_dims(
+    self, src, content_w:float, max_h:float,
+    dsl:image_utils.ImageDSL, dpi:float|None,
+  ) -> tuple[float|None, float]:
+    """Read natural dims from a path or buffer and apply DSL overrides."""
+    seek = getattr(src, "seek", None)
     try:
       from PIL import Image
-      buf.seek(0)
-      with Image.open(buf) as im:
+      if seek: seek(0)
+      with Image.open(src) as im:
         nat_w, nat_h = im.size
-      buf.seek(0)
+      if seek: seek(0)
     except (ImportError, OSError, ValueError):
       return (None, max_h)
-    return image_utils.apply_dsl_dims(nat_w, nat_h, content_w, max_h, dsl)
+    return image_utils.apply_dsl_dims(nat_w, nat_h, content_w, max_h, dsl,
+      dpi, self.style.image_min_dpi)
 
   def _apply_image_align(self, align:str|None):
     """Set alignment on the most recently added paragraph (the one that
@@ -1214,7 +1261,7 @@ class MarkdownRenderer:
       remote=s.mermaid_remote,
     )
     dsl = image_utils.parse_image_dsl(info_rest) if info_rest else None
-    if png_path is None or not self._try_insert_image(png_path, dsl=dsl):
+    if png_path is None or not self._try_insert_image(png_path, dsl=dsl, generated=True):
       self._fallback_mermaid_code(source)
 
   def _fallback_mermaid_code(self, source:str):
@@ -1233,6 +1280,11 @@ class MarkdownRenderer:
     be a path or `BytesIO`. Bypasses `doc.image()` to pass both width and
     height simultaneously after scaled dims are computed.
     """
+    self._insert_pictures([(src, width_mm, height_mm)])
+
+  def _insert_pictures(self, items:list):
+    """One centered paragraph holding every `(src, width_mm, height_mm)` given,
+    separated by a space run."""
     from docx.shared import Mm, Pt
     from ..utils import align_to_docx, to_mm
     self.doc._flush_para()
@@ -1244,14 +1296,16 @@ class MarkdownRenderer:
     pf.first_line_indent = Mm(0)
     pf.space_before = Pt(self.doc._collapsed_before(2))
     pf.space_after = Pt(2)
-    run = p.add_run()
-    kwargs = {}
-    if width_mm is not None:
-      kwargs["width"] = Mm(to_mm(width_mm, self.doc.unit))
-    if height_mm is not None:
-      kwargs["height"] = Mm(to_mm(height_mm, self.doc.unit))
-    run.add_picture(src, **kwargs)
-    self._pin_inline_picture_offsets(run)
+    for n, (src, width_mm, height_mm) in enumerate(items):
+      if n: p.add_run(" ")
+      run = p.add_run()
+      kwargs = {}
+      if width_mm is not None:
+        kwargs["width"] = Mm(to_mm(width_mm, self.doc.unit))
+      if height_mm is not None:
+        kwargs["height"] = Mm(to_mm(height_mm, self.doc.unit))
+      run.add_picture(src, **kwargs)
+      self._pin_inline_picture_offsets(run)
     self.doc._track_block_spacing(2)
 
   @staticmethod
@@ -1313,8 +1367,10 @@ class MarkdownRenderer:
       self.doc.font(size=body_pt)
     return end + 1
 
-  def _render_footnote_item(self, tokens:list[Token], start:int, end:int,
-      label:str):
+  def _render_footnote_item(
+    self, tokens:list[Token], start:int, end:int,
+    label:str,
+  ):
     """Render a single footnote item: a paragraph beginning with `[label] `
     followed by the footnote's inline content. Multi-paragraph footnotes
     emit additional plain paragraphs (no further prefix).
@@ -1452,16 +1508,16 @@ def _skip_matching_h1(tokens:list[Token], title:str) -> list[Token]:
 #--------------------------------------------------------------------------------------- md_to_docx
 
 def md_to_docx(
-  md_text: str,
-  output_path: str,
+  md_text:str,
+  output_path:str,
   *,
-  style: MarkdownStyle|None = None,
-  page: PageSize = A4,
-  margin: float|tuple = 20,
-  gutter: float = 0,
-  base_dir: str|None = None,
-  font_dir: str|None = None,
-  metadata: dict|None = None,
+  style:MarkdownStyle|None = None,
+  page:PageSize = A4,
+  margin:float|tuple = 20,
+  gutter:float = 0,
+  base_dir:str|None = None,
+  font_dir:str|None = None,
+  metadata:dict|None = None,
 ) -> DOCX:
   """Convert markdown text to a `.docx` file.
 

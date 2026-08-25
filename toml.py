@@ -72,7 +72,7 @@ def _parse_extras(node) -> dict[str, list[str]]:
 
 def _scan_extras_from_file(path:str) -> dict[str, list[str]]:
   """Parse `__extras__` from a Python file."""
-  if not PATH.is_file(path): return {}
+  if not FILE.exists(path): return {}
   try:
     tree = ast.parse(FILE.load(path))
   except Exception:
@@ -94,11 +94,11 @@ def scan_package(pkg_dir:str) -> tuple[set[str], set[str]]:
   """Return (modules, subpackages) present in package."""
   modules = set()
   subpackages = set()
-  for name in DIR.file_list(pkg_dir, exts=[".py"], local=True):
+  for name in DIR.file_list(pkg_dir, exts=[".py"], shape="rel"):
     if "/" in name or name.startswith("__"): continue
     modules.add(name.removesuffix(".py"))
-  for name in DIR.folder_list(pkg_dir, basename=True):
-    if PATH.is_file(PATH.join(pkg_dir, name, "__init__.py")):
+  for name in DIR.folder_list(pkg_dir, shape="name"):
+    if FILE.exists(PATH.join(pkg_dir, name, "__init__.py")):
       subpackages.add(name)
   return modules, subpackages
 
@@ -145,9 +145,9 @@ def scan_package_data(pkg_dir:str) -> list[str]:
     List of glob patterns like `"files/**"`, `"*.cfg"`.
   """
   skip_exts = {".py", ".pyc", ".pyo", ".md"}
-  all_files = DIR.file_list(pkg_dir, local=True, blacklist=["__pycache__"])
+  all_files = DIR.file_list(pkg_dir, shape="rel", blacklist=["__pycache__"])
   top_dirs: set[str] = set()
-  root_exts: set[str] = set()
+  by_ext: dict[str, set[str]] = {}
   for f in all_files:
     if f.startswith("__"): continue
     ext = PATH.ext(f)
@@ -156,11 +156,12 @@ def scan_package_data(pkg_dir:str) -> list[str]:
     if len(parts) > 1:
       top_dirs.add(parts[0])
     else:
-      if ext:
-        root_exts.add(f"*{ext}")
-      else:
-        root_exts.add(f)
-  patterns = sorted(root_exts)
+      by_ext.setdefault(ext, set()).add(f)
+  # a lone file is named outright, a family of them collapses to one glob
+  patterns = sorted(
+    next(iter(names)) if len(names) == 1 or not ext else f"*{ext}"
+    for ext, names in by_ext.items()
+  )
   for d in sorted(top_dirs):
     patterns.append(f"{d}/**")
   return patterns
@@ -194,7 +195,7 @@ def get_meta(pkg_dir:str) -> dict:
     "dependencies": [], "scripts": {},
   }
   init = PATH.join(pkg_dir, "__init__.py")
-  if not PATH.is_file(init): return meta
+  if not FILE.exists(init): return meta
   STR_FIELDS = {
     "__version__": "version", "__repo__": "repo",
     "__python__": "python", "__description__": "description",
@@ -225,15 +226,28 @@ def get_meta(pkg_dir:str) -> dict:
 
 #----------------------------------------------------------------------------------------- Generate
 
+def find_license(root:str) -> str|None:
+  """
+  Name of the licence file in the project root, spelled as it is on disk.
+
+  `license-files` has to name it. The default glob `LICEN[CS]E*` goes through
+  `os.path.normcase`, so a lowercase `license` is found on Windows and missed on Linux:
+  the artifacts built there claim a licence whose text they do not carry.
+  """
+  for name in DIR.file_list(root, shape="name", deep=False):
+    if PATH.stem(name).lower() in ("license", "licence", "copying"): return name
+  return None
+
 def generate_toml(
   pkg_name:str, meta:dict,
   extras:dict[str, list[str]],
   package_data:list[str]|None=None,
+  license_file:str|None=None,
 ) -> str:
   """Generate pyproject.toml content."""
   lines = [
     '[build-system]',
-    'requires = ["setuptools>=61.0", "wheel"]',
+    'requires = ["setuptools>=77"]',
     'build-backend = "setuptools.build_meta"',
     '',
     '[project]',
@@ -241,9 +255,11 @@ def generate_toml(
     f'version = "{meta["version"]}"',
     f'description = "{meta["description"]}"',
     'readme = "readme.md"',
-    'license = {text = "MIT"}',
-    f'requires-python = "{meta["python"]}"',
+    'license = "MIT"',
   ]
+  if license_file:
+    lines.append(f'license-files = ["{license_file}"]')
+  lines.append(f'requires-python = "{meta["python"]}"')
   if meta["author"]:
     lines.append(f'authors = [{{name = "{meta["author"]}"}}]')
   if meta["keywords"]:
@@ -301,12 +317,12 @@ def _log_summary(
     p.inf(f"Dependencies: {c.GREY}{', '.join(meta['dependencies'])}{c.END}")
   if extras:
     for name, deps in sorted(extras.items(), key=lambda x: (x[0] == "all", x[0])):
-      p.item(f"[{c.CREAM}{name}{c.END}]: {c.GREY}{', '.join(deps)}{c.END}")
+      p.dot(f"[{c.CREAM}{name}{c.END}]: {c.GREY}{', '.join(deps)}{c.END}")
   if package_data:
     p.inf(f"Package data: {c.GREY}{', '.join(package_data)}{c.END}")
   if meta.get("scripts"):
     for cmd, entry in meta["scripts"].items():
-      p.item(f"Script: {c.TURQUS}{cmd}{c.END} → {c.GREY}{entry}{c.END}")
+      p.dot(f"Script: {c.TURQUS}{cmd}{c.END} → {c.GREY}{entry}{c.END}")
 
 #------------------------------------------------------------------------------------------- Public
 
@@ -319,7 +335,7 @@ def generate(package:str, output:str|None=None, auto_deps:bool=False):
     auto_deps: Scan imports for third-party dependencies.
   """
   pkg_dir = PATH.resolve(package)
-  if not PATH.is_dir(pkg_dir):
+  if not DIR.exists(pkg_dir):
     p.err(f"{c.ORANGE}{pkg_dir}{c.END} is not a directory")
     sys.exit(1)
   pkg_name = PATH.basename(pkg_dir)
@@ -339,8 +355,12 @@ def generate(package:str, output:str|None=None, auto_deps:bool=False):
       p.wrn(f"Auto-detected: {c.TURQUS}{', '.join(sorted(new_deps))}{c.END}")
     meta["dependencies"] = sorted(declared | scanned)
   _log_summary(pkg_name, meta, modules, subpackages, extras, package_data)
-  toml = generate_toml(pkg_name, meta, extras, package_data)
-  out = output or PATH.join(PATH.dirname(pkg_dir), "pyproject.toml")
+  root = PATH.dirname(pkg_dir)
+  license_file = find_license(root)
+  if not license_file:
+    p.wrn(f"No licence file in {c.ORANGE}{root}{c.END}, so the artifacts will ship none")
+  toml = generate_toml(pkg_name, meta, extras, package_data, license_file)
+  out = output or PATH.join(root, "pyproject.toml")
   FILE.save(out, toml)
   p.ok(f"Generated {c.GREY}{PATH.dirname(out)}/{c.END}{c.ORANGE}{PATH.basename(out)}{c.END}")
 
@@ -354,8 +374,8 @@ examples:
 """
 
 if __name__ == "__main__":
-  from xaeian.cli._args import _make_parser, _add_help
-  parser = _make_parser(
+  from xaeian.cli.args import make_parser, add_help
+  parser = make_parser(
     f"Generate {c.ORANGE}pyproject.toml{c.END} from package source", EXAMPLES,
   )
   parser.add_argument("package", metavar="PACKAGE", help="Package directory to scan")
@@ -363,6 +383,6 @@ if __name__ == "__main__":
     help="Output file (default: parent/pyproject.toml)")
   parser.add_argument("-a", "--auto-deps", action="store_true",
     help="Auto-detect third-party dependencies from imports")
-  _add_help(parser)
+  add_help(parser)
   args = parser.parse_args()
   generate(args.package, args.output, args.auto_deps)
