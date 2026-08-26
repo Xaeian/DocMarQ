@@ -1003,6 +1003,24 @@ def latex_to_omath(
   _coalesce_runs(omath)
   return omath
 
+#----------------------------------------------------------------------------------- Tag extraction
+_TAG_SPLIT_RE = _re.compile(r"\\tag(\*?)\{([^{}]*)\}")
+
+def pop_tag(formula:str) -> tuple[str, str|None]:
+  r"""Split a `\tag{...}` out of a display formula.
+
+  Returns `(formula_without_tag, label)` - `label` is `(X1.1)` for `\tag`,
+  bare for `\tag*`, `None` when there is no tag. Neither engine typesets
+  `\tag`; the renderer prints the label where the equation number goes.
+  """
+  m = _TAG_SPLIT_RE.search(formula)
+  if m is None:
+    return formula, None
+  label = m.group(2).strip()
+  if not m.group(1):
+    label = f"({label})"
+  return (formula[:m.start()] + formula[m.end():]).strip(), label
+
 def build_omath_para(
   latex:str, size_halfpt:int|None=None,
   color_hex:str|None=None, align:str="center",

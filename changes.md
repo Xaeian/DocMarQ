@@ -1,5 +1,10 @@
 # Changes `docmarq`
 
+## `0.3.5` Math input
+
+- LaTeX math delimiters `\[...\]` and `\(...\)` accepted
+- `\tag{...}` becomes a right-aligned equation label, Word style
+
 ## `0.3.4` Image sizing
 
 - Block images fill the text width down to `image_min_dpi`

@@ -1,7 +1,7 @@
 # `docmarq`
 
 Fluent DOCX generation. Built on `python-docx` with a paragraph/run flow
-model. Sibling library: [`pdfmarq`](../pdfmarq/readme.md) - same API
+model. Sibling library: [`pdfmarq`](https://github.com/Xaeian/PDFMarQ) - same API
 shape for PDF.
 
 ## `DOCX` context

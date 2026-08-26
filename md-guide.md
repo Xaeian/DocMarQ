@@ -134,6 +134,14 @@ The title slot sizes a figure by hand when the automatic size is wrong:
 
 A missing file never stops the conversion: PDF prints `[Image not found: …]`, DOCX leaves the alt text, and the document comes out looking finished with a hole in it.
 
+### Formulas
+
+Inline `$x^2$` and block `$$...$$` both draw as real maths.
+The LaTeX spellings `\(x^2\)` and `\[...\]` are read as the same thing, so a document pasted from a LaTeX source or an AI assistant needs no conversion.
+
+PDF numbers display formulas `(1)`, `(2)` down the right margin.
+A `\tag{X1.1}` names the label itself: it replaces the number in PDF and appears right-aligned next to the equation in DOCX.
+
 ### Mermaid diagrams
 
 Fenced `mermaid` blocks compile to PNG and embed like any other figure.

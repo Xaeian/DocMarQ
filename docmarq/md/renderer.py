@@ -12,7 +12,7 @@ Pure helpers live in sibling modules: `tokens.py` (attr/find_close),
 preprocess + scaling), `mermaid.py` (mmdc CLI). Class methods below own
 everything that touches `doc` state.
 """
-import os
+import os, re
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from mdit_py_plugins.footnote import footnote_plugin
@@ -52,6 +52,44 @@ def _split_rows(n:int, cols:int) -> list[int]:
   rows = -(-n // cols)
   base, extra = divmod(n, rows)
   return [base + (i < extra) for i in range(rows)]
+
+#---------------------------------------------------------------------------------- Math delimiters
+
+_MATH_INLINE_RE = re.compile(r"\\\((.+?)\\\)")
+_MATH_BLOCK_LINE_RE = re.compile(r"^(\s*)\\\[\s*(.+?)\s*\\\]\s*$")
+
+def normalize_math_delimiters(md_text:str) -> str:
+  r"""LaTeX math delimiters `\[...\]` / `\(...\)` become `$$` / `$...$`.
+
+  The bracket forms are what LaTeX sources and AI assistants emit; only the
+  dollar forms reach the parser. Fenced code passes through untouched and
+  inline code spans keep their backslashes.
+  """
+  out: list[str] = []
+  in_fence = False
+  for line in md_text.split("\n"):
+    stripped = line.strip()
+    if in_fence:
+      out.append(line)
+      if stripped.startswith(("```", "~~~")): in_fence = False
+      continue
+    if stripped.startswith(("```", "~~~")):
+      in_fence = True
+      out.append(line)
+      continue
+    indent = line[:len(line) - len(line.lstrip())]
+    if stripped in ("\\[", "\\]"):
+      out.append(indent + "$$")
+      continue
+    m = _MATH_BLOCK_LINE_RE.match(line)
+    if m:
+      out.extend([m.group(1) + "$$", m.group(1) + m.group(2), m.group(1) + "$$"])
+      continue
+    parts = line.split("`")
+    for i in range(0, len(parts), 2):
+      parts[i] = _MATH_INLINE_RE.sub(lambda x: "$" + x.group(1).strip() + "$", parts[i])
+    out.append("`".join(parts))
+  return "\n".join(out)
 
 #------------------------------------------------------------------------------ Frontmatter helpers
 
@@ -173,6 +211,7 @@ class MarkdownRenderer:
     read it, but every visual decision comes from `style`.
     """
     fm, md_text = self._strip_frontmatter(md_text)
+    md_text = normalize_math_delimiters(md_text)
     self._apply_chrome(fm)
     # Body typography applied once; caller may override via `doc.style(...)`.
     self.doc.style(
@@ -1025,12 +1064,25 @@ class MarkdownRenderer:
 
   def _render_math_block(self, latex:str):
     """Display `$$...$$` (or ```math): a centered native OMML equation on its
-    own paragraph, with an image fallback for unsupported LaTeX."""
-    from .math import build_omath_para, MathConversionError
+    own paragraph, with an image fallback for unsupported LaTeX. A `\tag{...}`
+    becomes the right-aligned equation label, Word style."""
+    from .math import build_omath_para, latex_to_omath, pop_tag, MathConversionError
     from ..constants import Align
     from ..utils import align_to_docx
     self.doc._flush_para()
+    latex, tag = pop_tag(latex)
     size_halfpt, color_hex = self._math_run_props()
+    if tag:
+      try:
+        omath = latex_to_omath(latex, size_halfpt=size_halfpt, color_hex=color_hex)
+      except (MathConversionError, RecursionError):
+        self._render_math_block_image(latex, tag)
+        return
+      p = self._tagged_equation_para(tag)
+      # order in the XML is the order on the line: tab, equation, tab, label
+      p._p.insert(list(p._p).index(p.runs[-1]._r), omath)
+      self.doc._track_block_spacing(self.doc._style.space_after or 0)
+      return
     try:
       omath_para = build_omath_para(latex, size_halfpt=size_halfpt,
         color_hex=color_hex, align="center")
@@ -1042,6 +1094,23 @@ class MarkdownRenderer:
     p.alignment = align_to_docx(Align.CENTER)
     p._p.append(omath_para)
     self.doc._track_block_spacing(self.doc._style.space_after or 0)
+
+  def _tagged_equation_para(self, tag:str):
+    """Paragraph carrying the classic Word equation layout: a center tab in
+    the middle of the text width, a right tab at its edge, the label after
+    the second tab. The equation itself goes between the tabs."""
+    from docx.enum.text import WD_TAB_ALIGNMENT
+    from docx.shared import Mm
+    from ..utils import to_mm
+    content_w = to_mm(self.doc._page.content_width, self.doc.unit)
+    p = self.doc._doc.add_paragraph()
+    self.doc._apply_para_spacing(p)
+    pf = p.paragraph_format
+    pf.tab_stops.add_tab_stop(Mm(content_w / 2), WD_TAB_ALIGNMENT.CENTER)
+    pf.tab_stops.add_tab_stop(Mm(content_w), WD_TAB_ALIGNMENT.RIGHT)
+    p.add_run("\t")
+    p.add_run("\t" + tag)
+    return p
 
   #---------------------------------------------------------------------------- Math image fallback
 
@@ -1076,8 +1145,9 @@ class MarkdownRenderer:
     if descent_pt > 0.1:
       self._set_run_vertical_position(run, -round(descent_pt * 2))
 
-  def _render_math_block_image(self, latex:str):
-    """Centered block image for a display formula outside the OMML subset."""
+  def _render_math_block_image(self, latex:str, tag:str|None=None):
+    """Centered block image for a display formula outside the OMML subset.
+    With a `tag`, the image sits between the label tabs instead."""
     from .math import render_math_png
     from ..constants import Defaults, Align
     body_pt = self.doc._style.font_size or Defaults.FONT_SIZE
@@ -1088,14 +1158,23 @@ class MarkdownRenderer:
       # Render the LaTeX body as centered code - never echo the `$$` delimiters.
       self._warn_math_fallback()
       self.doc.para(align=Align.CENTER)
-      self.doc.text(latex, code=True)
+      self.doc.text(latex + (f"  {tag}" if tag else ""), code=True)
       return
     buf, w_mm, h_mm, _baseline = result
     content_w = self.doc._page.content_width
     if w_mm > content_w:  # cap to page width
       h_mm = h_mm * content_w / w_mm
       w_mm = content_w
-    self._insert_picture(buf, w_mm, h_mm)
+    if tag is None:
+      self._insert_picture(buf, w_mm, h_mm)
+      return
+    from docx.shared import Mm
+    from ..utils import to_mm
+    p = self._tagged_equation_para(tag)
+    run = p.runs[0]
+    run.add_picture(buf, height=Mm(to_mm(h_mm, self.doc.unit)))
+    self._pin_inline_picture_offsets(run)
+    self.doc._track_block_spacing(self.doc._style.space_after or 0)
 
   def _set_run_vertical_position(self, run, half_points:int):
     """Set `<w:position>` on a run (raises/lowers it; half-point units)."""
