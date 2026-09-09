@@ -14,7 +14,7 @@ md_to_docx(md_text, "out.docx", page=A4.landscape(), base_dir="./assets")
 
 ## Banner (YAML frontmatter)
 
-YAML block at the top becomes a styled banner on page 1.
+YAML block at top becomes a styled banner on page 1.
 
 ```yaml
 ---
@@ -50,11 +50,11 @@ logo: ./ranger-badge.svg
 
 DOCX core properties _(`/Title`, `/Author`, `/Subject`, `/Keywords`)_ auto-fill from matching YAML keys. Pass `metadata={...}` to `md_to_docx()` to override per-key.
 
-If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Only applies when the banner actually printed that title, so `banner=False` never costs you the heading.
+If first body block is `# X` and `X` matches `title` exactly, h1 is dropped to avoid showing the title twice. Only applies when banner actually printed that title, so `banner=False` never costs you the heading.
 
 ## Presentation
 
-Frontmatter carries content only. Everything visual comes from the caller, and `style=` is used **verbatim** - there is no layering and no diff-against-defaults heuristic, so you can set any value, including one equal to a `MarkdownStyle()` default.
+Frontmatter carries content only. Everything visual comes from caller, and `style=` is used **verbatim** - there is no layering and no diff-against-defaults heuristic, so you can set any value, including one equal to a `MarkdownStyle()` default.
 
 ```python
 from docmarq.md import md_to_docx, lang_style
@@ -71,13 +71,13 @@ md_to_docx(md, "out.docx", style=style,
 ```
 
 `sign` takes `True` for one line, a `sign_labels` scenario _(`signature`, `approval`,
-`contract`, localized by the language preset)_, or a list of custom labels drawn side
-by side, sharing the content width.
+`contract`, localized by language preset)_, or a list of custom labels drawn side
+by side, sharing content width.
 
 
 `page` is a `PageSize` in mm: `A4`, `A4.landscape()`, `page_size("a3")` for a preset name (`A4`/`A3`/`A5`/`LETTER`/`LEGAL`, raises on anything else), or `PageSize(200, 250)` for a custom sheet.
 
-Everything after `output_path` is keyword-only, so the argument order cannot silently diverge from `pdfmarq.md.md_to_pdf`.
+Everything after `output_path` is keyword-only, so argument order cannot silently diverge from `pdfmarq.md.md_to_pdf`.
 
 ### Intentional divergences from pdfmarq
 
@@ -86,7 +86,7 @@ Same field names, deliberately different values - do not "fix" these:
 | Field | pdfmarq | docmarq | Why |
 | --- | --- | --- | --- |
 | `line_height` | `1.4` | `1.0` | Word's "Single" already adds ~1.2× leading; pdfmarq has none |
-| `font_body` / `font_mono` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on the reader's machine |
+| `font_body` / `font_mono` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on reader's machine |
 | `gutter` | folded into the left margin | Word's native gutter | Word mirrors it on duplex, a PDF margin cannot |
 | `math_fontset` | `stixsans` | `stix` | fallback formulas blend with Word's serif Cambria Math |
 | `mermaid_remote` | - | `True` | allow the mermaid.ink fallback; `False` keeps diagram source on the machine |
@@ -107,7 +107,7 @@ Each heading auto-registers a GitHub-style slug _(lowercase, spaces → hyphens,
 
 ## Local links
 
-Paths without a schema _(`[x](file.md)`, `[x](folder/doc)`, `[x](/absolute/path)`)_ get the link style _(blue + underline)_ but no clickable action by default. Set `link_root` to make them real URLs:
+Paths without a schema _(`[x](file.md)`, `[x](folder/doc)`, `[x](/absolute/path)`)_ get link style _(blue + underline)_ but no clickable action by default. Set `link_root` to make them real URLs:
 
 ```py
 MarkdownStyle(
@@ -122,7 +122,7 @@ Resolution:
 
 ## Style
 
-Beyond the fields shown above:
+Beyond fields shown above:
 
 ```py
 MarkdownStyle(
@@ -136,7 +136,7 @@ MarkdownStyle(
 
 ### Banner labels (i18n)
 
-Labels in the banner, footer, and callouts are style fields. Defaults are English. Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
+Labels in banner, footer, and callouts are style fields. Defaults are English. Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
 
 ```py
 from docmarq.md import lang_style, md_to_docx
@@ -234,7 +234,7 @@ Markdown tables require a header row per spec, but a single-row "card" layout is
 ---
 ```
 
-CommonMark parses this as a setext h2 with the image as heading text. `docmarq` detects the image-only setext case and renders it as a block image followed by an `<hr>`, matching the user's actual intent.
+CommonMark parses this as a setext h2 with image as heading text. `docmarq` detects image-only setext case and renders it as a block image followed by an `<hr>`, matching user's actual intent.
 
 ## Mixing with core API
 
@@ -298,7 +298,7 @@ Installed by `pip install docmarq[md]`:
 - `markdown-it-py`, `mdit-py-plugins`: parser + GFM plugins
 - `PyYAML`: frontmatter
 - `mermaid-cli` via npm for ` ```mermaid ` blocks: `npm install -g @mermaid-js/mermaid-cli` _(System tool, **not on PyPI**)_.
-  Without it the diagram source goes to the `mermaid.ink` HTTP service, which
+  Without it diagram source goes to the `mermaid.ink` HTTP service, which
   warns once per process; `mermaid_remote=False` keeps it offline and renders a
   code block instead.
 

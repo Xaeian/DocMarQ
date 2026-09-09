@@ -20,6 +20,7 @@ from docx.shared import Pt, RGBColor
 from ..core import DOCX
 from ..constants import Align, PageSize, A4
 from ..utils import mm_to_pt
+from ..svg import register_fonts
 from .style import MarkdownStyle
 from .tokens import get_attr, find_close, CALLOUT_RE
 from . import slug, image_utils, mermaid
@@ -170,14 +171,19 @@ class MarkdownRenderer:
       base_dir: Root for resolving relative image paths
         (e.g. `![alt](./img/x.png)`). Defaults to current working dir.
       font_dir: Optional TTF root. When set, mermaid diagrams render with
-        `style.font_body` instead of the system default sans-serif
-        (matches the rest of the document). Layout: `<font_dir>/<family>/
-        <family>-Regular.ttf`.
+        `style.font_body` instead of the system default sans-serif, and the
+        document families become resolvable for any text drawn inside an SVG
+        (both match the rest of the document). Layout: `<font_dir>/<family>/
+        <family>-<mode>.ttf`.
     """
     self.doc = doc
     self.style = style or MarkdownStyle()
     self.base_dir = base_dir or os.getcwd()
     self.font_dir = font_dir
+    if font_dir:
+      register_fonts(
+        font_dir, self.style.font_body, self.style.font_head, self.style.font_mono,
+      )
     md = MarkdownIt("commonmark", {"html": True, "breaks": False})
     md.enable(["table", "strikethrough"])
     md.use(footnote_plugin)
@@ -1619,7 +1625,8 @@ def md_to_docx(
       duplex.
     base_dir: root for relative image paths. `None` uses cwd.
     font_dir: TTF root for mermaid diagram font sync. When set, diagrams
-      render in `style.font_body` instead of the system default.
+      render in `style.font_body` instead of the system default, and the
+      document families also back any text drawn inside an SVG.
   """
   eff_style = style or MarkdownStyle()
   doc = DOCX(

@@ -17,7 +17,7 @@ Example:
 
 #--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.3.5"
+__version__ = "0.3.6"
 __repo__ = "Xaeian/DocMarQ"
 __python__ = ">=3.10"
 __description__ = "DOCX generation library with fluent API"
@@ -43,10 +43,11 @@ from .utils import (
   parse_color, parse_margin, color_hex, rgb255,
 )
 from .inline import RichSegment
+from .svg import register_fonts
 from .core import DOCX
 
 __all__ = [
-  "DOCX",
+  "DOCX", "register_fonts",
   "Unit", "PageSize", "Align", "Colors", "Defaults",
   "A4", "A3", "A5", "LETTER", "LEGAL", "EMU_PER_MM", "EMU_PER_PT",
   "Style", "TableStyle", "Styles",

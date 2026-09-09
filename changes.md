@@ -1,5 +1,9 @@
 # Changes `docmarq`
 
+## `0.3.6` SVG fonts
+
+- SVG text uses document fonts, via `register_fonts`
+
 ## `0.3.5` Math input
 
 - LaTeX math delimiters `\[...\]` and `\(...\)` accepted
@@ -7,7 +11,7 @@
 
 ## `0.3.4` Image sizing
 
-- Block images fill the text width down to `image_min_dpi`
+- Block images fill text width down to `image_min_dpi`
 - Images alone in a paragraph become a row of figures, wrapping into a grid
 - Mermaid diagrams size like any other figure
 - Block images centred by default, matching `pdfmarq`
@@ -15,7 +19,7 @@
 
 ## `0.3.3` Numbering & lists
 
-- Ordered lists keep the author's numbering, `ordered(start=)`
+- Ordered lists keep author's numbering, `ordered(start=)`
 - SVG rasterizer moved to `docmarq.svg`, usable without markdown
 - `mermaid_remote=False` keeps diagram source off the network
 - Fix: paragraph properties in OOXML order, blocks inside list items

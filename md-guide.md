@@ -23,7 +23,7 @@ Everything else has sensible defaults.
 
 ## Frontmatter
 
-YAML between `---` markers at the top of the file. It becomes the banner on page 1.
+YAML between `---` markers at top of the file. It becomes the banner on page 1.
 
 ```yaml
 ---
@@ -49,7 +49,7 @@ Every field is optional and unknown keys pass through untouched, so a document c
 `keywords` takes a comma-separated string or a YAML list.
 Write dates bare: a quoted date is carried through as text and the two formats then disagree on how to print it.
 
-A first heading repeating `title` word for word is dropped so the title is not printed twice, and its anchor goes with it, so do not link to it.
+A first heading repeating `title` word for word is dropped so title is not printed twice, and its anchor goes with it, so do not link to it.
 
 The language of everything the renderer writes itself, callout labels, the word for "page", the date format, is chosen at conversion time rather than in the file.
 
@@ -69,28 +69,28 @@ A value outside the table is not rejected: it prints as a grey badge in capitals
 ## Content
 
 Standard GitHub-flavored markdown works in both.
-For the syntax itself, [Markdown](https://github.com/Xaeian/Markdown) is the reference; this guide covers only what these two renderers add, and where they part company.
+For syntax itself, [Markdown](https://github.com/Xaeian/Markdown) is the reference; this guide covers only what these two renderers add, and where they part company.
 
 ### Where the two formats differ
 
 PDF is the richer target.
 If a document may end up as DOCX, do not lean on anything in the middle column.
 
-| Written as                               | PDF                                 | DOCX                                   |
-| ---------------------------------------- | ----------------------------------- | -------------------------------------- |
-| fenced code with a language              | coloured by Pygments                | plain, the hint is dropped             |
-| `$x^2$` and `$$…$$`                      | drawn, blocks numbered `(1)`, `(2)` | a real Word equation, unnumbered       |
-| a formula inside a table cell            | drawn                               | drops back to `$…$` as text            |
-| formatting in a table cell               | bold, links and images all work     | text survives, an image leaves its alt |
-| footnote ref `[^1]`                      | jumps to the definition             | superscript only, not clickable        |
-| `- [x]` task list                        | checkbox                            | literal `[x]`                          |
-| `==mark==`, `^sup^`, `~sub~`             | rendered                            | literal characters                     |
-| `:rocket:`                               | emoji                               | literal `:rocket:`                     |
-| definition list                          | rendered                            | one paragraph, literal `:`             |
-| `<b>/<strong> <i>/<em> <code> <br> <hr>` | rendered                            | dropped, the text survives             |
+| Written as                    | PDF                                 | DOCX                                   |
+| ----------------------------- | ----------------------------------- | -------------------------------------- |
+| fenced code with a language   | coloured by Pygments                | plain, hint is dropped                 |
+| `$x^2$` and `$$…$$`           | drawn, blocks numbered `(1)`, `(2)` | a real Word equation, unnumbered       |
+| a formula inside a table cell | drawn                               | drops back to `$…$` as text            |
+| formatting in a table cell    | bold, links and images all work     | text survives, an image leaves its alt |
+| footnote ref `[^1]`           | jumps to definition                 | superscript only, not clickable        |
+| `- [x]` task list             | checkbox                            | literal `[x]`                          |
+| `==mark==`, `^sup^`, `~sub~`  | rendered                            | literal characters                     |
+| `:rocket:`                    | emoji                               | literal `:rocket:`                     |
+| definition list               | rendered                            | one paragraph, literal `:`             |
+| `<b> <i> <code> …`            | rendered                            | dropped, text survives                 |
 
 A formula itself is safe in both. What is not safe is a table cell carrying anything beyond plain text: in DOCX a cell is a string, so formatting flattens and a picture is reduced to its alt text.
-A tag carrying attributes is stripped too, so `<b class="x">` is not the whitelisted `<b>`.
+Whitelisted HTML is `<b>/<strong>`, `<i>/<em>`, `<code>`, `<br>` and `<hr>`. A tag carrying attributes is stripped, so `<b class="x">` is not one of them.
 All other HTML goes in both formats, so prefer `---` over `<hr>`.
 
 ### Lists
@@ -99,23 +99,23 @@ Under a numbered item a nested list needs three or four spaces; two makes it a s
 In PDF that still looks about right, because the marker you typed is the marker you get, which is what makes the mistake easy to miss.
 Under a bullet, two spaces are fine.
 
-A nested list that starts at anything other than `1.` needs a blank line above it, or the parent item swallows it and the text runs together on one line.
+A nested list that starts at anything other than `1.` needs a blank line above it, or the parent item swallows it and text runs together on one line.
 With that blank line any starting number is read as a list.
-PDF then prints the numbers as written, while Word counts from one through its own list style.
+PDF then prints numbers as written, while Word counts from one through its own list style.
 
 ### Images
 
-Keep the files next to the markdown and link them relatively.
+Keep files next to the markdown and link them relatively.
 Everything the document needs has to travel with it: an absolute path, a path leading out of the document's own folder, and an `https://` address all fail to load.
 
 Give a figure its own paragraph and let it size itself.
-It fills the text width as far as its resolution allows, stops at 120mm tall and sits centred, so an exported chart spans the column while a small icon stays an icon.
+It fills text width as far as its resolution allows, stops at 120mm tall and sits centred, so an exported chart spans the column while a small icon stays an icon.
 PDF and DOCX land on the same box.
 
 Images alone in a paragraph share that width: two side by side become two half-width figures, eight become two rows of four.
-An image on the same line as text stays inline at line height, and DOCX keeps only its alt text - so put the caption in the next paragraph, never beside the picture.
+An image on the same line as text stays inline at line height, and DOCX keeps only its alt text - so put caption in the next paragraph, never beside the picture.
 
-The title slot sizes a figure by hand when the automatic size is wrong:
+The title slot sizes a figure by hand when automatic size is wrong:
 
 ```md
 ![diagram](schema.svg "max_h=80 align=C")
@@ -127,12 +127,12 @@ The title slot sizes a figure by hand when the automatic size is wrong:
 | `max_h` | Cap height in mm, aspect ratio preserved         |
 | `w`     | Set width in mm                                  |
 | `h`     | Set height in mm                                 |
-| `scale` | Multiplier on the natural size, `1.0` means 100% |
+| `scale` | Multiplier on natural size, `1.0` means 100%     |
 | `align` | `L`, `C` or `R`, block images default to `C`     |
 
-`scale` runs first from the natural size, then `w` and `h`, then `max_*` clamps the result, so a cap always wins.
+`scale` runs first from natural size, then `w` and `h`, then `max_*` clamps the result, so a cap always wins.
 
-A missing file never stops the conversion: PDF prints `[Image not found: …]`, DOCX leaves the alt text, and the document comes out looking finished with a hole in it.
+A missing file never stops the conversion: PDF prints `[Image not found: …]`, DOCX leaves alt text, and the document comes out looking finished with a hole in it.
 
 ### Formulas
 
@@ -145,7 +145,7 @@ A `\tag{X1.1}` names the label itself: it replaces the number in PDF and appears
 ### Mermaid diagrams
 
 Fenced `mermaid` blocks compile to PNG and embed like any other figure.
-The same image DSL applies, written as an info string after the lang token.
+The same image DSL applies, written as an info string after lang token.
 
 ````md
 ```mermaid max_h=80 align=C
@@ -154,7 +154,7 @@ flowchart TB
 ```
 ````
 
-When the renderer is unavailable the source stays a plain fenced block, so the document still builds.
+When the renderer is unavailable the source stays a plain fenced block, so document still builds.
 
 ### Callouts
 
@@ -175,7 +175,7 @@ A link to a slug that does not exist stays readable rather than dangling: plain 
 The dropped duplicate title counts as one of those, so a link to it is text, not a jump.
 
 Footnote refs `[^1]` jump to their definition in PDF.
-DOCX prints the superscript but registers no anchor, and the definitions collect at the end of the document rather than becoming Word footnotes.
+DOCX prints superscript but registers no anchor, and definitions collect at the end of the document rather than becoming Word footnotes.
 
 ## Layout directives
 

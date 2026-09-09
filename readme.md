@@ -76,14 +76,14 @@ and `base_dir` for relative images.
 
 - GitHub-flavored markdown _(tables, fenced code, lists, strikethrough)_
 - YAML frontmatter rendered as a page-1 banner _(logo, status badge, version, sign block)_
-- Page geometry, fonts, banner toggles and locale come from the caller's `style=`, never from the document _(see [`md-guide`](https://github.com/Xaeian/DocMarQ/blob/main/md-guide.md))_
+- Page geometry, fonts, banner toggles and locale come from caller's `style=`, never from the document _(see [`md-guide`](https://github.com/Xaeian/DocMarQ/blob/main/md-guide.md))_
 - Built-in language presets _(en|pl|de|fr|es|it|cs|sk)_ via `lang_style()`: covers banner labels, callouts, date format
 - Skip-duplicate-title: drops `# X` when it matches frontmatter `title`
 - Auto-slugged headings with clickable `[text](#anchor)` internal links _(unicode-aware)_
 - Local-path links configurable via `link_root` + `link_base` _(or per-doc YAML `base:`)_
 - Mermaid diagrams via `mermaid-cli` _(local)_ or `mermaid.ink` _(network fallback)_, with a shared cache with `pdfmarq`
 - Footnotes, emoji shortcodes `:rocket:`, nested lists, blockquotes, GitHub callouts _(`> [!NOTE]`, `> [!WARNING]`, …)_
-- Images alone in a paragraph become figures sharing the text width, wrapping into a grid beyond it
+- Images alone in a paragraph become figures sharing text width, wrapping into a grid beyond it
 - An image on the same line as text keeps only its alt text, so give a figure its own paragraph
 - Headerless single-row tables for label/value cards
 
@@ -99,6 +99,6 @@ Not supported _(use `pdfmarq` if you need them)_: syntax highlighting in code bl
 ## See also
 
 Need PDF instead of `.docx`?
-Check [**PDFMarQ**](https://github.com/Xaeian/PDFMarQ), the sibling library with the same API shape and PDF output.
+Check [**PDFMarQ**](https://github.com/Xaeian/PDFMarQ), sibling library with the same API shape and PDF output.
 It adds syntax highlighting and pre-measured page breaks, and covers a wider slice of LaTeX.
 Otherwise feature parity _(banner, callouts, mermaid, lang presets)_.

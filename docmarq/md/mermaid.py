@@ -31,6 +31,7 @@ import tempfile
 import urllib.request
 import urllib.error
 from pathlib import Path
+from ..fonts import resolve_ttf
 
 #-------------------------------------------------------------------------------------------- Cache
 
@@ -54,16 +55,6 @@ def _cache_key(
   return hashlib.sha1(payload).hexdigest()[:16]
 
 #----------------------------------------------------------------------------------------- Font CSS
-
-def _resolve_font_ttf(font_dir:str, family:str) -> Path|None:
-  """Find `<family>-Regular.ttf` under `font_dir`."""
-  base = Path(font_dir)
-  for sub in (family.lower(), family):
-    p = base / sub / f"{family}-Regular.ttf"
-    if p.is_file(): return p
-  p = base / f"{family}-Regular.ttf"
-  if p.is_file(): return p
-  return None
 
 def _mmdc_css_with_font(ttf_path:Path, family:str) -> str:
   """CSS for mmdc: @font-face from local TTF + apply to all SVG text."""
@@ -192,7 +183,7 @@ def _try_mmdc(
   if pp_config and Path(pp_config).is_file():
     cmd += ["-p", pp_config]
   if font_family and font_dir:
-    ttf = _resolve_font_ttf(font_dir, font_family)
+    ttf = resolve_ttf(font_dir, font_family)
     if ttf is not None:
       try:
         with tempfile.NamedTemporaryFile("w", suffix=".css", delete=False,
