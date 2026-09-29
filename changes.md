@@ -1,5 +1,9 @@
 # Changes `docmarq`
 
+## `0.3.7` Table widths
+
+- Table columns sized by content, as in `pdfmarq`
+
 ## `0.3.6` SVG fonts
 
 - SVG text uses document fonts, via `register_fonts`

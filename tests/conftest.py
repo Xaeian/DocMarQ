@@ -80,3 +80,8 @@ def docx_ppr_children(path:str) -> list:
     if "pBdr" in kids or "shd" in kids:
       out.append(kids)
   return out
+
+def docx_grid_mm(path:str) -> list[list[float]]:
+  """Grid column widths of every table, in mm."""
+  import docx
+  return [[col.w.mm for col in t._tbl.tblGrid.gridCol_lst] for t in docx.Document(path).tables]

@@ -91,7 +91,7 @@ class TableStyle:
   vertical_align: str = "center"
   header_repeat: bool = True
   table_align: str|None = None
-  fill_content_width: bool = True # auto-fill content area width
+  fill_content_width: bool = True # columns sized by content, filling the content area
   # Cell font size in pt. `None` → auto-derive as `body_size - 1` rounded to
   # integer (for 11 pt body → 10 pt cells, common paper convention). Set
   # an explicit float to override.

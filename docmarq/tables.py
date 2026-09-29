@@ -1,12 +1,87 @@
 # docmarq/tables.py
 
-"""Table rendering helpers.
+"""
+Table rendering helpers.
 
-Word handles column auto-layout itself, so we don't have to
-solve column widths or text fitting. This module covers what Word doesn't
-hand us: zebra striping, header shading, border styling, cell padding.
+Column widths come from content, HTML-style, and go out as a fixed layout:
+Word's own autofit lays a table out differently in every renderer.
+The rest is what Word doesn't hand us: zebra striping, header shading, borders, cell padding.
 """
 from .utils import color_hex
+from .metrics import text_width_mm
+
+#------------------------------------------------------------------------------------ Column widths
+
+# Word rounds widths to 1/20 pt and may set a glyph a hair wider than its TTF says.
+# Without this room, a word given exactly its measured width could still break.
+_FIT_SLACK_MM = 0.3
+
+def content_widths(
+  rows:list[list[str]], total:float, pad:float,
+  family:str, size_pt:float,
+  bold_rows:int = 0,
+) -> list[float]:
+  """
+  Column widths in mm that fill `total`, sized by content the way HTML auto layout does.
+
+  A column's min is its widest word, its max its longest line, both with `pad` a side.
+  The first `bold_rows` rows measure bold, as a header does.
+  """
+  ncols = max(len(row) for row in rows)
+  col_min, col_max = [0.0] * ncols, [0.0] * ncols
+  for r, row in enumerate(rows):
+    bold = r < bold_rows
+    for c, cell in enumerate(row):
+      for line in str(cell).split("\n"):
+        col_max[c] = max(col_max[c], text_width_mm(line, family, size_pt, bold))
+        for word in line.split():
+          col_min[c] = max(col_min[c], text_width_mm(word, family, size_pt, bold))
+  edge = 2 * pad + _FIT_SLACK_MM
+  col_min = [w + edge for w in col_min]
+  col_max = [w + edge for w in col_max]
+  return _fit_columns(col_min, col_max, total, list(range(ncols)))
+
+# `_fit_columns` and `_cap_widths` are vendored from `pdfmarq.md.md_table` on purpose:
+# both packages lay the same markdown out alike, and a cross-lib test keeps the copies equal.
+
+def _fit_columns(
+  col_min:list[float], col_max:list[float],
+  total:float, grow:list[int],
+) -> list[float]:
+  """
+  HTML-style auto layout: widths that sum to `total`, each column between its min and max.
+
+  Room to spare goes in equal shares to the `grow` columns, or to all when none may grow.
+  A squeeze shrinks each column toward its min, in proportion to its max - min gap.
+  Minimums wider than `total` go to `_cap_widths`.
+  """
+  if not col_max: return []
+  if sum(col_max) <= total:
+    grow = grow or list(range(len(col_max)))
+    share = (total - sum(col_max)) / len(grow)
+    return [w + share if i in grow else w for i, w in enumerate(col_max)]
+  if sum(col_min) >= total: return _cap_widths(col_min, total)
+  gaps = [hi - lo for lo, hi in zip(col_min, col_max)]
+  scale = (total - sum(col_min)) / sum(gaps)
+  return [lo + gap * scale for lo, gap in zip(col_min, gaps)]
+
+def _cap_widths(widths:list[float], total:float) -> list[float]:
+  """
+  Cut the widest of `widths` down to one shared cap, so they sum to `total`.
+
+  For column minimums that overflow the page.
+  Scaling them all would break a short code like `PP-1` as hard as the URL behind the squeeze.
+  A cap keeps every narrower column whole: only words too long to fit anyway get broken.
+  """
+  remaining = total
+  left = len(widths)
+  for w in sorted(widths):
+    cap = remaining / left
+    if w >= cap:
+      return [min(x, cap) for x in widths]
+    remaining -= w
+    left -= 1
+  return list(widths)
 
 #----------------------------------------------------------------------------------- Border helpers
 

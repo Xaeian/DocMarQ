@@ -18,7 +18,7 @@ from .inline import RichSegment, _apply_run_format
 from .svg import svg_to_png_buffer, is_svg
 from .tables import (
   apply_table_borders, apply_cell_shading, set_cell_align, repeat_header_row,
-  set_cell_margins, set_cell_vertical_align,
+  set_cell_margins, set_cell_vertical_align, content_widths,
 )
 
 #--------------------------------------------------------------------------------------------- DOCX
@@ -608,7 +608,9 @@ class DOCX:
       body: List of rows (each row a list of cell strings).
       header: Optional header row.
       aligns: Per-column alignment - `L`/`R`/`C`/`J`.
-      widths: Per-column widths in mm; `None` lets Word auto-size.
+      widths: Per-column widths in mm.
+        `None` sizes columns by content to fill the content area.
+        With `style.fill_content_width` off, Word sizes them itself.
       style: `TableStyle` for borders/shading. Ignored when `word_style` set.
       word_style: Built-in Word style name (e.g. `Light Grid`).
     """
@@ -636,15 +638,19 @@ class DOCX:
       eff_size_pt = smaller_size(body_pt)
     else:
       eff_size_pt = style.font_size
-    # Column widths: explicit `widths=`, else fill the content area equally.
-    # Without them python-docx auto-sizes to content and narrow tables drift
-    # left; explicit widths + no autofit anchor the table to the full width.
+    # Column widths: explicit `widths=`, else sized by content to fill the content area.
+    # Left to python-docx, a narrow table drifts left.
+    # Explicit widths and no autofit anchor it to the full width.
     if widths:
       col_w_mm = [to_mm(w, self.unit) for w in widths[:ncols]]
       while len(col_w_mm) < ncols:
         col_w_mm.append(self._page.content_width / ncols)
     elif style.fill_content_width:
-      col_w_mm = [self._page.content_width / ncols] * ncols
+      # cell runs name no font, so they set in the `Normal` face, not the current `font()`
+      family = self._doc.styles["Normal"].font.name or Defaults.FONT_FAMILY
+      bold_rows = 1 if header and style.header_bold else 0
+      col_w_mm = content_widths(rows, self._page.content_width, style.cell_pad_h,
+        family, eff_size_pt, bold_rows)
     else:
       col_w_mm = None
     # Borders first: `_set_table_widths` reorders `tblPr` into canonical schema
