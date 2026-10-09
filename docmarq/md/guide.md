@@ -23,7 +23,8 @@ Everything else has sensible defaults.
 
 ## Frontmatter
 
-YAML between `---` markers at top of the file. It becomes the banner on page 1.
+YAML between `---` markers at top of the file.
+Rendered as a paper document, it becomes the banner on page 1.
 
 ```yaml
 ---
@@ -89,9 +90,11 @@ If a document may end up as DOCX, do not lean on anything in the middle column.
 | definition list               | rendered                            | one paragraph, literal `:`             |
 | `<b> <i> <code> …`            | rendered                            | dropped, text survives                 |
 
-A formula itself is safe in both. What is not safe is a table cell carrying anything beyond plain text: in DOCX a cell is a string, so formatting flattens and a picture is reduced to its alt text.
-Whitelisted HTML is `<b>/<strong>`, `<i>/<em>`, `<code>`, `<br>` and `<hr>`. A tag carrying attributes is stripped, so `<b class="x">` is not one of them.
-All other HTML goes in both formats, so prefer `---` over `<hr>`.
+A formula itself is safe in both.
+What is not safe is a table cell carrying anything beyond plain text: in DOCX a cell is a string, so formatting flattens and a picture is reduced to its alt text.
+PDF renders the HTML tags `<b>/<strong>`, `<i>/<em>`, `<code>`, `<br>` and `<hr>`.
+A tag carrying attributes is stripped, so `<b class="x">` is not one of them.
+All other HTML goes in both formats, and DOCX drops even those, so prefer `---` over `<hr>`.
 
 ### Lists
 
@@ -101,7 +104,7 @@ Under a bullet, two spaces are fine.
 
 A nested list that starts at anything other than `1.` needs a blank line above it, or the parent item swallows it and text runs together on one line.
 With that blank line any starting number is read as a list.
-PDF then prints numbers as written, while Word counts from one through its own list style.
+PDF then prints numbers as written, while Word counts on from the first one through its own list style.
 
 ### Images
 
@@ -169,7 +172,7 @@ Each gets a coloured left border and a bold label in the document language, so P
 ### Internal links
 
 Each heading registers a GitHub-style slug: lowercase, spaces to hyphens, unicode kept, runs collapsed to one.
-Two headings with the same text get the same slug and nothing tells them apart, so linking to either is a coin flip.
+Two headings with the same text get numbered slugs, `setup` and then `setup-1`, as on GitHub.
 
 A link to a slug that does not exist stays readable rather than dangling: plain text in DOCX, styled but inert in PDF.
 The dropped duplicate title counts as one of those, so a link to it is text, not a jump.
@@ -198,6 +201,8 @@ Both must stand alone in the comment, so `<!-- pagebreak now -->` is an ordinary
 1. `title:` and `author:` are set, and `status:` is honest.
 2. `id:` is set if the document belongs to a controlled set, such as a DMS or an audit trail.
 3. `created:` untouched, `updated:` current.
-4. Every image and the logo sit beside the source and travel with it. Nothing points outside the document's own folder.
-5. The output has been opened once. A file that would not load leaves a placeholder, not an error.
+4. Every image and the logo sit beside the source and travel with it.
+   Nothing points outside the document's own folder.
+5. The output has been opened once.
+   A file that would not load leaves a placeholder, not an error.
 6. If the document may also become DOCX, nothing from the PDF column is load-bearing.

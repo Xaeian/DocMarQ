@@ -1,8 +1,7 @@
 # `docmarq`
 
-Fluent DOCX generation. Built on `python-docx` with a paragraph/run flow
-model. Sibling library: [`pdfmarq`](https://github.com/Xaeian/PDFMarQ) - same API
-shape for PDF.
+Fluent DOCX generation, built on `python-docx` with a paragraph/run flow model.
+Sibling library: [`pdfmarq`](https://github.com/Xaeian/PDFMarQ), same API shape for PDF.
 
 ## `DOCX` context
 
@@ -27,7 +26,13 @@ DOCX("out.docx", template="templates/corporate.docx")
 doc.font("Calibri", 11, "Bold") # `mode` accepts Regular/Bold/Italic/BoldItalic
 doc.color("#1f2328")           # default text color
 doc.style(line_height=1.4, space_before=4, space_after=4) # bulk update
+# Word's heading styles: size in pt, face, the rule under them; None keeps what is set
+doc.heading_style(2, size=13, bold=True, italic=False, rule=False)
+# Automatic hyphenation in a language, which becomes the language of the document
+doc.hyphenation("pl")
 ```
+
+Headings, the cells of `table()` and code blocks written after `hyphenation()` keep their words whole, so it comes before the blocks.
 
 ## Paragraphs and runs
 
@@ -45,16 +50,19 @@ doc.para("A pull quote.", style="Intense Quote", align="C")
 doc.text("highlighted", highlight="yellow")
 doc.text("monospace", code=True)
 doc.text("super", superscript=True).text(" sub", subscript=True)
+doc.text("Umowa", small_caps=True)       # lowercase letters as small capitals
+doc.border("#1f2328", sides=("top", "bottom"), space=8) # rule the current paragraph
 ```
 
 ## Headings, lists
 
 ```py
 doc.heading("Chapter 1", level=1)
+doc.heading("Terms", level=2, space_before=12, space_after=4) # pt, instead of the level's gaps
 doc.bullet("First item")
 doc.bullet("Nested item", level=1)
-doc.ordered("Step one")
-doc.ordered("Step two")
+doc.ordered("Step one", start=1, delim=")") # a new list counting from 1, printing `1)`
+doc.ordered("Step two")                      # continues it
 ```
 
 ## Block elements
@@ -71,6 +79,30 @@ doc.code_block(
   font_size=9,
 )
 ```
+
+## Columns
+
+```py
+doc.columns(2, gap=8) # what follows in two columns, gap in mm
+doc.para("Flows down the first column, then the second.")
+doc.columns(1)        # back to one, below the columns
+```
+
+Each change starts a continuous section, so the text runs on down the same page.
+Word ends the columns of a section level when it closes this way, on its last page too.
+`doc.content_width` follows the column, so tables and images fit it.
+
+## Writing into a table cell
+
+```py
+tbl = doc.doc.add_table(rows=1, cols=2)
+with doc.into(tbl.rows[0].cells[0], 80): # cell width in mm
+  doc.para("Written in the cell.")
+  doc.table([["a", "b"]])               # sized to the cell
+doc.para("Back after the table.")
+```
+
+Every block call writes into the cell while the `with` lasts, and the cell's width stands in for `content_width`.
 
 ## Tables
 
@@ -139,12 +171,28 @@ doc.footer(text="{page} / {pages}", align="C")
 doc.footer(align="R", page_number=True)
 ```
 
+`docmarq.fields` writes the fields themselves: `page_fields(p, "{page} / {pages}")` into any paragraph, and `page_fields_if_many(p, template)` as the field `IF NUMPAGES > 1`, which shows the numbers only in a document of more than one page.
+
+## Signing lines and page number
+
+`docmarq.parts` builds the pieces both document packages share, from plain values, the face of their text as a `RichSegment`:
+
+```py
+from docmarq import RichSegment
+from docmarq.parts import signatures, page_number
+label = RichSegment("", size=9, color=(0.4, 0.4, 0.4), italic=True)
+signatures(doc, ["Client", "Contractor"], label, gap=20, width=70, thick=0.5, line="dotted")
+page_number(doc.doc.sections[0].footer.paragraphs[0], "Page", show_total=True, many=True)
+```
+
+Their labels and the date format in each language are in `docmarq.parts.LANG_LABELS`, which the presets of both packages build on.
+
 ## Page sizes
 
 ```py
 from docmarq import A4, A3, A5, LETTER, LEGAL
 DOCX("out.docx", width=LETTER.width, height=LETTER.height)
-DOCX("out.docx").landscape() # swap width/height for current section
+DOCX("out.docx").landscape() # swap width/height for every section
 ```
 
 ## Metadata
@@ -178,7 +226,7 @@ Styles.CODE      # font_family="Consolas", font_size=10
 ## Markdown
 
 ```py
-from docmarq.md import md_to_docx, MarkdownStyle, lang_style
+from docmarq.paper import md_to_docx, lang_style
 from docmarq import A4
 
 md_to_docx(open("doc.md").read(), "doc.docx")
@@ -191,12 +239,8 @@ md_to_docx(text, "doc.docx", base_dir="./assets")
 md_to_docx(text, "doc.docx", page=A4.landscape())
 ```
 
-Supported markdown: headings, paragraphs, lists, tables, code blocks,
-blockquotes, GitHub callouts (`> [!NOTE]`), footnotes, mermaid diagrams
-(via local `mmdc` or mermaid.ink fallback - shared cache with `pdfmarq`),
-images, YAML frontmatter with banner rendering, and math formulas
-(`$x^2$`, `$$...$$`) as native Word equations (OMML) with a matplotlib
-image fallback for LaTeX outside the supported subset.
+The markdown engine is [`docmarq.md`](md/readme.md).
+Documentation with a banner comes from [`docmarq.paper`](paper/readme.md), letters and contracts from [`docmarq.legal`](legal/readme.md).
 
 ## Advanced
 

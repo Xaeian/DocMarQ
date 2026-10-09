@@ -2,10 +2,9 @@
 Heading slug generation and `#anchor` link resolution.
 
 GitHub-style slugs: lower-case, spaces to hyphens, drop non-word chars.
-Unicode-aware so Polish / German / Czech headings get usable slugs
-(`# Błędy` → `błędy`). Pre-scanning all heading slugs before rendering
-lets us catch broken `[text](#typo)` links and render them as plain text
-instead of producing dangling jumps.
+Unicode-aware so Polish / German / Czech headings get usable slugs (`# Błędy` → `błędy`).
+Pre-scanning all heading slugs before rendering lets us catch broken `[text](#typo)` links
+and render them as plain text instead of producing dangling jumps.
 """
 import urllib.parse
 from markdown_it.token import Token
@@ -13,9 +12,9 @@ from markdown_it.token import Token
 #------------------------------------------------------------------------------------------ Slugify
 
 def slugify_inline(inline_token:Token) -> str:
-  """GitHub-style slug from an inline token's children. Lower-case, spaces
-  collapsed to single hyphens, non-word chars dropped. Unicode letters and
-  digits pass through `str.isalnum`.
+  """GitHub-style slug from an inline token's children.
+  Lower-case, spaces collapsed to single hyphens, non-word chars dropped.
+  Unicode letters and digits pass through `str.isalnum`.
   """
   text = "".join(c.content for c in (inline_token.children or [])
     if c.type in ("text", "code_inline"))
@@ -33,25 +32,39 @@ def slugify_inline(inline_token:Token) -> str:
   return "".join(out).strip("-")
 
 def collect_heading_slugs(tokens:list[Token]) -> set[str]:
-  """Walk tokens and collect every heading's slug. Feeds `resolve_anchor`
-  so unknown `#anchor` hrefs render as plain text instead of producing
-  broken jumps.
+  """Walk tokens and collect every heading's slug.
+  Feeds `resolve_anchor` so unknown `#anchor` hrefs render as plain text
+  instead of producing broken jumps.
   """
   slugs:set[str] = set()
+  seen: dict = {}
   for i, t in enumerate(tokens):
     if t.type != "heading_open": continue
     if i + 1 < len(tokens) and tokens[i + 1].type == "inline":
       slug = slugify_inline(tokens[i + 1])
       if slug:
-        slugs.add(slug)
+        slugs.add(dedupe(slug, seen))
   return slugs
+
+def dedupe(slug:str, seen:dict) -> str:
+  """
+  `slug`, suffixed when the document already used it: `setup`, `setup-1`, `setup-2`.
+
+  Without it two headings reading the same share one bookmark, and every link lands on the first.
+  `seen` counts uses and is walked in document order by both the pre-scan and the render pass,
+  so the two agree on which heading owns which slug.
+  """
+  used = seen.get(slug, 0)
+  seen[slug] = used + 1
+  return slug if used == 0 else f"{slug}-{used}"
 
 #------------------------------------------------------------------------------------ Anchor lookup
 
 def resolve_anchor(href:str, known:set[str]) -> str|None:
-  """Map a `#slug` href to a known heading bookmark name. Returns the slug
-  on match, `None` otherwise. Handles markdown-it's URL-encoded non-ASCII
-  slugs (PL/DE/CZ/SK characters get percent-encoded by the parser).
+  """Map a `#slug` href to a known heading bookmark name.
+  Returns the slug on match, `None` otherwise.
+  Handles markdown-it's URL-encoded non-ASCII slugs
+  (PL/DE/CZ/SK characters get percent-encoded by the parser).
   """
   if not href.startswith("#"):
     return None

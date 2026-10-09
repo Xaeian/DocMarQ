@@ -1,96 +1,66 @@
 # `docmarq.md`
 
-Markdown-to-DOCX renderer with YAML frontmatter. Requires `pip install docmarq[md]`.
+Markdown engine: markdown content written into a `DOCX`, after its last block.
+Requires `pip install docmarq[md]`.
 
-## `md_to_docx`
+The engine writes content only.
+The page around it - banner, header, footer, signing lines - belongs to a document package:
+
+- [`docmarq.paper`](../paper/readme.md): documentation with a frontmatter banner, `md_to_docx` and `md_into`
+- [`docmarq.legal`](../legal/readme.md): letters, statements, contracts, parallel versions, `md_to_docx` and `md_parallel_to_docx`
+
+## Engine API
 
 ```py
-from docmarq.md import md_to_docx
-md_to_docx(open("doc.md").read(), "doc.docx")
-# Landscape, and relative images resolved against a directory
-from docmarq.constants import A4
-md_to_docx(md_text, "out.docx", page=A4.landscape(), base_dir="./assets")
+from docmarq import DOCX
+from docmarq.md import MarkdownRenderer, MarkdownStyle
+
+doc = DOCX("out.docx")
+renderer = MarkdownRenderer(doc, MarkdownStyle(), base_dir=".")
+renderer.render(text) # parse + index + render_tokens, frontmatter dropped
+doc.save()
 ```
 
-## Banner (YAML frontmatter)
+`render()` writes a whole document at once.
+A package that lays out the page itself works in steps:
 
-YAML block at top becomes a styled banner on page 1.
+- `renderer.parse(text)` returns tokens, frontmatter dropped
+- `renderer.index(tokens)` registers the heading slugs `[text](#slug)` links resolve to, once per document before any part is written;
+  `index(tokens, prefix="v2-")` keeps the bookmarks of one of several documents in a file apart from those of the others
+- `renderer.render_tokens(tokens[a:b])` writes any slice after the last block
+- `renderer.render_tokens(part, style)` sets that part in a style of its own: font, size, leading, paragraph gap; heading slugs run on across parts
+- `renderer.frontmatter_file(fm, key)` gives the file a frontmatter key names, warning when it is missing
 
-```yaml
----
-id: TXR-1991-007
-title: Roundhouse kick deployment protocol
-version: 1.3.2
-author: Walker, Texas Ranger
-status: approved
-entity: Texas Ranger Division
-address: 1 Lone Star Boulevard, Dallas TX 75201
-created: 1993-04-21
-updated: 2026-03-15
-logo: ./ranger-badge.svg
----
+Functions of `docmarq.md` go with them:
 
-# Document body starts here
+- `top_blocks(tokens)` gives `(start, end)` of each top-level block, a `<!-- group -->` counting as one
+- `split_frontmatter(text)`, `metadata_from_frontmatter(fm)` and `docx_metadata(fm, overrides)` read frontmatter, which the engine itself never writes
+
+The renderer sets up the document as its style asks: Word's heading styles, the body typography, hyphenation.
+Content goes wherever the core writes: in `doc.columns(2)` it flows through the columns, inside `with doc.into(cell, width)` it fills a table cell, and tables and images fit that width.
+
+## Flowing text
+
+```py
+MarkdownStyle(justify=True, hyphenate="pl", keep_together=True, h2_size=None)
 ```
 
-| Field       | Effect                                                                       |
-| ----------- | ---------------------------------------------------------------------------- |
-| `id`        | Document code in code-style box                                              |
-| `title`     | Main title, centered, large                                                  |
-| `version`   | Version in code-style box                                                    |
-| `author`    | Author name, shown as `{banner_label_author}: ...`                           |
-| `status`    | Badge: `draft` / `review` / `approved` / `deprecated` / `archived`           |
-| `entity`    | Organization (left of banner, bold)                                          |
-| `address`   | Address (right of banner, muted)                                             |
-| `created`   | ISO date, formatted via `style.date_format`                                  |
-| `updated`   | Same                                                                         |
-| `logo`      | Path to `.svg`/`.png`/`.jpg`, aspect-aware                                   |
-| `subject`   | Written to DOCX core properties `/Subject`, not rendered                     |
-| `keywords`  | Written to DOCX core properties `/Keywords`, string or YAML list             |
+- `justify` sets paragraphs, list items, quotes and notes flush to both edges.
+  Their last line and a line a hard break ends stay left.
+- `hyphenate` turns on Word's automatic hyphenation, in the language it names.
+  Word splits words by the language of the text, so `pl` makes the document Polish.
+  Headings, table cells and code keep their words whole.
+  The `DOCX` the engine writes into uses mm, as the engine does, or the renderer refuses it.
+- `keep_together=True` keeps each paragraph on one page, and a top-level list on one page with its items.
+  `False`, the default, leaves page breaks to Word.
+- A heading size of `None` follows `body_size`.
+  The sizes, `head_mode` and the rules under `#` and `##` restyle Word's `Heading 1…6`, so the whole document follows.
+  A `head_mode` without `Italic` leaves the slant Word gives a level, as to `Heading 4`.
+- `head_gap_top` adds to the paragraph gap above a heading, `head_gap_bot` sets the gap below it, both in mm.
+  Left at `None`, each level keeps its own gaps.
+- An ordered list keeps its delimiter, `1.` or `1)`, and Word counts on from its first number.
 
-DOCX core properties _(`/Title`, `/Author`, `/Subject`, `/Keywords`)_ auto-fill from matching YAML keys. Pass `metadata={...}` to `md_to_docx()` to override per-key.
-
-If first body block is `# X` and `X` matches `title` exactly, h1 is dropped to avoid showing the title twice. Only applies when banner actually printed that title, so `banner=False` never costs you the heading.
-
-## Presentation
-
-Frontmatter carries content only. Everything visual comes from caller, and `style=` is used **verbatim** - there is no layering and no diff-against-defaults heuristic, so you can set any value, including one equal to a `MarkdownStyle()` default.
-
-```python
-from docmarq.md import md_to_docx, lang_style
-from docmarq.constants import A4, page_size
-
-style = lang_style("pl",  # banner/footer labels
-  font_body="Calibri", font_head="Calibri", font_mono="Consolas",
-  body_size=11, line_height=1.0, image_max_h=120,
-  banner=True, banner_compact=True, sign="approval",
-  mermaid_theme="default",
-)
-md_to_docx(md, "out.docx", style=style,
-  page=A4, margin=25, gutter=0, base_dir=".", font_dir="./fonts")
-```
-
-`sign` takes `True` for one line, a `sign_labels` scenario _(`signature`, `approval`,
-`contract`, localized by language preset)_, or a list of custom labels drawn side
-by side, sharing content width.
-
-
-`page` is a `PageSize` in mm: `A4`, `A4.landscape()`, `page_size("a3")` for a preset name (`A4`/`A3`/`A5`/`LETTER`/`LEGAL`, raises on anything else), or `PageSize(200, 250)` for a custom sheet.
-
-Everything after `output_path` is keyword-only, so argument order cannot silently diverge from `pdfmarq.md.md_to_pdf`.
-
-### Intentional divergences from pdfmarq
-
-Same field names, deliberately different values - do not "fix" these:
-
-| Field | pdfmarq | docmarq | Why |
-| --- | --- | --- | --- |
-| `line_height` | `1.4` | `1.0` | Word's "Single" already adds ~1.2× leading; pdfmarq has none |
-| `font_body` / `font_mono` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on reader's machine |
-| `gutter` | folded into the left margin | Word's native gutter | Word mirrors it on duplex, a PDF margin cannot |
-| `math_fontset` | `stixsans` | `stix` | fallback formulas blend with Word's serif Cambria Math |
-| `mermaid_remote` | - | `True` | allow the mermaid.ink fallback; `False` keeps diagram source on the machine |
-| `syntax_theme` | Pygments style name | _absent_ | docmarq has no syntax highlighting, so it has no dead field for it |
+The defaults - `justify=False`, `hyphenate=None`, `keep_together=False`, sizes 20/16/13/11 - give the classic documentation look.
 
 ## Internal links
 
@@ -103,11 +73,13 @@ See the [Notify characteristic](#bluetooth-low-energy) section.
 ...
 ```
 
-Each heading auto-registers a GitHub-style slug _(lowercase, spaces → hyphens, unicode preserved)_. Links to non-existent slugs render as plain text rather than crashing. Footnote refs `[^1]` jump to their definitions the same way.
+Each heading auto-registers a GitHub-style slug _(lowercase, spaces → hyphens, unicode preserved)_ as a Word bookmark.
+Links to non-existent slugs render as plain text rather than as dangling hyperlinks.
 
 ## Local links
 
-Paths without a schema _(`[x](file.md)`, `[x](folder/doc)`, `[x](/absolute/path)`)_ get link style _(blue + underline)_ but no clickable action by default. Set `link_root` to make them real URLs:
+Paths without a scheme _(`[x](file.md)`, `[x](folder/doc)`, `[x](/absolute/path)`)_ render as text, not linked, by default.
+Set `link_root` to make them real URLs:
 
 ```py
 MarkdownStyle(
@@ -122,53 +94,41 @@ Resolution:
 
 ## Style
 
-Beyond fields shown above:
-
 ```py
 MarkdownStyle(
-  para_gap=3,                  # mm between paragraphs
-  page_number_label="Strona",  # "Strona 1/5" footer; None to disable
-  page_number_total=True,      # False → "Strona 1" without total
-  date_format="%d.%m.%Y",      # strftime pattern
-  skip_dup_title=True,         # drop `# X` if it matches frontmatter title
+  para_gap=3,             # mm between paragraphs
+  h1_size=20, h2_size=16, h3_size=13, h4_size=11, h5_size=11, h6_size=11,
+  h1_underline=True, h2_underline=True,
+  head_color=(0.09, 0.11, 0.13), # Word's heading styles
+  hr_thick=0.5,           # pt, rules and signing lines
+  footnote_label=None,    # "References" puts an H2 above the footnotes
 )
 ```
 
-### Banner labels (i18n)
+`lang_style("pl"|"de"|...)` builds a `MarkdownStyle` with the callout labels of a built-in preset _(`en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`)_.
+The document packages layer their own labels on top.
 
-Labels in banner, footer, and callouts are style fields. Defaults are English. Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
+### Intentional divergences from pdfmarq
 
-```py
-from docmarq.md import lang_style, md_to_docx
-style = lang_style("pl", font_body="Calibri")
-md_to_docx(md_text, "out.docx", style=style)
-```
+Same field names, deliberately different values - do not "fix" these:
 
-Built-in presets ship in `docmarq/md/presets.py` and cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`. Each preset configures `page_number_label`, `date_format`, banner labels _(author / created / updated)_, signing scenarios _(`sign_labels`)_, and callout labels _(note / tip / important / warning / caution)_.
+| Field | pdfmarq | docmarq | Why |
+| --- | --- | --- | --- |
+| `line_height` | `1.4` | `1.0` | Word's "Single" already adds ~1.2× leading; pdfmarq has none |
+| `font_body` / `font_mono` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on reader's machine |
+| `keep_together` | `True` | `False` | pdfmarq measures each block; Word breaks pages itself, as docmarq always let it |
+| `math_fontset` | `stixsans` | `stix` | fallback formulas blend with Word's serif Cambria Math |
+| `mermaid_remote` | - | `True` | allow the mermaid.ink fallback; `False` keeps diagram source on the machine |
+| `syntax_theme` | Pygments style name | _absent_ | docmarq has no syntax highlighting, so it has no dead field for it |
+| `head_gap_top` / `head_gap_bot` | `3` / `1.5` mm | `None` | each Word heading level keeps its own gaps, as docmarq always set them |
+| `hr_thick` | `0.3` pt | `0.5` pt | the rules docmarq always drew; Word keeps eighths of a point |
+| `mark_bg`, `inline_image_max_h` | read | inert | DOCX keeps `==mark==` as text and an image in running text as its alt; the fields let a pdfmarq style carry over |
 
-For ad-hoc overrides without a preset, set fields directly:
+pdfmarq's style also holds fields for drawing details Word decides itself: `table_*`, `code_block_*`, `quote_*`, `list_indent`, `mono_size`, the `*_mode` faces and more.
+docmarq has none of them, so a style that sets them stays with pdfmarq.
+`MarkdownRenderer` takes `font_dir` in docmarq, for mermaid and SVG text; pdfmarq's `PDF` holds its own.
 
-```py
-MarkdownStyle(
-  page_number_label="Page",
-  banner_label_author="Author",
-  callout_label_warning="Heads up",
-)
-```
-
-### Status badge palette
-
-```py
-MarkdownStyle(banner_status_colors={
-  "draft":      ((0.85, 0.87, 0.92), (0.30, 0.34, 0.45)),
-  "review":     ((1.00, 0.95, 0.78), (0.62, 0.40, 0.05)),
-  "approved":   ((0.86, 0.96, 0.87), (0.10, 0.45, 0.18)),
-  "deprecated": ((1.00, 0.88, 0.85), (0.74, 0.20, 0.15)),
-  "archived":   ((0.92, 0.87, 0.96), (0.45, 0.25, 0.55)),
-})
-```
-
-Custom keys are allowed: `status: zatwierdzony` works if `"zatwierdzony"` is in the palette.
+The `gutter` of `md_to_docx` is Word's native gutter, on the left of every page; pdfmarq folds it into the left margin.
 
 ## Features
 
@@ -200,61 +160,43 @@ flowchart LR
 > [!NOTE]
 > GitHub-style callouts: NOTE / TIP / IMPORTANT / WARNING / CAUTION
 
-Footnotes[^1] and emoji :rocket: :sparkles:
+Footnotes[^1] collect at the end of the document.
 [^1]: Definition at end of doc.
 ````
 
-Word handles pagination on open, so there's no analytical page-break pass. Paragraphs and tables reflow naturally.
+Word handles pagination on open, so there's no analytical page-break pass.
+Paragraphs and tables reflow naturally.
 
-## HTML support
+A table cell holds plain text: formatting flattens, and an image leaves its alt text.
+Inline HTML tags are dropped and their text kept, and other raw HTML is dropped, so prefer `---` over `<hr>`.
 
-A small whitelist of raw HTML tags is recognized inside markdown. Everything else _(`<table>`, `<div>`, `<span>`, `<style>`, attributes)_ is dropped silently.
-
-| Tag                  | Effect                                            |
-| -------------------- | ------------------------------------------------- |
-| `<b>`, `<strong>`    | Bold                                              |
-| `<i>`, `<em>`        | Italic                                            |
-| `<code>`             | Inline code _(mono family, code colors)_          |
-| `<br>`               | Hard line break                                   |
-| `<hr>`               | Horizontal rule _(block-level)_                   |
-
-### Headerless tables
-
-Markdown tables require a header row per spec, but a single-row "card" layout is a common pattern. A table with header but no body is rendered as headerless, useful for label/value blocks and contact cards:
-
-```md
-| ![](logo.svg) | Pocket Diagnostics Poland sp. z o.o<br>80-890 Gdańsk<br>Jana Heweliusza 11/811 |
-| --- | --- |
-```
-
-### Setext-heading-with-image recovery
-
-```md
-![diagram](schema.svg)
----
-```
-
-CommonMark parses this as a setext h2 with image as heading text. `docmarq` detects image-only setext case and renders it as a block image followed by an `<hr>`, matching user's actual intent.
+An image over a `---` line is what CommonMark reads as a setext heading holding the picture.
+`docmarq` keeps it a figure and draws the line as a rule, matching the author's intent.
 
 ## Mixing with core API
 
 ```py
-from docmarq import DOCX
+from docmarq import DOCX, RichSegment
 from docmarq.md import MarkdownRenderer, MarkdownStyle
+from docmarq.parts import signatures
 with DOCX("out.docx") as doc:
+  # Hand-crafted cover page
   doc.font("Calibri", 28, "Bold").para("Title", align="C")
+  doc.font(size=11, mode="Regular")
   doc.page_break()
-  # Markdown body (no banner - we already have a custom cover)
-  MarkdownRenderer(doc, MarkdownStyle(banner=False)).render(open("body.md").read())
+  # Markdown body
+  MarkdownRenderer(doc, MarkdownStyle()).render(open("body.md").read())
+  # Signing lines
+  label = RichSegment("", size=9, color=(0.4, 0.4, 0.4), italic=True)
+  signatures(doc, ["Signature"], label, gap=20, width=70, thick=0.5)
 ```
+
+A cover followed by a paper document, banner, page number and signing lines included, goes through [`docmarq.paper.md_into`](../paper/readme.md#md_into).
 
 ## Math formulas
 
-Inline `$...$` and display `$$...$$` (also ` ```math ` fences) render as
-**native Word equations (OMML)** - editable in Word's equation editor,
-selectable, and scaling with font + zoom. The converter is self-contained
-(built straight on OOXML, no extra runtime dependency) and covers the
-common markdown-math subset:
+Inline `$...$` and display `$$...$$` (also ` ```math ` fences) render as **native Word equations (OMML)**: editable in Word's equation editor, selectable, and scaling with font and zoom.
+The converter is self-contained, built straight on OOXML with no extra runtime dependency, and covers the common markdown-math subset:
 
 ````md
 Inline $E = mc^2$ and the quadratic root $x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}$.
@@ -264,17 +206,18 @@ $$\sum_{i=1}^{n} i = \frac{n(n+1)}{2}$$
 $$f(x) = \begin{cases} 1 & x > 0 \\ 0 & x \le 0 \end{cases}$$
 ````
 
-Supported: superscripts/subscripts, `\frac` / `\dfrac` / `\tfrac` / `\binom`,
-`\sqrt` and `\sqrt[n]`, big operators (`\sum`, `\prod`, `\int`, `\oint`, ...)
-with limits, Greek + relation/operator/arrow/set symbols, functions
-(`\sin`, `\log`, `\lim_{...}`, ...), delimiters (`\left ... \right`),
-accents (`\hat`, `\vec`, `\bar`, `\dot`, ...), `\overline` / `\underline`,
-matrices (`matrix` / `pmatrix` / `bmatrix` / `vmatrix` / `cases`), and font
-commands (`\mathbb`, `\mathcal`, `\mathbf`, `\mathrm`, `\text`, ...).
+Supported:
 
-LaTeX outside this subset falls back to a **matplotlib-rendered image** so
-the formula still appears (never raw `$...$`). Inline fallback images are
-baseline-aligned. Toggle / tune via `MarkdownStyle`:
+- superscripts and subscripts, `\frac` / `\dfrac` / `\tfrac` / `\binom`, `\sqrt` and `\sqrt[n]`
+- big operators (`\sum`, `\prod`, `\int`, `\oint`, ...) with limits
+- Greek, relation, operator, arrow and set symbols, functions (`\sin`, `\log`, `\lim_{...}`, ...)
+- delimiters (`\left ... \right`), accents (`\hat`, `\vec`, `\bar`, `\dot`, ...), `\overline` / `\underline`
+- matrices (`matrix` / `pmatrix` / `bmatrix` / `vmatrix` / `cases`)
+- font commands (`\mathbb`, `\mathcal`, `\mathbf`, `\mathrm`, `\text`, ...)
+
+LaTeX outside this subset falls back to a **matplotlib-rendered image**, so the formula still appears and raw `$...$` never does.
+Inline fallback images are baseline-aligned.
+A `\tag{...}` becomes the right-aligned equation label, Word style.
 
 ```py
 MarkdownStyle(
@@ -283,23 +226,25 @@ MarkdownStyle(
 )
 ```
 
-The image fallback needs matplotlib (`pip install docmarq[math]`); without
-it, unconvertible formulas degrade to italic LaTeX source text.
+The image fallback needs matplotlib (`pip install docmarq[math]`).
+Without it, unconvertible formulas degrade to their LaTeX source as inline code.
 
 ## Not supported (use `pdfmarq` if you need them)
 
 - Syntax highlighting in fenced code _(language hint is accepted, ignored)_
-- Deferred page-number rendering: Word uses field codes; configure via `page_number_label` only
+- Task lists, `==mark==`, `^sup^`, `~sub~`, emoji shortcodes and definition lists, which stay literal text
 - Rich inline content inside table cells _(math in a cell degrades to `$latex$` source text)_
+- Clickable footnote references: `[^1]` prints a superscript `[1]`, and the definitions collect at the end
 
 ## Optional deps for features
 
 Installed by `pip install docmarq[md]`:
 - `markdown-it-py`, `mdit-py-plugins`: parser + GFM plugins
 - `PyYAML`: frontmatter
-- `mermaid-cli` via npm for ` ```mermaid ` blocks: `npm install -g @mermaid-js/mermaid-cli` _(System tool, **not on PyPI**)_.
-  Without it diagram source goes to the `mermaid.ink` HTTP service, which
-  warns once per process; `mermaid_remote=False` keeps it offline and renders a
-  code block instead.
 
-If a dep is missing, the feature degrades and says so _(mermaid block renders as a regular code block)_.
+System tool via npm, **not on PyPI**:
+- `mermaid-cli` for ` ```mermaid ` blocks: `npm install -g @mermaid-js/mermaid-cli`.
+  Without it diagram source goes to the `mermaid.ink` HTTP service, which warns once per process.
+  `mermaid_remote=False` keeps it offline and renders a code block instead.
+
+If a dep is missing, the feature degrades and says so _(a mermaid block renders as a regular code block)_.

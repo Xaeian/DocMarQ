@@ -1,5 +1,18 @@
 # Changes `docmarq`
 
+## `0.4.0` Legal documents
+
+- Breaking: `md_to_docx` and the banner moved to `docmarq.paper`, their fields to `PaperStyle`
+- Breaking: the markdown engine works in mm only
+- `docmarq.legal`: letters, contracts and language versions side by side
+- `docmarq.paper.md_into` writes after a cover
+- Core: `doc.columns()`, `doc.into()`, `doc.hyphenation()`, `doc.border()`, Word fields
+- Text: `justify`, `hyphenate`, `keep_together`, small capitals, heading sizes and gaps
+- Page number as `Page 1/5`, as in `pdfmarq`
+- Fix: `1)` printed as `1.`, a title list garbled in metadata, image over `---` lost as a heading
+- Fix: two tables in a row merged, repeated headings sharing a bookmark, gutter ignored in widths
+- Fix: table borders out of schema order, justified line before a hard break stretched
+
 ## `0.3.7` Table widths
 
 - Table columns sized by content, as in `pdfmarq`
@@ -69,5 +82,5 @@
 
 ## `0.1.0` Initial release
 
-Fluent `.docx` generation. The `[md]` extra renders markdown with banner headers,
-mermaid diagrams and GitHub callouts.
+Fluent `.docx` generation.
+The `[md]` extra renders markdown with banner headers, mermaid diagrams and GitHub callouts.

@@ -13,9 +13,10 @@ from pathlib import Path
 
 #------------------------------------------------------------------------------------------ Helpers
 
-# Present on virtually every Word install, so a document naming one of these
-# renders as intended without embedding. Exposed as data, not only through the
-# predicate, because a caller building a font picker needs the list itself.
+# Present on virtually every Word install,
+# so a document naming one of these renders as intended without embedding.
+# Exposed as data, not only through the predicate,
+# because a caller building a font picker needs the list itself.
 SAFE_FAMILIES: tuple[str, ...] = (
   "Arial", "Calibri", "Cambria", "Consolas", "Courier New",
   "Georgia", "Segoe UI", "Tahoma", "Times New Roman", "Verdana",
@@ -39,8 +40,8 @@ _MODE_FALLBACK = {
 def resolve_ttf(font_dir:str, family:str, mode:str="Regular") -> Path|None:
   """Find the TTF backing one face, walking `_MODE_FALLBACK` when it is absent.
 
-  Layout is `<font_dir>/<family>/<family>-<mode>.ttf`, with the subfolder named
-  either as-is or lowercase, and a flat `<font_dir>` accepted as well.
+  Layout is `<font_dir>/<family>/<family>-<mode>.ttf`,
+  with the subfolder named either as-is or lowercase, and a flat `<font_dir>` accepted as well.
   """
   base = Path(font_dir)
   for try_mode in [mode] + _MODE_FALLBACK.get(mode, []):

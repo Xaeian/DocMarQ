@@ -34,9 +34,9 @@ A5 = PageSize(148, 210)
 LETTER = PageSize(215.9, 279.4)
 LEGAL = PageSize(215.9, 355.6)
 
-# Named presets are the only page sizes callers can select by string. Arbitrary
-# `[w, h]` stays available through `PageSize(w, h)`, where the units are
-# explicit and a typo cannot silently produce a 5x5000mm page.
+# Named presets are the only page sizes callers can select by string.
+# Arbitrary `[w, h]` stays available through `PageSize(w, h)`,
+# where the units are explicit and a typo cannot silently produce a 5x5000mm page.
 PAGE_PRESETS: dict[str, PageSize] = {
   "A4": A4, "A3": A3, "A5": A5, "LETTER": LETTER, "LEGAL": LEGAL,
 }
@@ -44,8 +44,9 @@ PAGE_PRESETS: dict[str, PageSize] = {
 def page_size(name:str) -> PageSize:
   """Resolve a preset name to a `PageSize`, case-insensitively.
 
-  Raises `ValueError` for an unknown name - callers validate user input at
-  their own boundary, so reaching here with a bad name is a programming error.
+  Raises `ValueError` for an unknown name.
+  Callers validate user input at their own boundary,
+  so reaching here with a bad name is a programming error.
   """
   key = str(name).strip().upper()
   if key not in PAGE_PRESETS:

@@ -3,8 +3,9 @@
 """
 Guards for document invariants that are cheap to break.
 
-Every check answers one question: does the DOCX that comes out hold
-everything that went in, styled and numbered the way it was asked for?
+Every check answers one question:
+does the DOCX that comes out hold everything that went in,
+styled and numbered the way it was asked for?
 Stdlib `unittest` plus `python-docx`, which is a base dependency.
 
   >>> python -m pytest tests/test_regressions.py
@@ -16,7 +17,7 @@ import docx
 from docx.oxml.ns import qn
 
 from docmarq import DOCX
-from docmarq.md import md_to_docx
+from docmarq.paper import md_to_docx
 from conftest import (docx_text, docx_numbered_paras, docx_start_overrides,
   docx_ppr_children)
 
@@ -42,17 +43,16 @@ class TempDocxCase(unittest.TestCase):
   def md_url(path:str) -> str:
     """Path spelled for a markdown link target.
 
-    A backslash escapes the next character in CommonMark, so a Windows path
-    has to travel with forward slashes.
+    A backslash escapes the next character in CommonMark,
+    so a Windows path has to travel with forward slashes.
     """
     return path.replace(os.sep, "/")
 
 #----------------------------------------------------------------------------- Blocks in list items
 
 class TestBlocksInListItems(TempDocxCase):
-  """Code, quotes and tables under a bullet are the ordinary shape of technical
-  markdown. A list item carries the same content a document body can."""
-
+  """Code, quotes and tables under a bullet are the ordinary shape of technical markdown.
+  A list item carries the same content a document body can."""
   MD = (
     "- item one\n\n"
     "  ```python\n  CODEMARKER = 1\n  ```\n\n"
@@ -77,9 +77,8 @@ class TestBlocksInListItems(TempDocxCase):
 #------------------------------------------------------------------------------------------- Images
 
 class TestSvgImages(TempDocxCase):
-  """python-docx reads raster formats only, so an SVG has to be rasterized on
-  the way in - for the fluent API as much as for markdown figures."""
-
+  """`python-docx` reads raster formats only, so an SVG has to be rasterized on the way in,
+  for the fluent API as much as for markdown figures."""
   def test_fluent_image_accepts_svg(self):
     p = self.path()
     d = DOCX(p)
@@ -98,8 +97,8 @@ class TestSvgImages(TempDocxCase):
   def test_missing_rasterizer_costs_one_figure(self):
     """No rasterizing backend is a degraded figure, not a dead render.
 
-    `rlPyCairo` needs a native cairo build, so the import can fail on a
-    machine that has the package installed.
+    `rlPyCairo` needs a native cairo build,
+    so the import can fail on a machine that has the package installed.
     """
     import builtins
     blocked = ("rlPyCairo", "svglib", "svglib.svglib")
@@ -158,9 +157,9 @@ class TestSvgImages(TempDocxCase):
 #----------------------------------------------------------------------------------- List numbering
 
 class TestOrderedListNumbering(TempDocxCase):
-  """`numId` is the counter Word increments, so each ordered list needs its own
-  instance to start over, and a CommonMark `start` has to reach the file."""
-
+  """`numId` is the counter Word increments,
+  so each ordered list needs its own instance to start over,
+  and a CommonMark `start` has to reach the file."""
   def test_second_list_restarts(self):
     p = self.path()
     md_to_docx("1. alpha\n2. beta\n\nbetween\n\n1. gamma\n2. delta\n", p)
@@ -201,9 +200,8 @@ class TestOrderedListNumbering(TempDocxCase):
 #--------------------------------------------------------------------------------------------- Runs
 
 class TestRunFormatting(TempDocxCase):
-  """`text()` documents `link_url` among its kwargs, and a run appended to a
-  heading belongs to that heading's type."""
-
+  """`text()` documents `link_url` among its kwargs,
+  and a run appended to a heading belongs to that heading's type."""
   def test_link_url_produces_a_hyperlink(self):
     p = self.path()
     d = DOCX(p)
@@ -226,9 +224,8 @@ class TestRunFormatting(TempDocxCase):
 #-------------------------------------------------------------------------------------- OOXML order
 
 class TestParagraphPropertyOrder(TempDocxCase):
-  """`pPr` children are a sequence in CT_PPrBase: `pBdr` and `shd` come before
-  `spacing` and `ind`, or a strict renderer may drop them."""
-
+  """`pPr` children are a sequence in `CT_PPrBase`:
+  `pBdr` and `shd` come before `spacing` and `ind`, or a strict renderer may drop them."""
   ORDER = ("pStyle", "numPr", "pBdr", "shd", "spacing", "ind", "contextualSpacing")
 
   def test_border_and_shading_precede_spacing(self):
@@ -243,9 +240,8 @@ class TestParagraphPropertyOrder(TempDocxCase):
 #-------------------------------------------------------------------------------------- Frontmatter
 
 class TestFrontmatter(TempDocxCase):
-  """A leading `---` is a thematic break as often as a frontmatter opener. Only
-  a YAML mapping is frontmatter; the rest is content and stays."""
-
+  """A leading `---` is a thematic break as often as a frontmatter opener.
+  Only a YAML mapping is frontmatter; the rest is content and stays."""
   def test_leading_rule_keeps_its_content(self):
     p = self.path()
     md_to_docx("---\n# Intro\nBODYTEXT here\n---\n# Section 2\n", p)
@@ -269,9 +265,8 @@ class TestFrontmatter(TempDocxCase):
 #------------------------------------------------------------------------------------------ Mermaid
 
 class TestMermaidNetwork(unittest.TestCase):
-  """The mermaid.ink fallback sends the diagram source to a third party, so it
-  answers to a switch."""
-
+  """The mermaid.ink fallback sends the diagram source to a third party,
+  so it answers to a switch."""
   def test_remote_false_makes_no_request(self):
     import docmarq.md.mermaid as mermaid
     attempts = []

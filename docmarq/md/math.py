@@ -1,24 +1,23 @@
 # docmarq/md/math.py
 
 """
-Math formula rendering for DOCX - native Office Math (OMML) with an image
-fallback.
+Math formula rendering for DOCX - native Office Math (OMML) with an image fallback.
 
 Two layers:
 
-  1. `latex_to_omath` / `build_omath_para` - a self-contained LaTeX→OMML
-     converter for the common markdown-math subset (fractions, scripts,
-     roots, Greek, big operators, delimiters, matrices, accents, ...).
-     The result is a true Word equation: editable in the equation editor,
-     selectable, scales with font + zoom, tiny file size. No third-party
-     dependency - OMML is built straight from `python-docx`'s OOXML layer.
+  1. `latex_to_omath` / `build_omath_para` - a self-contained LaTeX→OMML converter
+     for the common markdown-math subset
+     (fractions, scripts, roots, Greek, big operators, delimiters, matrices, accents, ...).
+     The result is a true Word equation:
+     editable in the equation editor, selectable, scales with font + zoom, tiny file size.
+     No third-party dependency - OMML is built straight from `python-docx`'s OOXML layer.
 
-  2. `render_math_png` - a matplotlib (mathtext) raster fallback used when
-     the converter hits a construct outside the supported subset.
+  2. `render_math_png` - a matplotlib (mathtext) raster fallback
+     used when the converter hits a construct outside the supported subset.
 
 The converter raises `MathConversionError` for anything it can't represent;
-the renderer catches it and routes that single formula through the image
-fallback. Everything it *does* understand renders as native OMML.
+the renderer catches it and routes that single formula through the image fallback.
+Everything it *does* understand renders as native OMML.
 
 Example:
   >>> from docmarq.md.math import latex_to_omath
@@ -28,21 +27,22 @@ Example:
 
 __extras__ = ("math", ["matplotlib"])
 
-import re as _re
+import io, re
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from lxml import etree
 
 #------------------------------------------------------------------------------------------- Errors
 
 class MathConversionError(Exception):
   """Raised when a LaTeX construct falls outside the supported OMML subset.
-  The renderer catches this and falls back to an image render of the whole
-  formula."""
+  The renderer catches this and falls back to an image render of the whole formula."""
 
 #------------------------------------------------------------------------------------ Symbol tables
 
-# LaTeX command → unicode glyph. Covers Greek, relations, operators, arrows,
-# set theory and the punctuation/dots that show up in real markdown math.
+# LaTeX command → unicode glyph.
+# Covers Greek, relations, operators, arrows, set theory
+# and the punctuation/dots that show up in real markdown math.
 SYMBOLS: dict[str, str] = {
   # lowercase Greek
   "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ϵ",
@@ -101,8 +101,8 @@ SPACES: dict[str, str] = {
   " ": " ",
 }
 
-# Function-like names rendered upright. `lim`-family additionally turns a
-# trailing `_{...}` into an under-script (limLow) in display style.
+# Function-like names rendered upright.
+# The `lim` family also turns a trailing `_{...}` into an under-script (`limLow`) in display style.
 FUNCTIONS: set[str] = {
   "sin", "cos", "tan", "cot", "sec", "csc",
   "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "coth",
@@ -113,8 +113,8 @@ FUNCTIONS: set[str] = {
 LIM_FUNCTIONS: set[str] = {"lim", "limsup", "liminf", "max", "min", "sup", "inf",
   "argmax", "argmin"}
 
-# Big operators → (glyph, default-omit-when-integral). Integrals use OMML's
-# default n-ary char so we omit `chr`; everything else sets it explicitly.
+# Big operators → (glyph, default-omit-when-integral).
+# Integrals use OMML's default n-ary char so we omit `chr`; everything else sets it explicitly.
 BIG_OPERATORS: dict[str, str] = {
   "sum": "∑", "prod": "∏", "coprod": "∐",
   "int": "∫", "iint": "∬", "iiint": "∭", "oint": "∮",
@@ -122,10 +122,10 @@ BIG_OPERATORS: dict[str, str] = {
   "bigoplus": "⨁", "bigotimes": "⨂", "bigodot": "⨀", "biguplus": "⨄",
   "bigsqcup": "⨆",
 }
-# Operators whose limits sit to the side (subSup) even in display mode.
+# Operators whose limits sit to the side (`subSup`) even in display mode.
 SIDE_LIMIT_OPS = {"int", "iint", "iiint", "oint"}
 
-# Accents: command → combining char placed above the base via <m:acc>.
+# Accents: command → combining char placed above the base via `<m:acc>`.
 ACCENTS: dict[str, str] = {
   "hat": "̂", "widehat": "̂", "tilde": "̃", "widetilde": "̃",
   "bar": "̅", "vec": "⃗", "overrightarrow": "⃗",
@@ -134,7 +134,7 @@ ACCENTS: dict[str, str] = {
   "mathring": "̊",
 }
 
-# Stretchy delimiters for \left ... \right and matrix wrappers.
+# Stretchy delimiters for `\left` ... `\right` and matrix wrappers.
 DELIMS: dict[str, str] = {
   "(": "(", ")": ")", "[": "[", "]": "]", "|": "|",
   "\\{": "{", "\\}": "}", "\\|": "‖", "/": "/", "\\backslash": "\\",
@@ -142,12 +142,12 @@ DELIMS: dict[str, str] = {
   "\\lfloor": "⌊", "\\rfloor": "⌋", "\\lceil": "⌈", "\\rceil": "⌉",
   "\\vert": "|", "\\Vert": "‖", "\\lvert": "|", "\\rvert": "|",
   "\\lVert": "‖", "\\rVert": "‖",
-  ".": "",  # \left. / \right. - invisible delimiter
+  ".": "", # `\left.` / `\right.` - invisible delimiter
 }
 
-# Font commands → (math script value or None, style value or None).
-# scr: roman/script/fraktur/double-struck/sans-serif/monospace
-# sty: p (plain/upright), b (bold), i (italic), bi (bold-italic)
+# Font commands → (math script value or `None`, style value or `None`).
+# `scr`: roman/script/fraktur/double-struck/sans-serif/monospace
+# `sty`: p (plain/upright), b (bold), i (italic), bi (bold-italic)
 FONT_CMDS: dict[str, tuple[str|None, str|None]] = {
   "mathrm": (None, "p"), "text": (None, "p"), "textrm": (None, "p"),
   "operatorname": (None, "p"), "mathnormal": (None, "i"), "mathit": (None, "i"),
@@ -165,8 +165,9 @@ MATRIX_ENVS: dict[str, tuple[str|None, str|None]] = {
   "Bmatrix": ("{", "}"), "vmatrix": ("|", "|"), "Vmatrix": ("‖", "‖"),
   "cases": ("{", ""), "array": (None, None), "aligned": (None, None),
   "smallmatrix": (None, None),
-  # Multi-line equation environments: rendered as a borderless aligned grid
-  # (the most common markdown display blocks). `_read_env_name` strips `*`.
+  # Multi-line equation environments (the most common markdown display blocks):
+  # rendered as a borderless aligned grid.
+  # `_read_env_name` strips `*`.
   "align": (None, None), "gather": (None, None), "eqnarray": (None, None),
   "alignat": (None, None), "split": (None, None), "gathered": (None, None),
 }
@@ -174,7 +175,7 @@ MATRIX_ENVS: dict[str, tuple[str|None, str|None]] = {
 #------------------------------------------------------------------------------------- OMML helpers
 
 def _el(tag:str, **attrs) -> "OxmlElement":
-  """Create an OMML/WML element; attrs are `m:val`-style (namespace `m`)."""
+  """Create an OMML/WML element; `attrs` are `m:val`-style (namespace `m`)."""
   e = OxmlElement(tag)
   for k, v in attrs.items():
     e.set(qn(f"m:{k}"), str(v))
@@ -187,9 +188,9 @@ def _prop(parent, tag:str, **attrs):
   return child
 
 def _xml_safe(text:str) -> str:
-  """Drop XML-1.0-illegal control chars (NUL etc.). lxml raises ValueError on
-  them, which would escape the MathConversionError contract; stripping keeps a
-  stray control byte from crashing the converter."""
+  """Drop XML-1.0-illegal control chars (NUL etc.).
+  lxml raises `ValueError` on them, which would escape the `MathConversionError` contract;
+  stripping keeps a stray control byte from crashing the converter."""
   return "".join(
     ch for ch in text
     if ord(ch) in (9, 10, 13)
@@ -199,10 +200,8 @@ def _xml_safe(text:str) -> str:
   )
 
 class _Build:
-  """OMML builder bound to a run color + size so every leaf run is styled
-  consistently. Kept tiny - just `run()` plus the structural constructors
-  live on the parser."""
-
+  """OMML builder bound to a run color + size so every leaf run is styled consistently.
+  Kept tiny - just `run()` plus the structural constructors live on the parser."""
   def __init__(self, size_halfpt:int|None, color_hex:str|None):
     self.size_halfpt = size_halfpt
     self.color_hex = color_hex
@@ -210,8 +209,8 @@ class _Build:
   def run(self, text:str, sty:str|None=None, scr:str|None=None) -> "OxmlElement":
     """Build `<m:r>` with optional math style/script and shared color/size.
 
-    `sty`: p/b/i/bi (plain/bold/italic/bold-italic). Letters default to
-    italic in Word's math font, so we only emit a style when overriding.
+    `sty`: p/b/i/bi (plain/bold/italic/bold-italic).
+    Letters default to italic in Word's math font, so we only emit a style when overriding.
     """
     r = _el("m:r")
     if sty or scr:
@@ -244,13 +243,13 @@ class _Build:
 #---------------------------------------------------------------------------------------- Tokenizer
 
 def _tokenize(src:str) -> list[str]:
-  """Split LaTeX math source into tokens: commands (`\\frac`, `\\,`), the
-  structural chars `{} ^ _ &`, the row break `\\\\`, single characters, and a
-  single `" "` token for any whitespace run.
+  """Split LaTeX math source into tokens:
+  commands (`\\frac`, `\\,`), the structural chars `{} ^ _ &`, the row break `\\\\`,
+  single characters, and a single `" "` token for any whitespace run.
 
   Whitespace is insignificant in math mode (the cursor skips `" "` tokens),
-  but `\\text{a b}` must keep its spaces - so we emit one collapsed space
-  token rather than dropping whitespace, letting text mode recover it."""
+  but `\\text{a b}` must keep its spaces - so we emit one collapsed space token
+  rather than dropping whitespace, letting text mode recover it."""
   tokens: list[str] = []
   i, n = 0, len(src)
   while i < n:
@@ -262,7 +261,7 @@ def _tokenize(src:str) -> list[str]:
       continue
     if c == "\\":
       if i + 1 < n and src[i+1] == "\\":
-        tokens.append("\\\\")  # row break
+        tokens.append("\\\\") # row break
         i += 2
         continue
       j = i + 1
@@ -273,7 +272,7 @@ def _tokenize(src:str) -> list[str]:
         tokens.append(src[i:k])
         i = k
       elif j < n:
-        tokens.append(src[i:j+1])  # \{  \,  \|  \%  etc.
+        tokens.append(src[i:j+1]) # `\{` `\,` `\|` `\%` etc.
         i = j + 1
       else:
         tokens.append("\\")
@@ -291,13 +290,12 @@ def _tokenize(src:str) -> list[str]:
 class _Parser:
   """Recursive-descent LaTeX-math → OMML converter.
 
-  `parse_sequence` produces a flat node list (runs + structures) for a
-  container; scripts (`^`/`_`) bind to the preceding atom; big operators
-  and `\\lim` consume their limits + one operand. Anything unrecognized
-  raises `MathConversionError` so the caller can fall back to an image.
+  `parse_sequence` produces a flat node list (runs + structures) for a container;
+  scripts (`^`/`_`) bind to the preceding atom;
+  big operators and `\\lim` consume their limits + one operand.
+  Anything unrecognized raises `MathConversionError` so the caller can fall back to an image.
   """
-
-  # Recursion guard: raise MathConversionError (→ image), never RecursionError.
+  # Recursion guard: raise `MathConversionError` (→ image), never `RecursionError`.
   MAX_DEPTH = 120
 
   def __init__(self, tokens:list[str], build:_Build, display:bool):
@@ -309,9 +307,9 @@ class _Parser:
 
   #----------------------------------------------------------------------------------- token cursor
 
-  # `" "` tokens are insignificant in math mode - the cursor transparently
-  # skips them so parsing never sees whitespace. Text mode reads them back
-  # via `_grab_group_raw_tokens` to preserve spaces inside `\text{...}`.
+  # `" "` tokens are insignificant in math mode -
+  # the cursor transparently skips them so parsing never sees whitespace.
+  # Text mode reads them back via `_grab_group_raw_tokens` to preserve spaces inside `\text{...}`.
 
   def _skip_ws(self):
     while self.pos < len(self.toks) and self.toks[self.pos] == " ":
@@ -353,8 +351,10 @@ class _Parser:
     return out
 
   def parse_one(self) -> list:
-    """Parse one scripted atom (atom + trailing sub/sup, or a big operator
-    with its limits + operand). Returns a node list."""
+    """
+    Parse one scripted atom (atom + trailing sub/sup, or a big operator with its limits + operand).
+    Returns a node list.
+    """
     # Big operators capture their own limits/operand.
     t = self._peek()
     if t is not None and t.startswith("\\") and t[1:] in BIG_OPERATORS:
@@ -365,7 +365,7 @@ class _Parser:
     return self._attach_scripts(base)
 
   def _attach_scripts(self, base:list) -> list:
-    """Consume `^`/`_` following `base` and wrap into sSup/sSub/sSubSup."""
+    """Consume `^`/`_` following `base` and wrap into `sSup`/`sSub`/`sSubSup`."""
     sub = sup = None
     while self._peek() in ("^", "_"):
       op = self._next()
@@ -399,11 +399,11 @@ class _Parser:
   #------------------------------------------------------------------------------------------ atoms
 
   def parse_atom(self) -> list:
-    """Parse a single base atom (no scripts). Returns a node list so a
-    braced group `{...}` can expand to multiple runs under one base."""
-    # Depth guard: pathological nesting must raise MathConversionError (caught
-    # by the renderer → image fallback), never overflow into RecursionError
-    # (which is uncaught and would abort the whole document).
+    """Parse a single base atom (no scripts).
+    Returns a node list so a braced group `{...}` can expand to multiple runs under one base."""
+    # Depth guard: pathological nesting must raise `MathConversionError`
+    # (caught by the renderer → image fallback),
+    # never overflow into `RecursionError` (which is uncaught and would abort the whole document).
     self.depth += 1
     if self.depth > self.MAX_DEPTH:
       raise MathConversionError("nesting too deep")
@@ -432,19 +432,21 @@ class _Parser:
     return [self._char_run(t)]
 
   def _char_run(self, ch:str):
-    """Single-character run. Digits/operators stay upright automatically in
-    Word's math font; single ASCII letters render italic by default."""
+    """Single-character run.
+    Digits/operators stay upright automatically in Word's math font;
+    single ASCII letters render italic by default."""
     if ch == "-":
-      ch = "−"  # proper minus sign
+      ch = "−" # proper minus sign
     return self.b.run(ch)
 
   #--------------------------------------------------------------------------------------- commands
 
   def _parse_command(self, cmd:str) -> list:
     name = cmd[1:]
-    # Two-char escapes: \,  \;  \!  \{  \}  \%  \&  \#  \$  \_  \|  \\ handled elsewhere
+    # Two-char escapes: `\,` `\;` `\!` `\{` `\}` `\%` `\&` `\#` `\$` `\_` `\|`;
+    # `\\` handled elsewhere
     if cmd in DELIMS and name not in SYMBOLS:
-      # bare \{ \} \| \langle etc. used outside \left → literal glyph
+      # bare `\{` `\}` `\|` `\langle` etc. used outside `\left` → literal glyph
       if cmd in ("\\{", "\\}", "\\|", "\\langle", "\\rangle", "\\vert", "\\Vert",
         "\\lvert", "\\rvert", "\\lVert", "\\rVert",
         "\\lfloor", "\\rfloor", "\\lceil", "\\rceil", "\\backslash"):
@@ -483,7 +485,7 @@ class _Parser:
     if name == "begin":
       return [self._parse_environment()]
     if name in ("displaystyle", "textstyle", "scriptstyle", "limits", "nolimits"):
-      return []  # styling hints - no structural effect here
+      return [] # styling hints - no structural effect here
     if name in ("right", "end"):
       raise MathConversionError(f"stray \\{name}")
     raise MathConversionError(f"unsupported command \\{name}")
@@ -550,7 +552,7 @@ class _Parser:
     g.append(gpr)
     g.append(self.b.wrap("m:e", arg))
     node = g
-    # `^`/`_` after overbrace/underbrace become the brace label.
+    # `^`/`_` after `overbrace`/`underbrace` become the brace label.
     if (is_over and self._peek() == "^") or (not is_over and self._peek() == "_"):
       self._next()
       label = self.parse_atom()
@@ -561,21 +563,21 @@ class _Parser:
       node = lim
     return node
 
-  # Commands whose body is LITERAL TEXT: spaces preserved, `^`/`_` NOT parsed
-  # as math. Style comes from FONT_CMDS (textbf→bold, textit→italic, ...).
+  # Commands whose body is LITERAL TEXT: spaces preserved, `^`/`_` NOT parsed as math.
+  # Style comes from `FONT_CMDS` (`textbf` → bold, `textit` → italic, ...).
   TEXT_MODE = {"text", "textrm", "textbf", "textit", "textsf", "texttt",
     "mathrm", "operatorname"}
 
   def _parse_font(self, name:str):
     scr, sty = FONT_CMDS[name]
     if name in self.TEXT_MODE:
-      # Text mode: emit the literal characters as one styled run. Use the raw
-      # token stream so spaces inside `\text{a b}` survive, and don't re-parse
-      # `^`/`_` as math superscripts/subscripts.
+      # Text mode: emit the literal characters as one styled run.
+      # Use the raw token stream so spaces inside `\text{a b}` survive,
+      # and don't re-parse `^`/`_` as math superscripts/subscripts.
       text = self._tokens_to_text(self._grab_group_raw_tokens())
       return [self.b.run(text, sty=sty, scr=scr)]
-    # Math mode font (\mathbf, \mathbb, \mathcal, ...): parse the group as math
-    # and tag each leaf run with the font's style/script.
+    # Math mode font (`\mathbf`, `\mathbb`, `\mathcal`, ...):
+    # parse the group as math and tag each leaf run with the font's style/script.
     arg_tokens = self._grab_group_tokens()
     sub = _Parser(arg_tokens, self.b, self.display)
     nodes = sub.parse_sequence(set())
@@ -591,7 +593,7 @@ class _Parser:
     close_chr = self._delim_glyph(close_tok)
     return self._delimit(open_chr, close_chr, inner)
 
-  # Single chars accepted as bare \left/\right delimiters (letters are not).
+  # Single chars accepted as bare `\left`/`\right` delimiters (letters are not).
   _DELIM_CHARS = set("()[]|/.<>")
 
   def _delim_glyph(self, tok:str|None) -> str:
@@ -619,9 +621,9 @@ class _Parser:
   #---------------------------------------------------------------------------------- big operators
 
   def _parse_nary(self, name:str):
-    self._next()  # consume the operator command
+    self._next() # consume the operator command
     sub = sup = None
-    # Limits may appear in either order; skip \limits / \nolimits hints.
+    # Limits may appear in either order; skip `\limits` / `\nolimits` hints.
     while True:
       t = self._peek()
       if t == "_":
@@ -642,11 +644,11 @@ class _Parser:
     nary = _el("m:nary")
     pr = _el("m:naryPr")
     glyph = BIG_OPERATORS[name]
-    if name not in ("int",):  # int's default n-ary char is already ∫
+    if name not in ("int",): # `int`'s default n-ary char is already ∫
       _prop(pr, "m:chr", val=glyph)
     side = (name in SIDE_LIMIT_OPS) or (not self.display)
     _prop(pr, "m:limLoc", val="subSup" if side else "undOvr")
-    # CT_NaryPr child order is strict: chr, limLoc, grow, subHide, supHide.
+    # `CT_NaryPr` child order is strict: `chr`, `limLoc`, `grow`, `subHide`, `supHide`.
     _prop(pr, "m:grow", val="1")
     if sub is None: _prop(pr, "m:subHide", val="1")
     if sup is None: _prop(pr, "m:supHide", val="1")
@@ -657,29 +659,30 @@ class _Parser:
     return nary
 
   def _parse_operand(self) -> list:
-    """One scripted atom as a big operator's operand. Stops at separators /
-    relations would be ideal, but a single atom matches LaTeX binding and
-    avoids over-greedy capture; the remainder trails as siblings."""
+    """One scripted atom as a big operator's operand.
+    Stops at separators / relations would be ideal,
+    but a single atom matches LaTeX binding and avoids over-greedy capture;
+    the remainder trails as siblings."""
     t = self._peek()
     if t is None or t in ("}", "&", "\\\\", "\\right", "\\end"):
       return []
     if t in ("+", "-", "=", ")", "]"):
-      return []  # operator/closer immediately after - empty operand
+      return [] # operator/closer immediately after - empty operand
     return self.parse_one()
 
   def _parse_limop(self, name:str):
     self._next()
-    # \max, \min, ... without a subscript are just upright function names.
+    # `\max`, `\min`, ... without a subscript are just upright function names.
     if self._peek() != "_":
       r = self.b.run(name, sty="p")
       return self._wrap_single(self._attach_scripts([r]))
-    self._next()  # consume `_`
+    self._next() # consume `_`
     lim = self.parse_atom()
     node = _el("m:limLow")
     node.append(self.b.wrap("m:e", [self.b.run(name, sty="p")]))
     node.append(self.b.wrap("m:lim", lim))
-    # A trailing `^` (e.g. `\lim_x^2`) binds to the whole operator as a
-    # superscript - wrap the limLow rather than orphaning `^` onto an empty base.
+    # A trailing `^` (e.g. `\lim_x^2`) binds to the whole operator as a superscript -
+    # wrap the `limLow` rather than orphaning `^` onto an empty base.
     if self._peek() == "^":
       self._next()
       sup = self.parse_atom()
@@ -704,16 +707,17 @@ class _Parser:
     env = self._read_env_name()
     if env not in MATRIX_ENVS:
       raise MathConversionError(f"unsupported environment {env!r}")
-    # `array` (and friends) carry an optional `[pos]` then a mandatory
-    # `{col-spec}` argument; consume both so the spec doesn't leak into cell 1.
+    # `array` (and friends) carry an optional `[pos]` then a mandatory `{col-spec}` argument;
+    # consume both so the spec doesn't leak into cell 1.
     if env == "array":
       if self._peek() == "[":
         self._copy_bracket_group()
       if self._peek() == "{":
-        self._grab_group_tokens()  # discard column spec
-    # Collect raw tokens until the matching \end{env}, copying nested
-    # \begin{..}/\end{..} verbatim (incl. braces) so the inner sub-parser can
-    # re-read them. Both brace and begin/end nesting are tracked.
+        self._grab_group_tokens() # discard column spec
+    # Collect raw tokens until the matching `\end{env}`,
+    # copying nested `\begin{..}`/`\end{..}` verbatim (incl. braces)
+    # so the inner sub-parser can re-read them.
+    # Both brace and begin/end nesting are tracked.
     depth = 1
     cell_tokens: list[str] = []
     while True:
@@ -747,9 +751,9 @@ class _Parser:
     return name.rstrip("*")
 
   def _copy_brace_group(self) -> list[str]:
-    """Consume a `{...}` and return the literal tokens incl. both braces, so a
-    nested `\\begin{matrix}` round-trips into the cell stream as separate
-    `{`, name-chars..., `}` tokens (not a single re-serialized blob)."""
+    """Consume a `{...}` and return the literal tokens incl. both braces,
+    so a nested `\\begin{matrix}` round-trips into the cell stream
+    as separate `{`, name-chars..., `}` tokens (not a single re-serialized blob)."""
     self._expect("{")
     out = ["{"]
     depth = 1
@@ -766,8 +770,8 @@ class _Parser:
           return out
 
   def _copy_bracket_group(self):
-    """Consume and discard an optional `[...]` argument (e.g. array `[t]`)."""
-    self._next()  # `[`
+    """Consume and discard an optional `[...]` argument (e.g. `array` `[t]`)."""
+    self._next() # `[`
     while True:
       t = self._next()
       if t is None or t == "]":
@@ -828,8 +832,8 @@ class _Parser:
     return [t]
 
   def _grab_group_raw_tokens(self) -> list[str]:
-    """Like `_grab_group_tokens` but keeps `" "` (space) tokens, for text mode
-    where `\\text{a b}` must preserve its spaces."""
+    """Like `_grab_group_tokens` but keeps `" "` (space) tokens,
+    for text mode where `\\text{a b}` must preserve its spaces."""
     self._skip_ws()
     if self.pos < len(self.toks) and self.toks[self.pos] == "{":
       self.pos += 1
@@ -854,8 +858,8 @@ class _Parser:
 
   @staticmethod
   def _tokens_to_text(tokens:list[str]) -> str:
-    """Flatten tokens back to literal text for `\\text{...}`. Known escapes
-    map to their glyph; unknown commands keep their name."""
+    """Flatten tokens back to literal text for `\\text{...}`.
+    Known escapes map to their glyph; unknown commands keep their name."""
     out = []
     for t in tokens:
       if t == "\\\\":
@@ -879,8 +883,8 @@ class _Parser:
 def _restyle_runs(nodes:list, sty:str|None, scr:str|None):
   """Apply a font style/script to every `<m:r>` descendant in `nodes`.
 
-  CT_RPr has a strict child order (lit, nor, scr, sty, brk, aln), so when a
-  scr-bearing font (`\\mathbb`) wraps a sty-bearing one (`\\mathbf`/`\\sin`)
+  `CT_RPr` has a strict child order (`lit`, `nor`, `scr`, `sty`, `brk`, `aln`),
+  so when a scr-bearing font (`\\mathbb`) wraps a sty-bearing one (`\\mathbf`/`\\sin`)
   we must INSERT `m:scr` before the existing `m:sty`, not append after it."""
   for node in nodes:
     if node.tag == qn("m:r"):
@@ -892,7 +896,7 @@ def _restyle_runs(nodes:list, sty:str|None, scr:str|None):
         scr_el = _el("m:scr", val=scr)
         sty_el = rpr.find(qn("m:sty"))
         if sty_el is not None:
-          sty_el.addprevious(scr_el)  # keep scr before sty
+          sty_el.addprevious(scr_el) # keep scr before sty
         else:
           rpr.append(scr_el)
       if sty is not None and rpr.find(qn("m:sty")) is None:
@@ -901,13 +905,13 @@ def _restyle_runs(nodes:list, sty:str|None, scr:str|None):
       _restyle_runs(list(node), sty, scr)
 
 def _coalesce_runs(el) -> None:
-  """Merge adjacent `<m:r>` siblings with identical run properties into one
-  run, concatenating their text. Mirrors how Word itself stores math (one run
-  per styled span, not per character), shrinking output.
+  """Merge adjacent `<m:r>` siblings with identical run properties into one run,
+  concatenating their text.
+  Mirrors how Word itself stores math
+  (one run per styled span, not per character), shrinking output.
 
-  Rebuilds the child list in one pass (detach-all then re-append survivors) so
-  it stays O(n) - a naive per-merge `remove()` would be O(n^2) on big spans."""
-  from lxml import etree
+  Rebuilds the child list in one pass (detach-all then re-append survivors)
+  so it stays O(n) - a naive per-merge `remove()` would be O(n^2) on big spans."""
   def sig(r):
     parts = []
     for tag in ("m:rPr", "w:rPr"):
@@ -942,7 +946,7 @@ def _split_rows(tokens:list[str]) -> list[list[list[str]]]:
   cur_row: list[list[str]] = []
   cur_cell: list[str] = []
   depth = 0      # brace nesting
-  env = 0        # \begin/\end nesting - inner separators must not split us
+  env = 0        # `\begin`/`\end` nesting - inner separators must not split us
   for t in tokens:
     if t == "{":
       depth += 1; cur_cell.append(t)
@@ -969,8 +973,8 @@ def _split_rows(tokens:list[str]) -> list[list[list[str]]]:
 #--------------------------------------------------------------------------------------- Public API
 
 def latex_to_omath(
-  latex:str, size_halfpt:int|None=None,
-  color_hex:str|None=None, display:bool=False,
+  latex:str, size_halfpt:int|None = None,
+  color_hex:str|None = None, display:bool = False,
 ) -> "OxmlElement":
   """Convert LaTeX math to an `<m:oMath>` OMML element.
 
@@ -986,13 +990,13 @@ def latex_to_omath(
   if not latex or not latex.strip():
     raise MathConversionError("empty formula")
   if len(latex) > 5000:
-    # Real formulas are never this long; route oversized input to the image
-    # fallback rather than building a pathological OMML tree.
+    # Real formulas are never this long;
+    # route oversized input to the image fallback rather than building a pathological OMML tree.
     raise MathConversionError("formula too long")
   build = _Build(size_halfpt, color_hex)
   parser = _Parser(_tokenize(latex), build, display)
   nodes = parser.parse_sequence(set())
-  parser._skip_ws()  # a trailing space token is not "leftover" content
+  parser._skip_ws() # a trailing space token is not "leftover" content
   if parser.pos < len(parser.toks):
     raise MathConversionError(f"trailing tokens at {parser.pos}")
   if not nodes:
@@ -1004,14 +1008,14 @@ def latex_to_omath(
   return omath
 
 #----------------------------------------------------------------------------------- Tag extraction
-_TAG_SPLIT_RE = _re.compile(r"\\tag(\*?)\{([^{}]*)\}")
+_TAG_SPLIT_RE = re.compile(r"\\tag(\*?)\{([^{}]*)\}")
 
 def pop_tag(formula:str) -> tuple[str, str|None]:
   r"""Split a `\tag{...}` out of a display formula.
 
-  Returns `(formula_without_tag, label)` - `label` is `(X1.1)` for `\tag`,
-  bare for `\tag*`, `None` when there is no tag. Neither engine typesets
-  `\tag`; the renderer prints the label where the equation number goes.
+  Returns `(formula_without_tag, label)` -
+  `label` is `(X1.1)` for `\tag`, bare for `\tag*`, `None` when there is no tag.
+  Neither engine typesets `\tag`; the renderer prints the label where the equation number goes.
   """
   m = _TAG_SPLIT_RE.search(formula)
   if m is None:
@@ -1022,13 +1026,13 @@ def pop_tag(formula:str) -> tuple[str, str|None]:
   return (formula[:m.start()] + formula[m.end():]).strip(), label
 
 def build_omath_para(
-  latex:str, size_halfpt:int|None=None,
-  color_hex:str|None=None, align:str="center",
+  latex:str, size_halfpt:int|None = None,
+  color_hex:str|None = None, align:str = "center",
 ) -> "OxmlElement":
   """Convert LaTeX to a display `<m:oMathPara>` (centered block equation).
 
-  Wraps `latex_to_omath(display=True)` in an `<m:oMathPara>` with the given
-  justification. Raises `MathConversionError` on unsupported input.
+  Wraps `latex_to_omath(display=True)` in an `<m:oMathPara>` with the given justification.
+  Raises `MathConversionError` on unsupported input.
   """
   omath = latex_to_omath(latex, size_halfpt, color_hex, display=True)
   para = _el("m:oMathPara")
@@ -1040,32 +1044,32 @@ def build_omath_para(
 
 #----------------------------------------------------------------------------------- Image fallback
 
-_BIG_DELIM_RE = _re.compile(r"\\(?:bigg?|Bigg?)[lrm]?\s*")
-_CANCEL_RE = _re.compile(r"\\(?:cancel|bcancel|xcancel)\s*")
-_TAG_RE = _re.compile(r"\\tag\s*\{[^{}]*\}")
-_COLOR_RE = _re.compile(r"\\(?:text)?color\s*\{[^{}]*\}")
+_BIG_DELIM_RE = re.compile(r"\\(?:bigg?|Bigg?)[lrm]?\s*")
+_CANCEL_RE = re.compile(r"\\(?:cancel|bcancel|xcancel)\s*")
+_TAG_RE = re.compile(r"\\tag\s*\{[^{}]*\}")
+_COLOR_RE = re.compile(r"\\(?:text)?color\s*\{[^{}]*\}")
 
 def _normalize_for_mathtext(latex:str) -> str:
-  """Strip a few common constructs matplotlib mathtext can't parse so the
-  image fallback succeeds instead of degrading to text. Conservative: only
-  removes wrappers, never changes the math meaning."""
+  """Strip a few common constructs matplotlib mathtext can't parse
+  so the image fallback succeeds instead of degrading to text.
+  Conservative: only removes wrappers, never changes the math meaning."""
   s = latex
-  s = _BIG_DELIM_RE.sub("", s)  # \big( → ( ; mathtext sizes via \left\right
-  s = _CANCEL_RE.sub("", s)     # \cancel{x} → {x}
-  s = _TAG_RE.sub("", s)        # drop \tag{1}
-  s = _COLOR_RE.sub("", s)      # \color{red}{x} → {x}; \textcolor{red}{x} → {x}
+  s = _BIG_DELIM_RE.sub("", s)  # `\big(` → `(`; mathtext sizes via `\left\right`
+  s = _CANCEL_RE.sub("", s)     # `\cancel{x}` → `{x}`
+  s = _TAG_RE.sub("", s)        # drop `\tag{1}`
+  s = _COLOR_RE.sub("", s)      # `\color{red}{x}` → `{x}`; `\textcolor{red}{x}` → `{x}`
   return s
 
 def render_math_png(
-  latex:str, fontsize_pt:float=11,
-  color:tuple=(0, 0, 0), fontset:str="stix", dpi:int=300,
+  latex:str, fontsize_pt:float = 11,
+  color:tuple = (0, 0, 0), fontset:str = "stix", dpi:int = 300,
 ):
   """Render a formula to a transparent PNG via matplotlib mathtext.
 
-  Returns `(BytesIO, width_mm, height_mm, baseline_from_bottom_mm)` or
-  `None` when matplotlib is unavailable or the formula fails to parse.
-  The baseline offset lets the caller drop an inline picture so its math
-  baseline sits on the text baseline.
+  Returns `(BytesIO, width_mm, height_mm, baseline_from_bottom_mm)`
+  or `None` when matplotlib is unavailable or the formula fails to parse.
+  The baseline offset lets the caller drop an inline picture
+  so its math baseline sits on the text baseline.
   """
   try:
     import matplotlib
@@ -1074,7 +1078,6 @@ def render_math_png(
     from matplotlib.backends.backend_agg import FigureCanvasAgg
   except ImportError:
     return None
-  import io
   latex = _normalize_for_mathtext(latex)
   try:
     import matplotlib as mpl
@@ -1087,10 +1090,10 @@ def render_math_png(
       ha="left", va="baseline")
     canvas.draw()
     renderer = canvas.get_renderer()
-    bbox_in = fig.get_tightbbox(renderer)  # inches
+    bbox_in = fig.get_tightbbox(renderer) # inches
     w_mm = bbox_in.width * 25.4
     h_mm = bbox_in.height * 25.4
-    baseline_mm = (-bbox_in.y0) * 25.4  # baseline sits at fig y=0
+    baseline_mm = (-bbox_in.y0) * 25.4 # baseline sits at fig y=0
     buf = io.BytesIO()
     fig.savefig(buf, format="png", transparent=True,
       bbox_inches="tight", pad_inches=0.01, dpi=dpi)

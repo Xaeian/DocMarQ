@@ -2,11 +2,14 @@
 
 """Rich inline runs - mixed-style spans within a single paragraph.
 
-Emits Word runs (`<w:r>`) instead of
-PDF drawing ops. `python-docx` owns line-breaking and justification; we only
-build the run list.
+Emits Word runs (`<w:r>`) instead of PDF drawing ops.
+`python-docx` owns line-breaking and justification; we only build the run list.
 """
 from dataclasses import dataclass
+from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_COLOR_INDEX
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 from .constants import Defaults
 from .utils import color_hex, rgb255
 
@@ -16,13 +19,13 @@ from .utils import color_hex, rgb255
 class RichSegment:
   """Single styled run. Multiple segments compose into one paragraph.
 
-  `link_url` makes the run a clickable external hyperlink. `link_target`
-  references an internal bookmark by name. `code=True` flips the run to
-  monospace family with subtle shading - matches markdown inline code.
+  `link_url` makes the run a clickable external hyperlink.
+  `link_target` references an internal bookmark by name.
+  `code=True` flips the run to monospace family with subtle shading - matches markdown inline code.
   """
   text: str
-  family: str|None = None # None → inherit current paragraph font
-  size: float|None = None # pt; None → inherit
+  family: str|None = None # `None` → inherit current paragraph font
+  size: float|None = None # pt; `None` → inherit
   color: tuple|str|None = None
   bold: bool = False
   italic: bool = False
@@ -36,6 +39,7 @@ class RichSegment:
   bg_color: tuple|str|None = None # custom run background (status badges)
   superscript: bool = False # raise as superscript (footnote refs)
   subscript: bool = False # lower as subscript
+  small_caps: bool = False # lowercase letters as Word's small capitals
 
 #------------------------------------------------------------------------------------ Run rendering
 
@@ -46,9 +50,8 @@ def _apply_run_format(
   code_color:tuple|str|None = None,
   code_bg:tuple|str|None = None,
 ):
-  """Apply `RichSegment` styling to a `python-docx` `Run`. Unset `code_*`
-  arguments fall back to `Defaults.CODE_*`."""
-  from docx.shared import Pt, RGBColor
+  """Apply `RichSegment` styling to a `python-docx` `Run`.
+  Unset `code_*` arguments fall back to `Defaults.CODE_*`."""
   f = run.font
   if seg.code:
     f.name = code_family or Defaults.CODE_FAMILY
@@ -67,7 +70,7 @@ def _apply_run_format(
   if seg.strike: f.strike = True
   if seg.highlight:
     f.highlight_color = _highlight_value(seg.highlight)
-  # bg_color (status badges, callout titles) and code shading are mutually exclusive;
+  # `bg_color` (status badges, callout titles) and code shading are mutually exclusive;
   # code always wins with its own background.
   if seg.code:
     _apply_run_shading(run, color_hex(code_bg or Defaults.CODE_BG))
@@ -77,10 +80,11 @@ def _apply_run_format(
     f.superscript = True
   if seg.subscript:
     f.subscript = True
+  if seg.small_caps:
+    f.small_caps = True
 
 def _highlight_value(name:str):
   """Map color name to `WD_COLOR_INDEX`. Returns `None` if unknown."""
-  from docx.enum.text import WD_COLOR_INDEX
   table = {
     "yellow": WD_COLOR_INDEX.YELLOW, "green": WD_COLOR_INDEX.BRIGHT_GREEN,
     "cyan": WD_COLOR_INDEX.TURQUOISE, "magenta": WD_COLOR_INDEX.PINK,
@@ -91,8 +95,6 @@ def _highlight_value(name:str):
 
 def _apply_run_shading(run, hex_color:str):
   """Apply background shading to a run via raw `<w:shd>` in `rPr`."""
-  from docx.oxml.ns import qn
-  from docx.oxml import OxmlElement
   rpr = run._element.get_or_add_rPr()
   shd = OxmlElement("w:shd")
   shd.set(qn("w:val"), "clear")

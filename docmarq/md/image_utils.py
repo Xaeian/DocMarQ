@@ -2,39 +2,37 @@
 Pure image preprocessing for markdown figures and frontmatter logos.
 
 Three pure operations: crop transparent borders, compute scaled dimensions,
-parse the markdown image title DSL. The actual `add_picture` call lives on
-the renderer where it needs access to the document and the paragraph
-layout state.
+parse the markdown image title DSL.
+The actual `add_picture` call lives on the renderer
+where it needs access to the document and the paragraph layout state.
 """
-import io
-import os
+import io, os, warnings
 from dataclasses import dataclass
+from PIL import Image
+from docx.oxml import OxmlElement
 from ..svg import svg_to_png_buffer, is_svg
 
 #--------------------------------------------------------------------------------------- Preprocess
 
 def preprocess_to_buffer(path:str):
-  """Open `path`, crop alpha-transparent borders, re-save as PNG into a
-  `BytesIO`. Returns the buffer or `None` if Pillow / file unavailable.
+  """Open `path`, crop alpha-transparent borders, re-save as PNG into a `BytesIO`.
+  Returns the buffer or `None` if Pillow / file unavailable.
 
-  SVG inputs route through `svg_to_png_buffer` first since neither Pillow
-  nor python-docx can read them natively.
+  SVG inputs route through `svg_to_png_buffer` first
+  since neither Pillow nor python-docx can read them natively.
 
-  Word honors the declared bounding box including transparent margins, so
-  uncropped images appear smaller or misaligned. Cropping to the opaque
-  content removes that bias.
+  Word honors the declared bounding box including transparent margins,
+  so uncropped images appear smaller or misaligned.
+  Cropping to the opaque content removes that bias.
 
-  Also normalizes format: python-docx rejects JPEGs with non-standard APP
-  segments (e.g. APP2 ICC profile); re-saving as PNG avoids that.
+  Also normalizes format:
+  python-docx rejects JPEGs with non-standard APP segments (e.g. APP2 ICC profile);
+  re-saving as PNG avoids that.
   """
   if not os.path.isfile(path):
     return None
   if is_svg(path):
     return svg_to_png_buffer(path)
-  try:
-    from PIL import Image
-  except ImportError:
-    return None
   try:
     im = Image.open(path)
     if im.mode == "P":
@@ -57,10 +55,9 @@ def preprocess_to_buffer(path:str):
 def read_dpi(path:str, default:float=96) -> float:
   """Metadata DPI _(pHYs / JFIF)_, `default` when absent."""
   try:
-    from PIL import Image
     with Image.open(path) as im:
       meta = im.info.get("dpi")
-  except (ImportError, OSError, ValueError):
+  except (OSError, ValueError):
     return default
   return meta[0] if isinstance(meta, tuple) and meta[0] else default
 
@@ -72,7 +69,7 @@ def _upscale_cap_mm(nat_w_px:int, dpi:float|None, min_dpi:float) -> float:
 
 def compute_target_dims(
   nat_w:int, nat_h:int, content_w_mm:float,
-  max_h_mm:float, dpi:float|None=96, min_dpi:float=150,
+  max_h_mm:float, dpi:float|None = 96, min_dpi:float = 150,
 ) -> tuple[float|None, float]:
   """Width-first scaling with height cap. Preserves aspect ratio.
 
@@ -116,8 +113,8 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
     `align`          `L` / `C` / `R` block-level horizontal alignment
 
   Title with no `=` token is treated as opaque (a plain caption).
-  Unknown keys / malformed values / non-positive numerics each warn once
-  and the key is dropped; parsing never raises.
+  Unknown keys / malformed values / non-positive numerics each warn once and the key is dropped;
+  parsing never raises.
   """
   out = ImageDSL()
   if not title or not title.strip():
@@ -126,7 +123,6 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
   if not any("=" in t for t in tokens):
     return out
   out.is_dsl = True
-  import warnings
   for tok in tokens:
     if "=" not in tok:
       warnings.warn(
@@ -176,8 +172,8 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
 
 def apply_dsl_dims(
   nat_w_px:int, nat_h_px:int, content_w_mm:float,
-  max_h_mm:float, dsl:ImageDSL, dpi:float|None=96,
-  min_dpi:float=150,
+  max_h_mm:float, dsl:ImageDSL, dpi:float|None = 96,
+  min_dpi:float = 150,
 ) -> tuple[float|None, float]:
   """Combine DSL overrides with the default width-first / height-cap flow.
 
@@ -187,8 +183,8 @@ def apply_dsl_dims(
     3. `w` or `h` alone - exact dim + aspect-locked other, clamped.
     4. None of the above - normal flow with optional `max_w`/`max_h` caps.
 
-  Final size is always clamped to the effective caps so explicit
-  overrides can't escape the page bounds.
+  Final size is always clamped to the effective caps
+  so explicit overrides can't escape the page bounds.
   """
   eff_w = content_w_mm
   eff_h = max_h_mm
@@ -231,3 +227,31 @@ def resolve_path(src:str, base_dir:str) -> str|None:
   if os.path.isabs(src):
     return src
   return os.path.normpath(os.path.join(base_dir, src))
+
+#---------------------------------------------------------------------------------- Picture offsets
+
+_WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+
+def pin_offsets(run):
+  """
+  Set `distT/B/L/R="0"` and inject a zero `<wp:effectExtent>` on every `<wp:inline>` in this run.
+  python-docx omits these;
+  LibreOffice and some Word versions render a small horizontal offset when they are absent.
+  """
+  def wp(tag):
+    return f"{{{_WP_NS}}}{tag}"
+  for inline in run._element.findall(f".//{wp('inline')}"):
+    for attr in ("distT", "distB", "distL", "distR"):
+      inline.set(attr, "0")
+    eff = inline.find(wp("effectExtent"))
+    if eff is None:
+      eff = OxmlElement("wp:effectExtent")
+      for attr in ("l", "t", "r", "b"):
+        eff.set(attr, "0")
+      # OOXML schema order: `extent` → `effectExtent` → `docPr` → ...
+      extent = inline.find(wp("extent"))
+      if extent is not None:
+        idx = list(inline).index(extent) + 1
+        inline.insert(idx, eff)
+      else:
+        inline.insert(0, eff)

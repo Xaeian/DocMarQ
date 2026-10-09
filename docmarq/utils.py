@@ -1,6 +1,8 @@
 # docmarq/utils.py
 
 """Utility functions - unit conversion, color parsing, helpers."""
+from datetime import date, datetime
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from .constants import Unit, EMU_PER_MM, EMU_PER_PT
 
 #-------------------------------------------------------------------------------------------- Units
@@ -19,6 +21,10 @@ def mm_to_pt(*values:float) -> list[float]|float:
   result = [v / Unit.PT for v in values]
   return result[0] if len(result) == 1 else result
 
+def eighths(pt:float) -> int:
+  """Width `pt` in eighths of a point, the unit of Word's borders, one at least."""
+  return max(1, round(pt * 8))
+
 def mm_to_emu(value_mm:float) -> int:
   """Convert millimeters to EMU (OOXML native unit)."""
   return int(round(value_mm * EMU_PER_MM))
@@ -33,17 +39,16 @@ def to_emu(value:float, unit:str="mm") -> int:
 
 #------------------------------------------------------------------------------- Typographic ladder
 
-# Word's font-size dropdown values - the de facto standard typographic
-# ladder. Jumps are non-linear: 12→14→16 skips 13/15 because those don't
-# read well in print. "One step smaller" should walk this list, not just
-# subtract 1pt and hope for the best.
+# Word's font-size dropdown values - the de facto standard typographic ladder.
+# Jumps are non-linear: 12→14→16 skips 13/15 because those don't read well in print.
+# "One step smaller" should walk this list, not just subtract 1pt and hope for the best.
 _SIZE_LADDER = (6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72)
 
 def smaller_size(body_pt:float, min_pt:float=7) -> float:
-  """Next-smaller standard typographic size below `body_pt`. Used by tables
-  and bibliography to derive a "one step smaller" reading size that hits
-  expected Word ladder values (11→10, 12→11, 14→12, 16→14, 18→16) instead
-  of arbitrary `body - 1` deltas that produce non-standard sizes like 13.
+  """Next-smaller standard typographic size below `body_pt`.
+  Used by tables and bibliography to derive a "one step smaller" reading size
+  that hits expected Word ladder values (11→10, 12→11, 14→12, 16→14, 18→16)
+  instead of arbitrary `body - 1` deltas that produce non-standard sizes like 13.
   Clamps at `min_pt` so small body sizes don't underflow.
   """
   for i, size in enumerate(_SIZE_LADDER):
@@ -52,10 +57,10 @@ def smaller_size(body_pt:float, min_pt:float=7) -> float:
   return max(min_pt, _SIZE_LADDER[-2])
 
 def tight_line_height(size_pt:float) -> float:
-  """Line-height multiplier appropriate for `size_pt`. Mirrors classical
-  typographic rule: display text needs tighter leading than body text
-  because the extra vertical air between lines reads as wasteful at large
-  sizes. Linear interpolation between (11pt, 1.15) and (24pt, 1.00).
+  """Line-height multiplier appropriate for `size_pt`.
+  Mirrors classical typographic rule: display text needs tighter leading than body text
+  because the extra vertical air between lines reads as wasteful at large sizes.
+  Linear interpolation between (11pt, 1.15) and (24pt, 1.00).
 
   Examples (rounded):
     11pt body  → 1.15
@@ -65,9 +70,9 @@ def tight_line_height(size_pt:float) -> float:
     22pt h1    → 1.03
     24pt+      → 1.00
 
-  Returned multiplier applies to Word's `lineRule="auto"` mode where the
-  base unit is the font's recommended single-line height (`~1.2× font size`
-  for Calibri). For really tight display, use `tight_line_height_pt`
+  Returned multiplier applies to Word's `lineRule="auto"` mode,
+  whose base unit is the font's recommended single-line height (`~1.2× font size` for Calibri).
+  For really tight display, use `tight_line_height_pt`,
   which returns an absolute pt value for `lineRule="exact"`.
   """
   if size_pt <= 11:
@@ -77,9 +82,10 @@ def tight_line_height(size_pt:float) -> float:
   return round(1.15 - (size_pt - 11) / (24 - 11) * 0.15, 3)
 
 def tight_line_height_pt(size_pt:float) -> float:
-  """Absolute line-height in points for `lineRule="exact"`. Same taper as
-  `tight_line_height` but bypasses Calibri's internal leading (~1.2× font
-  size in "single" mode), so the value is used verbatim by Word.
+  """Absolute line-height in points for `lineRule="exact"`.
+  Same taper as `tight_line_height`
+  but bypasses Calibri's internal leading (~1.2× font size in "single" mode),
+  so the value is used verbatim by Word.
 
   Use over `tight_line_height` when auto-mode leading is too loose.
 
@@ -103,8 +109,8 @@ _HEX_DIGITS = set("0123456789abcdefABCDEF")
 
 def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
   """Parse `(r,g,b)` tuple or hex string to 0-1 floats.
-  0-255 conversion to OOXML happens at the boundary in `rgb255()`, keeping
-  user-facing values consistently 0-1.
+  0-255 conversion to OOXML happens at the boundary in `rgb255()`,
+  keeping user-facing values consistently 0-1.
   """
   if color is None:
     return (0.0, 0.0, 0.0)
@@ -119,7 +125,7 @@ def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
       h = "".join(c * 2 for c in h)
     if len(h) != 6:
       raise ValueError(
-        f"Invalid hex color {raw!r}: expected #RGB or #RRGGBB, got {len(h)} digit(s)"
+        f"Invalid hex color {raw!r}: expected #RGB or #RRGGBB, got {len(h)} digit(s)",
       )
     if not all(c in _HEX_DIGITS for c in h):
       raise ValueError(f"Invalid hex color {raw!r}: contains non-hex characters")
@@ -127,8 +133,8 @@ def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
   raise ValueError(f"Invalid color type: {type(color)}")
 
 def rgb255(color:tuple|str|None) -> tuple[int, int, int]:
-  """Parse color and return `(r,g,b)` 0-255 ints - the form `python-docx`
-  `RGBColor` wants. Internal boundary helper for OOXML emission."""
+  """Parse color and return `(r,g,b)` 0-255 ints - the form `python-docx` `RGBColor` wants.
+  Internal boundary helper for OOXML emission."""
   r, g, b = parse_color(color)
   return (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
 
@@ -136,6 +142,24 @@ def color_hex(color:tuple|str) -> str:
   """Return `RRGGBB` uppercase hex string (no `#` prefix) - OOXML format."""
   r, g, b = rgb255(color)
   return f"{r:02X}{g:02X}{b:02X}"
+
+#--------------------------------------------------------------------------------------------- Date
+
+def format_date(value:date|str|None, fmt:str) -> str:
+  """
+  `value` printed with the strftime pattern `fmt`.
+
+  A `date`, a `datetime` and text in ISO `YYYY-MM-DD` are formatted.
+  Other text passes through as written, and `None` gives an empty string.
+  """
+  if value is None: return ""
+  if isinstance(value, date): return value.strftime(fmt) # a `datetime` too
+  if isinstance(value, str):
+    try:
+      return datetime.strptime(value, "%Y-%m-%d").date().strftime(fmt)
+    except ValueError:
+      return value
+  return str(value)
 
 #------------------------------------------------------------------------------------------- Margin
 
@@ -163,7 +187,6 @@ def parse_margin(margin:float|tuple) -> tuple[float, float, float, float]:
 
 def align_to_docx(align:str|None):
   """Map docmarq align constant to `python-docx` `WD_ALIGN_PARAGRAPH` value."""
-  from docx.enum.text import WD_ALIGN_PARAGRAPH
   table = {
     "L": WD_ALIGN_PARAGRAPH.LEFT,
     "R": WD_ALIGN_PARAGRAPH.RIGHT,

@@ -2,13 +2,14 @@
 
 """
 Auto-generate pyproject.toml from package source analysis.
-Scans Python files, detects modules, reads __extras__ declarations,
-auto-discovers third-party dependencies from imports, and detects
-non-Python files for package-data.
 
-Each module/subpackage declares its own extras via __extras__:
+Scans Python files, detects modules, reads `__extras__` declarations,
+auto-discovers third-party dependencies from imports,
+and detects non-Python files for package-data.
+
+Each module/subpackage declares its own extras via `__extras__`:
   Tuple form: __extras__ = ("group", ["pkg1", "pkg2"])
-  Dict form:  __extras__ = {"group": ["pkg1"], "group-async": ["pkg2"]}
+  Dict form: __extras__ = {"group": ["pkg1"], "group-async": ["pkg2"]}
 
 Example:
   >>> from toml import generate
@@ -80,8 +81,7 @@ def _scan_extras_from_file(path:str) -> dict[str, list[str]]:
   for node in ast.walk(tree):
     if isinstance(node, ast.Assign):
       for t in node.targets:
-        if isinstance(t, ast.Name) and t.id == "__extras__":
-          return _parse_extras(node.value)
+        if isinstance(t, ast.Name) and t.id == "__extras__": return _parse_extras(node.value)
   return {}
 
 def _top_level(name:str) -> str:
@@ -103,14 +103,10 @@ def scan_package(pkg_dir:str) -> tuple[set[str], set[str]]:
   return modules, subpackages
 
 def scan_imports(pkg_dir:str, pkg_name:str) -> set[str]:
-  """Scan all `.py` files in package for third-party imports.
+  """
+  Scan all `.py` files in package for third-party imports.
 
-  Args:
-    pkg_dir: Package directory path.
-    pkg_name: Package name (to exclude self-imports).
-
-  Returns:
-    Set of PyPI package names detected from imports.
+  Returns their PyPI names; imports of `pkg_name` itself are left out.
   """
   stdlib = sys.stdlib_module_names
   internal = {pkg_name}
@@ -139,10 +135,10 @@ def scan_imports(pkg_dir:str, pkg_name:str) -> set[str]:
   return third_party
 
 def scan_package_data(pkg_dir:str) -> list[str]:
-  """Detect non-Python files that need `package-data` declaration.
+  """
+  Detect non-Python files that need `package-data` declaration.
 
-  Returns:
-    List of glob patterns like `"files/**"`, `"*.cfg"`.
+  Returns glob patterns like `"files/**"`, `"*.cfg"`.
   """
   skip_exts = {".py", ".pyc", ".pyo", ".md"}
   all_files = DIR.file_list(pkg_dir, shape="rel", blacklist=["__pycache__"])
@@ -241,16 +237,16 @@ def find_license(root:str) -> str|None:
 def generate_toml(
   pkg_name:str, meta:dict,
   extras:dict[str, list[str]],
-  package_data:list[str]|None=None,
-  license_file:str|None=None,
+  package_data:list[str]|None = None,
+  license_file:str|None = None,
 ) -> str:
   """Generate pyproject.toml content."""
   lines = [
-    '[build-system]',
+    "[build-system]",
     'requires = ["setuptools>=77"]',
     'build-backend = "setuptools.build_meta"',
-    '',
-    '[project]',
+    "",
+    "[project]",
     f'name = "{pkg_name}"',
     f'version = "{meta["version"]}"',
     f'description = "{meta["description"]}"',
@@ -264,39 +260,39 @@ def generate_toml(
     lines.append(f'authors = [{{name = "{meta["author"]}"}}]')
   if meta["keywords"]:
     kw_str = ", ".join(f'"{k}"' for k in meta["keywords"])
-    lines.append(f'keywords = [{kw_str}]')
+    lines.append(f"keywords = [{kw_str}]")
   deps_str = ", ".join(f'"{d}"' for d in meta["dependencies"])
-  lines.append(f'dependencies = [{deps_str}]')
-  lines.append('')
+  lines.append(f"dependencies = [{deps_str}]")
+  lines.append("")
   if extras:
-    lines.append('[project.optional-dependencies]')
+    lines.append("[project.optional-dependencies]")
     for name in sorted(extras.keys(), key=lambda x: (x == "all", x)):
       dep_str = ", ".join(f'"{d}"' for d in extras[name])
-      lines.append(f'{name} = [{dep_str}]')
-    lines.append('')
+      lines.append(f"{name} = [{dep_str}]")
+    lines.append("")
   if meta.get("scripts"):
-    lines.append('[project.scripts]')
+    lines.append("[project.scripts]")
     for cmd, entry in meta["scripts"].items():
       lines.append(f'{cmd} = "{entry}"')
-    lines.append('')
-  lines.append('[project.urls]')
+    lines.append("")
+  lines.append("[project.urls]")
   if meta["repo"]:
     lines.append(f'Repository = "https://github.com/{meta["repo"]}"')
   else:
     lines.append(f'Repository = "https://github.com/.../{pkg_name}"')
-  lines.append('')
-  lines.append('[tool.setuptools.packages.find]')
+  lines.append("")
+  lines.append("[tool.setuptools.packages.find]")
   lines.append(f'include = ["{pkg_name}*"]')
-  lines.append('')
+  lines.append("")
   if package_data:
-    lines.append('[tool.setuptools.package-data]')
+    lines.append("[tool.setuptools.package-data]")
     pat_str = ", ".join(f'"{pat}"' for pat in package_data)
-    lines.append(f'{pkg_name} = [{pat_str}]')
-    lines.append('')
-  lines.append('[tool.pytest.ini_options]')
+    lines.append(f"{pkg_name} = [{pat_str}]")
+    lines.append("")
+  lines.append("[tool.pytest.ini_options]")
   lines.append('testpaths = ["tests"]')
   lines.append('python_functions = ["*"]')
-  lines.append('')
+  lines.append("")
   return "\n".join(lines)
 
 #------------------------------------------------------------------------------------------ Logging
@@ -327,11 +323,11 @@ def _log_summary(
 #------------------------------------------------------------------------------------------- Public
 
 def generate(package:str, output:str|None=None, auto_deps:bool=False):
-  """Generate pyproject.toml for given package directory.
+  """
+  Generate pyproject.toml for given package directory.
 
   Args:
-    package: Package directory path.
-    output: Output file path (default: parent/pyproject.toml).
+    output: Defaults to `pyproject.toml` beside the package directory.
     auto_deps: Scan imports for third-party dependencies.
   """
   pkg_dir = PATH.resolve(package)

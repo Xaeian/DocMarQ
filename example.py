@@ -12,7 +12,7 @@ Showcases:
   - YAML frontmatter → page-1 banner (content only; chrome comes from `style`)
 """
 import sys
-from docmarq.md import md_to_docx, lang_style
+from docmarq.paper import md_to_docx, lang_style
 from xaeian import PATH, FILE, Print, Color as c
 
 p = Print()

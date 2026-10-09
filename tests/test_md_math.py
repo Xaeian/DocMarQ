@@ -2,10 +2,11 @@
 
 """Math (OMML): LaTeX→OMML converter structures + `md_to_docx` integration.
 
-Converter tests assert the right OMML structures appear and that unsupported
-input raises `MathConversionError` (so the renderer can fall back to an image).
-Integration tests confirm `$...$` / `$$...$$` produce native `<m:oMath>` in
-`word/document.xml`, never leak raw LaTeX, and keep the file valid OOXML.
+Converter tests assert the right OMML structures appear
+and that unsupported input raises `MathConversionError`
+(so the renderer can fall back to an image).
+Integration tests confirm `$...$` / `$$...$$` produce native `<m:oMath>` in `word/document.xml`,
+never leak raw LaTeX, and keep the file valid OOXML.
 """
 
 import re
@@ -13,7 +14,7 @@ import zipfile
 import pytest
 from docx.oxml.ns import qn
 from conftest import assert_valid_docx
-from docmarq.md import md_to_docx, MarkdownStyle
+from docmarq.paper import md_to_docx, PaperStyle
 from docmarq.md.math import latex_to_omath, build_omath_para, MathConversionError
 
 #------------------------------------------------------------------------------------------ Helpers
@@ -56,7 +57,7 @@ def omml_sqrt_and_nthroot(child_tags):
   # Plain sqrt hides the degree: radPr/degHide present, empty deg, then e.
   assert child_tags(rad) == ["radPr", "deg", "e"]
   rad3 = latex_to_omath(r"\sqrt[3]{x}").find(qn("m:rad"))
-  assert child_tags(rad3) == ["deg", "e"]  # explicit degree, no degHide
+  assert child_tags(rad3) == ["deg", "e"] # explicit degree, no degHide
 
 def omml_nary_sum_limits(child_tags):
   nary = latex_to_omath(r"\sum_{i=1}^{n} i", display=True).find(qn("m:nary"))
@@ -65,8 +66,8 @@ def omml_nary_sum_limits(child_tags):
   assert child_tags(nary) == ["naryPr", "sub", "sup", "e"]
   pr = nary.find(qn("m:naryPr"))
   # CT_NaryPr canonical order: chr, limLoc, grow, subHide, supHide
-  assert child_tags(pr) == ["chr", "limLoc", "grow"]  # both limits present → no hide
-  assert pr.find(qn("m:limLoc")).get(qn("m:val")) == "undOvr"  # display style
+  assert child_tags(pr) == ["chr", "limLoc", "grow"] # both limits present → no hide
+  assert pr.find(qn("m:limLoc")).get(qn("m:val")) == "undOvr" # display style
 
 def omml_nary_hides_absent_limits():
   pr = latex_to_omath(r"\sum_{i} x").find(qn("m:nary")).find(qn("m:naryPr"))
@@ -81,7 +82,7 @@ def omml_integral_inline_uses_side_limits():
 def omml_delimiter_default_parens_omit_props():
   d = latex_to_omath(r"\left( x \right)").find(qn("m:d"))
   assert d is not None
-  assert d.find(qn("m:dPr")) is None  # parens are the default, no dPr needed
+  assert d.find(qn("m:dPr")) is None # parens are the default, no dPr needed
 
 def omml_delimiter_custom_brackets():
   d = latex_to_omath(r"\left[ x \right]").find(qn("m:d"))
@@ -104,7 +105,7 @@ def omml_matrix_braces_not_split_as_separators():
   mat = latex_to_omath(
     r"\begin{matrix} {a & b} \\ c \end{matrix}").find(qn("m:m"))
   rows = mat.findall(qn("m:mr"))
-  assert len(rows) == 2  # two rows, first row has a single (braced) cell
+  assert len(rows) == 2 # two rows, first row has a single (braced) cell
 
 def omml_pmatrix_wrapped_in_parens():
   d = latex_to_omath(r"\begin{pmatrix} a \\ b \end{pmatrix}").find(qn("m:d"))
@@ -154,8 +155,8 @@ def omath_para_is_centered():
   "", "   ",
   r"\unknowncommand{x}",
   r"\frac{a}",                 # missing 2nd arg → unexpected end
-  r"x }",                       # unbalanced close
-  r"{x",                        # unbalanced open
+  r"x }",                      # unbalanced close
+  r"{x",                       # unbalanced open
   r"\left( x",                 # \left without \right
   r"\begin{xyz} a \end{xyz}",  # unsupported environment
   r"\overset{a}{b}",           # genuinely unsupported construct
@@ -166,7 +167,7 @@ def unsupported_input_raises_conversion_error(bad):
 
 def deep_nesting_terminates_without_other_error():
   # Pathological nesting must not hang or hit the recursion ceiling silently;
-  # it either converts or raises MathConversionError - never anything else.
+  # it either converts or raises `MathConversionError` - never anything else.
   deep = r"\frac{1}{" * 50 + "x" + "}" * 50
   try:
     latex_to_omath(deep)
@@ -181,7 +182,7 @@ def md_inline_math_produces_omml(tmp_path, document_xml):
   assert_valid_docx(path)
   xml = document_xml(path)
   assert "<m:oMath>" in xml
-  assert "$" not in xml  # no raw LaTeX leakage
+  assert "$" not in xml # no raw LaTeX leakage
 
 def md_block_math_produces_omath_para(tmp_path, document_xml):
   path = tmp_path / "block.docx"
@@ -207,10 +208,10 @@ def md_math_in_heading_and_list(tmp_path, document_xml):
 def md_math_disabled_renders_literal(tmp_path, document_xml):
   path = tmp_path / "disabled.docx"
   md_to_docx("Inline $x^2$ here.", str(path),
-    style=MarkdownStyle(math_enable=False))
+    style=PaperStyle(math_enable=False))
   xml = document_xml(path)
   assert "<m:oMath>" not in xml
-  assert "x^2" in xml  # left as plain text
+  assert "x^2" in xml # left as plain text
 
 def md_unsupported_math_falls_back_to_image(tmp_path):
   # `\overset` is outside the OMML subset → image fallback, never raw $.
@@ -271,14 +272,14 @@ def text_mode_preserves_spaces():
 
 def textbf_is_text_mode_not_math():
   el = latex_to_omath(r"\textbf{x^2}")
-  assert el.findall(".//" + qn("m:sSup")) == []  # ^2 must NOT become a superscript
+  assert el.findall(".//" + qn("m:sSup")) == [] # ^2 must NOT become a superscript
   assert "".join(t.text for t in el.iter(qn("m:t"))) == "x^2"
   sty = el.iter(qn("m:r")).__next__().find(qn("m:rPr")).find(qn("m:sty"))
   assert sty.get(qn("m:val")) == "b"
 
 def align_environment_native():
   el = latex_to_omath(r"\begin{align} a &= b \\ c &= d \end{align}", display=True)
-  assert el.find(qn("m:m")) is not None  # rendered as an aligned grid, not a fallback
+  assert el.find(qn("m:m")) is not None # rendered as an aligned grid, not a fallback
 
 def nested_matrix_native():
   el = latex_to_omath(
@@ -302,11 +303,11 @@ def oversized_formula_raises():
     latex_to_omath("x" * 20000)
 
 def trailing_space_is_not_trailing_tokens():
-  assert latex_to_omath("x ").find(qn("m:r")) is not None  # no "trailing tokens" error
+  assert latex_to_omath("x ").find(qn("m:r")) is not None # no "trailing tokens" error
 
 def no_dollar_leak_when_matplotlib_present(tmp_path, document_xml):
-  # \cancel + \begin{align} + \big are unsupported by OMML; with matplotlib
-  # present they must become images / native, never raw `$...$`.
+  # `\cancel` + `\begin{align}` + `\big` are unsupported by OMML;
+  # with matplotlib present they must become images / native, never raw `$...$`.
   path = tmp_path / "noleak.docx"
   src = (r"Inline $\cancel{x}$ here." + "\n\n"
     r"$$\begin{align} a &= b \\ c &= d \end{align}$$" + "\n\n"

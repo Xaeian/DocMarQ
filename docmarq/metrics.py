@@ -1,7 +1,7 @@
 # docmarq/metrics.py
 
 """
-Text widths for the one layout call Word leaves to the writer: table column widths.
+Text widths for the layout calls Word leaves to the writer: table columns and letter header rows.
 
 Word sets text in the fonts installed where the document opens,
 so a family is measured from the system TTF Pillow finds, or from a metric-compatible stand-in.
@@ -9,6 +9,7 @@ A family found nowhere measures as Helvetica.
 """
 from functools import lru_cache
 from PIL import ImageFont
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from .constants import Unit
 
 #-------------------------------------------------------------------------------------------- Faces
@@ -50,5 +51,4 @@ def text_width_mm(text:str, family:str, size_pt:float, bold:bool=False) -> float
   if face is not None:
     return face.getlength(text) * size_pt / _LOAD_PT * Unit.PT
   # Helvetica is wider than Calibri, so a guess from it errs toward a column that holds its words
-  from reportlab.pdfbase.pdfmetrics import stringWidth
   return stringWidth(text, "Helvetica-Bold" if bold else "Helvetica", size_pt) * Unit.PT

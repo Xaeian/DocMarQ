@@ -136,8 +136,7 @@ def verify_block(project:Project) -> str:
   the tests are copied away from the source tree, so `import` can only answer site-packages.
   Without one, installing it still catches a wheel nobody could install.
   """
-  if not project.tests:
-    return f'      - run: pip install "$(echo dist/*.whl){project.extra}"\n'
+  if not project.tests: return f'      - run: pip install "$(echo dist/*.whl){project.extra}"\n'
   typing = " mypy" if project.typed else "" # the published annotations, checked once
   return (
     f'      - run: pip install pytest{typing} "$(echo dist/*.whl){project.extra}"\n'
@@ -260,7 +259,7 @@ def generate(package:str, folder:str|None=None, ci:bool=False) -> None:
   Args:
     ci: Add `ci.yml` and gate publishing on it.
       A gate generated here earlier stays without the flag: forgetting it cannot ship unchecked.
-      A hand-written `ci.yml` is left alone.
+      Without it, a hand-written `ci.yml` is left alone and publishing does not wait on it.
   """
   pkg_dir = PATH.resolve(package)
   if not DIR.exists(pkg_dir):

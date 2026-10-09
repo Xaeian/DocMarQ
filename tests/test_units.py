@@ -34,9 +34,8 @@ def pt_to_emu_point_is_12700():
 #------------------------------------------------------------------------------------------- Colors
 
 def parse_color_returns_floats():
-  # regression: previously returned ints 0-255. Canonical form is now floats
-  # 0-1 (matching `pdfmarq.parse_color`). Conversion to ints happens at the
-  # OOXML boundary via `rgb255`.
+  # Canonical form is floats 0-1 (matching `pdfmarq.parse_color`), not ints 0-255.
+  # Conversion to ints happens at the OOXML boundary via `rgb255`.
   r, g, b = parse_color("#FF0000")
   assert (r, g, b) == pytest.approx((1.0, 0.0, 0.0))
   assert all(isinstance(c, float) for c in (r, g, b))
@@ -64,7 +63,7 @@ def rgb255_from_hex():
 @pytest.mark.parametrize("value, expected", [
   ((1.0, 0.0, 0.0), "FF0000"),
   ((0.5, 0.5, 0.5), "808080"),
-  ("#1f2328", "1F2328"),  # round-trip: hex in, hex out (uppercase)
+  ("#1f2328", "1F2328"), # round-trip: hex in, hex out (uppercase)
 ])
 def color_hex_normalizes_to_uppercase(value, expected):
   assert color_hex(value) == expected

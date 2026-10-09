@@ -4,8 +4,8 @@
 DOCX generation with fluent API. Built on `python-docx`.
 
 A thin fluent layer over a heavy backend.
-We use `python-docx` for OOXML zip plumbing, content types, and
-relationships - everything user-facing is our own API.
+We use `python-docx` for OOXML zip plumbing, content types, and relationships.
+Everything user-facing is our own API.
 
 Example:
   >>> from docmarq import DOCX, Align
@@ -17,15 +17,16 @@ Example:
 
 #--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.3.7"
+__version__ = "0.4.0"
 __repo__ = "Xaeian/DocMarQ"
 __python__ = ">=3.10"
 __description__ = "DOCX generation library with fluent API"
 __author__ = "Xaeian"
 __keywords__ = ["docx", "word", "ooxml", "document", "generation"]
 __dependencies__ = ["python-docx", "svglib", "rlPyCairo", "Pillow"]
-# pip-name → import-name mapping. `python-docx` is the pip package but
-# the import is `import docx`; the hint surfaces in dependency diagnostics
+# pip-name → import-name mapping.
+# `python-docx` is the pip package but the import is `import docx`;
+# the hint surfaces in dependency diagnostics
 # so users debugging `No module named 'docx'` see the right install command.
 __import_names__ = {"python-docx": "docx", "Pillow": "PIL"}
 

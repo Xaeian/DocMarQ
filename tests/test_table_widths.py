@@ -13,11 +13,11 @@ from conftest import docx_grid_mm
 from docmarq import DOCX, TableStyle
 from docmarq.constants import Unit, Defaults
 from docmarq.utils import smaller_size
-from docmarq.md import md_to_docx
+from docmarq.paper import md_to_docx
 from docmarq.metrics import text_width_mm
 from docmarq.tables import _fit_columns, _cap_widths
 
-LONG = "opis ktory jest na tyle dlugi ze musi sie zawinac w komorce tabeli " * 2
+LONG = "a description long enough to wrap inside its table cell " * 2
 URL = "https://example.com/very/long/path/to/some/resource/file.pdf"
 PAD = TableStyle().cell_pad_h # a side
 SIZE = smaller_size(Defaults.FONT_SIZE) # table text, one ladder step below the body
@@ -35,7 +35,7 @@ def grid(tmp_path):
 #------------------------------------------------------------------------------------------ Content
 
 def short_code_column_stays_narrow(grid):
-  cols = grid(f"| Kod | Opis |\n|---|---|\n| PP-1 | {LONG} |\n")
+  cols = grid(f"| Code | Description |\n|---|---|\n| PP-1 | {LONG} |\n")
   assert cols[0] < cols[1]
   assert cols[0] >= text_width_mm("PP-1", "Calibri", SIZE) + 2 * PAD
   assert sum(cols) == pytest.approx(CONTENT, abs=0.1)

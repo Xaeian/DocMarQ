@@ -29,8 +29,9 @@ class Metadata:
 
 @dataclass
 class Bookmark:
-  """Internal bookmark anchor. In OOXML this is a `<w:bookmarkStart/>` +
-  `<w:bookmarkEnd/>` pair around a range of content, referenced by id.
+  """Internal bookmark anchor.
+  In OOXML this is a `<w:bookmarkStart/>` + `<w:bookmarkEnd/>` pair around a range of content,
+  referenced by id.
   """
   name: str
   id: int

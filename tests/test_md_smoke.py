@@ -4,7 +4,7 @@
 
 import pytest
 from conftest import assert_valid_docx
-from docmarq.md import md_to_docx, MarkdownStyle
+from docmarq.paper import md_to_docx, PaperStyle
 from docmarq.constants import A4
 
 #----------------------------------------------------------------------------------------- Markdown
@@ -80,5 +80,5 @@ def md_footnote_with_label(tmp_path):
   # setting `footnote_label="References"` emits an H2 heading above the section
   path = tmp_path / "fn_label.docx"
   src = "Body[^1].\n\n[^1]: footnote text."
-  md_to_docx(src, str(path), style=MarkdownStyle(footnote_label="References"))
+  md_to_docx(src, str(path), style=PaperStyle(footnote_label="References"))
   assert_valid_docx(path)

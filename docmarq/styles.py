@@ -10,9 +10,9 @@ from .constants import Defaults, Align
 class Style:
   """Run/paragraph style. `None` values inherit from parent when merged.
 
-  `font_mode` covers Bold/Italic/BoldItalic via separate flags below for
-  cleaner toggling in inline runs - matches how Word stores them (each as
-  its own `<w:b/>`, `<w:i/>` element on a run).
+  `font_mode` covers Bold/Italic/BoldItalic via separate flags below,
+  for cleaner toggling in inline runs.
+  This matches how Word stores them (each as its own `<w:b/>`, `<w:i/>` element on a run).
   """
   font_family: str|None = None
   font_size: float|None = None # pt
@@ -26,10 +26,10 @@ class Style:
   space_before: float|None = None # pt
   space_after: float|None = None # pt
   highlight: str|None = None # named highlight color: yellow/green/cyan/...
-  # Inline `code` runs; `None` falls back to `Defaults.CODE_*`. The markdown
-  # renderer feeds these from `MarkdownStyle`.
+  # Inline `code` runs; `None` falls back to `Defaults.CODE_*`.
+  # The markdown renderer feeds these from `MarkdownStyle`.
   code_family: str|None = None
-  code_size: float|None = None # pt; None → `CODE_SIZE_RATIO` of body size
+  code_size: float|None = None # pt; `None` → `CODE_SIZE_RATIO` of body size
   code_color: tuple|str|None = None
   code_bg: tuple|str|None = None
 
@@ -71,12 +71,13 @@ class Style:
 
 @dataclass
 class TableStyle:
-  """Table-specific styling. Defaults are the GitHub-light palette -
+  """Table-specific styling.
+  Defaults are the GitHub-light palette:
   light grey header, near-imperceptible zebra, light grey borders.
 
-  Cell padding is split into `top`/`bot`/`h` (horizontal). Defaults are
-  asymmetric vertical: more top than bottom - optical correction so text
-  sits in the visual center, not the geometric one (font ascent > descent).
+  Cell padding is split into `top`/`bot`/`h` (horizontal).
+  Defaults are asymmetric vertical: more top than bottom - optical correction
+  so text sits in the visual center, not the geometric one (font ascent > descent).
   """
   header_bg: tuple|str = (0.96, 0.97, 0.98) # #f6f8fa
   header_color: tuple|str|None = None
@@ -92,9 +93,10 @@ class TableStyle:
   header_repeat: bool = True
   table_align: str|None = None
   fill_content_width: bool = True # columns sized by content, filling the content area
-  # Cell font size in pt. `None` → auto-derive as `body_size - 1` rounded to
-  # integer (for 11 pt body → 10 pt cells, common paper convention). Set
-  # an explicit float to override.
+  # Cell font size in pt.
+  # `None` → auto-derive as `body_size - 1` rounded to integer
+  # (for 11 pt body → 10 pt cells, common paper convention).
+  # Set an explicit float to override.
   font_size: float|None = None
 
 #------------------------------------------------------------------------------------------ Presets

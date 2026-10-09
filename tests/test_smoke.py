@@ -55,9 +55,8 @@ def docx_blockquote_hr_code(tmp_path):
   assert_valid_docx(path)
 
 def docx_colors_hex_and_tuple(tmp_path):
-  # regression: `parse_color` now returns floats 0-1 in both libs; `rgb255`
-  # converts at the OOXML boundary. Mixing hex strings and float tuples in
-  # the same document must produce no crash.
+  # `parse_color` returns floats 0-1 in both libs; `rgb255` converts at the OOXML boundary.
+  # Mixing hex strings and float tuples in the same document must produce no crash.
   path = tmp_path / "colors.docx"
   with DOCX(str(path)) as doc:
     doc.text("hex", color="#1f2328").enter()
@@ -74,7 +73,7 @@ def docx_metadata(tmp_path):
 #------------------------------------------------------------------------------------------- Styles
 
 def style_presets_are_independent_copies():
-  # each access must yield a fresh Style so users can't mutate shared state
+  # each access must yield a fresh `Style` so users can't mutate shared state
   a = Styles.BOLD
   b = Styles.BOLD
   assert a is not b

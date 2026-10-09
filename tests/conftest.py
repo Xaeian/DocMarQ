@@ -85,3 +85,16 @@ def docx_grid_mm(path:str) -> list[list[float]]:
   """Grid column widths of every table, in mm."""
   import docx
   return [[col.w.mm for col in t._tbl.tblGrid.gridCol_lst] for t in docx.Document(path).tables]
+
+# Namespaces of the XML parts the tests read.
+NS = {
+  "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+  "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+}
+
+def docx_xml(path:str, part:str="word/document.xml"):
+  """Root element of one XML part of the `.docx` at `path`, for `xpath(..., namespaces=NS)`."""
+  import zipfile
+  from lxml import etree
+  with zipfile.ZipFile(path) as z:
+    return etree.fromstring(z.read(part))

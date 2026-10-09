@@ -7,7 +7,10 @@ Column widths come from content, HTML-style, and go out as a fixed layout:
 Word's own autofit lays a table out differently in every renderer.
 The rest is what Word doesn't hand us: zebra striping, header shading, borders, cell padding.
 """
-from .utils import color_hex
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+from docx.enum.table import WD_ALIGN_VERTICAL
+from .utils import color_hex, align_to_docx
 from .metrics import text_width_mm
 
 #------------------------------------------------------------------------------------ Column widths
@@ -86,6 +89,10 @@ def _cap_widths(widths:list[float], total:float) -> list[float]:
 #----------------------------------------------------------------------------------- Border helpers
 
 _BORDER_SIDES = ("top", "left", "bottom", "right", "insideH", "insideV")
+# `w:tblPr` children that follow `w:tblBorders` (ISO/IEC 29500-1);
+# strict renderers drop a child out of sequence.
+_AFTER_BORDERS = ("w:shd", "w:tblLayout", "w:tblCellMar", "w:tblLook", "w:tblCaption",
+  "w:tblDescription", "w:tblPrChange")
 
 def apply_table_borders(table, color:tuple|str, size_pt:float, sides:tuple=_BORDER_SIDES):
   """Apply uniform borders to a table.
@@ -96,8 +103,6 @@ def apply_table_borders(table, color:tuple|str, size_pt:float, sides:tuple=_BORD
     size_pt: Border thickness in pt (Word stores as eighths-of-pt).
     sides: Which sides to draw - defaults to all + interior.
   """
-  from docx.oxml.ns import qn
-  from docx.oxml import OxmlElement
   tbl_pr = table._element.find(qn("w:tblPr"))
   if tbl_pr is None:
     tbl_pr = OxmlElement("w:tblPr")
@@ -105,7 +110,7 @@ def apply_table_borders(table, color:tuple|str, size_pt:float, sides:tuple=_BORD
   borders = tbl_pr.find(qn("w:tblBorders"))
   if borders is None:
     borders = OxmlElement("w:tblBorders")
-    tbl_pr.append(borders)
+    tbl_pr.insert_element_before(borders, *_AFTER_BORDERS)
   hex_color = color_hex(color)
   sz_eighths = max(1, int(round(size_pt * 8)))
   for side in sides:
@@ -120,11 +125,9 @@ def apply_table_borders(table, color:tuple|str, size_pt:float, sides:tuple=_BORD
 
 def remove_table_borders(table):
   """Strip all borders from a table (set every side to `val='none'`).
-  Useful for layout tables - 1xN borderless grids used to position content
-  side-by-side (banner logo + text) without visible structure.
+  Useful for layout tables - 1xN borderless grids
+  used to position content side-by-side (banner logo + text) without visible structure.
   """
-  from docx.oxml.ns import qn
-  from docx.oxml import OxmlElement
   tbl_pr = table._element.find(qn("w:tblPr"))
   if tbl_pr is None:
     tbl_pr = OxmlElement("w:tblPr")
@@ -133,7 +136,7 @@ def remove_table_borders(table):
   if borders is not None:
     tbl_pr.remove(borders)
   borders = OxmlElement("w:tblBorders")
-  tbl_pr.append(borders)
+  tbl_pr.insert_element_before(borders, *_AFTER_BORDERS)
   for side in _BORDER_SIDES:
     b = OxmlElement(f"w:{side}")
     b.set(qn("w:val"), "none")
@@ -144,8 +147,6 @@ def remove_table_borders(table):
 
 def apply_cell_shading(cell, color:tuple|str):
   """Set background fill on a table cell via raw `<w:shd>` in `tcPr`."""
-  from docx.oxml.ns import qn
-  from docx.oxml import OxmlElement
   tc_pr = cell._tc.get_or_add_tcPr()
   shd = tc_pr.find(qn("w:shd"))
   if shd is None:
@@ -157,7 +158,6 @@ def apply_cell_shading(cell, color:tuple|str):
 
 def set_cell_align(cell, align:str|None):
   """Set horizontal alignment for all paragraphs in a cell."""
-  from .utils import align_to_docx
   a = align_to_docx(align)
   if a is None: return
   for p in cell.paragraphs:
@@ -165,8 +165,6 @@ def set_cell_align(cell, align:str|None):
 
 def repeat_header_row(row):
   """Mark a table row as a repeating header (shown on each page)."""
-  from docx.oxml.ns import qn
-  from docx.oxml import OxmlElement
   tr_pr = row._tr.get_or_add_trPr()
   hdr = OxmlElement("w:tblHeader")
   hdr.set(qn("w:val"), "true")
@@ -178,12 +176,10 @@ def repeat_header_row(row):
 _DXA_PER_MM = 1440 / 25.4
 
 def set_cell_margins(cell, top:float=0, right:float=0, bot:float=0, left:float=0):
-  """Set internal cell padding in mm via raw `<w:tcMar>`. Uses canonical
-  `left` / `right` rather than bidi `start` / `end` for renderer
-  compatibility (OnlyOffice in particular only honors the former).
+  """Set internal cell padding in mm via raw `<w:tcMar>`.
+  Uses canonical `left` / `right` rather than bidi `start` / `end` for renderer compatibility
+  (OnlyOffice in particular only honors the former).
   """
-  from docx.oxml.ns import qn
-  from docx.oxml import OxmlElement
   tc_pr = cell._tc.get_or_add_tcPr()
   mar = tc_pr.find(qn("w:tcMar"))
   if mar is None:
@@ -199,7 +195,6 @@ def set_cell_margins(cell, top:float=0, right:float=0, bot:float=0, left:float=0
 
 def set_cell_vertical_align(cell, align:str="center"):
   """Set vertical alignment of cell content. `align`: `top`/`center`/`bottom`."""
-  from docx.enum.table import WD_ALIGN_VERTICAL
   va_map = {
     "top": WD_ALIGN_VERTICAL.TOP,
     "center": WD_ALIGN_VERTICAL.CENTER,

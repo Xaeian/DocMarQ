@@ -1,51 +1,45 @@
 """
 Mermaid diagram rendering with hybrid backends.
 
-Mermaid is a JavaScript-only library - no native Python implementation
-exists. We try multiple rendering backends in priority order and use the
-first one that succeeds:
+Mermaid is a JavaScript-only library - no native Python implementation exists.
+We try multiple rendering backends in priority order and use the first one that succeeds:
 
-  1. `mermaid-cli` (mmdc) - local subprocess, best quality. Requires Node.js
-     plus `npm install -g @mermaid-js/mermaid-cli`. Honors
-     `DOCMARQ_MMDC_PUPPETEER_CONFIG` env var pointing at a JSON file with
-     `executablePath` if Chrome isn't on the default puppeteer cache path.
-  2. `mermaid.ink` - public HTTP service, used when mmdc is missing or
-     fails. **The diagram source is sent to a third-party server.** Warns
-     once per process; `MarkdownStyle(mermaid_remote=False)` or
-     `compile_to_png(remote=False)` keeps rendering local.
+  1. `mermaid-cli` (`mmdc`) - local subprocess, best quality.
+     Requires Node.js plus `npm install -g @mermaid-js/mermaid-cli`.
+     Honors `DOCMARQ_MMDC_PUPPETEER_CONFIG` env var pointing at a JSON file with `executablePath`
+     if Chrome isn't on the default puppeteer cache path.
+  2. `mermaid.ink` - public HTTP service, used when `mmdc` is missing or fails.
+     **The diagram source is sent to a third-party server.**
+     Warns once per process;
+     `MarkdownStyle(mermaid_remote=False)` or `compile_to_png(remote=False)` keeps rendering local.
   3. `None` - no backend succeeded; caller falls back to a code block.
 
-Output is always PNG since python-docx can't embed SVG. Results are cached
-to `~/.cache/marq/mermaid/{hash}.png`, keyed on everything that affects the
-pixels, so a diagram is rendered once per distinct look. `marq` rather than
-`docmarq`: pdfmarq builds the same key and both packages read each other's
-entries. Writes go through a temp file and an atomic rename; a cached PNG
-that fails to decode is re-rendered.
+Output is always PNG since python-docx can't embed SVG.
+Results are cached to `~/.cache/marq/mermaid/{hash}.png`,
+keyed on everything that affects the pixels, so a diagram is rendered once per distinct look.
+`marq` rather than `docmarq`:
+pdfmarq builds the same key and both packages read each other's entries.
+Writes go through a temp file and an atomic rename;
+a cached PNG that fails to decode is re-rendered.
 """
-import base64
-import hashlib
-import os
-import shutil
-import subprocess
-import tempfile
-import urllib.request
-import urllib.error
+import base64, hashlib, os, shutil, subprocess, tempfile, warnings
+import urllib.error, urllib.request
 from pathlib import Path
+from PIL import Image
 from ..fonts import resolve_ttf
 
 #-------------------------------------------------------------------------------------------- Cache
 
-# Keyed on source + theme + background + scale, so a different scale is a
-# different entry.
+# Keyed on source + theme + background + scale, so a different scale is a different entry.
 _CACHE_DIR = Path.home() / ".cache" / "marq" / "mermaid"
 
 def _cache_key(
   source:str, theme:str, background:str, scale:float,
-  font_family:str="", font_dir:str="", cli:str="",
+  font_family:str = "", font_dir:str = "", cli:str = "",
 ) -> str:
-  """SHA1 over every input that affects rendering. Different theme, bg,
-  scale, font (family *and* directory - the same family name can resolve to
-  a different TTF) or cli must produce a different cache file.
+  """SHA1 over every input that affects rendering.
+  Different theme, bg, scale, font or cli must produce a different cache file.
+  Font means family *and* directory - the same family name can resolve to a different TTF.
 
   pdfmarq builds this payload identically so both packages share entries;
   the field order is part of that contract.
@@ -57,7 +51,7 @@ def _cache_key(
 #----------------------------------------------------------------------------------------- Font CSS
 
 def _mmdc_css_with_font(ttf_path:Path, family:str) -> str:
-  """CSS for mmdc: @font-face from local TTF + apply to all SVG text."""
+  """CSS for `mmdc`: `@font-face` from local TTF + apply to all SVG text."""
   return (
     f"@font-face {{\n"
     f"  font-family: '{family}';\n"
@@ -71,23 +65,21 @@ def _cache_path(key:str) -> Path:
   return _CACHE_DIR / f"{key}.png"
 
 def _tmp_path(out_path:Path) -> Path:
-  """Unique sibling temp path. Rendering straight into the cache name would
-  leave a truncated PNG behind on a crash or a killed subprocess."""
+  """Unique sibling temp path.
+  Rendering straight into the cache name would leave a truncated PNG behind
+  on a crash or a killed subprocess."""
   return out_path.with_name(f"{out_path.stem}.{os.getpid()}.tmp{out_path.suffix}")
 
 def _valid_png(path:Path) -> bool:
-  """True when `path` holds a PNG that decodes. A half-written leftover has
-  to be re-rendered rather than served as a cache hit for the life of the
-  installation."""
+  """True when `path` holds a PNG that decodes.
+  A half-written leftover has to be re-rendered
+  rather than served as a cache hit for the life of the installation."""
   if not path.is_file() or path.stat().st_size == 0:
     return False
   try:
-    from PIL import Image
     with Image.open(path) as im:
       im.verify()
     return True
-  except ImportError:
-    return True # no Pillow to check with; trust the file
   except Exception:
     return False
 
@@ -99,7 +91,6 @@ def _warn_remote_once() -> None:
   if _REMOTE_WARNED:
     return
   _REMOTE_WARNED = True
-  import warnings
   warnings.warn(
     "mermaid: local `mmdc` not found, falling back to the mermaid.ink "
     "public HTTP service - the diagram source is sent to a third-party "
@@ -111,23 +102,23 @@ def _warn_remote_once() -> None:
 #---------------------------------------------------------------------------------------------- API
 
 def compile_to_png(
-  source:str, cli:str="mmdc", theme:str="default",
-  background:str="transparent", scale:float=3,
-  timeout:float=60,
-  font_family:str|None=None, font_dir:str|None=None,
-  remote:bool=True,
+  source:str, cli:str = "mmdc", theme:str = "default",
+  background:str = "transparent", scale:float = 3,
+  timeout:float = 60,
+  font_family:str|None = None, font_dir:str|None = None,
+  remote:bool = True,
 ) -> str|None:
-  """Render mermaid `source` to a PNG file. Returns a path the caller can
-  embed; cache hits return the cached file, cache misses try mmdc first
-  then mermaid.ink. Returns `None` when no backend succeeded.
+  """Render mermaid `source` to a PNG file.
+  Returns a path the caller can embed;
+  cache hits return the cached file, cache misses try `mmdc` first then mermaid.ink.
+  Returns `None` when no backend succeeded.
 
-  When `font_family`+`font_dir` are set and a matching TTF is found, the
-  diagram text uses that font via mmdc's `--cssFile` (`@font-face` CSS).
+  When `font_family`+`font_dir` are set and a matching TTF is found,
+  the diagram text uses that font via `mmdc`'s `--cssFile` (`@font-face` CSS).
   Ignored by mermaid.ink (no custom-font support).
 
-  `remote=False` blocks the mermaid.ink fallback, keeping the diagram
-  source on this machine; rendering then fails instead and the caller
-  emits a code block.
+  `remote=False` blocks the mermaid.ink fallback, keeping the diagram source on this machine;
+  rendering then fails instead and the caller emits a code block.
 
   The returned path lives in the cache - caller MUST NOT delete it.
   """
@@ -158,11 +149,11 @@ def compile_to_png(
 def _try_mmdc(
   source:str, out_path:Path, *, cli:str, theme:str,
   background:str, scale:float, timeout:float,
-  font_family:str|None=None, font_dir:str|None=None,
+  font_family:str|None = None, font_dir:str|None = None,
 ) -> bool:
-  """Local mmdc subprocess. Returns `True` on success.
-  When `font_family`+`font_dir` are set and a matching TTF is found, a
-  temp CSS file with `@font-face` is injected via `--cssFile`."""
+  """Local `mmdc` subprocess. Returns `True` on success.
+  When `font_family`+`font_dir` are set and a matching TTF is found,
+  a temp CSS file with `@font-face` is injected via `--cssFile`."""
   mmdc = shutil.which(cli)
   if mmdc is None: return False
   try:
@@ -176,8 +167,8 @@ def _try_mmdc(
   cmd = [mmdc, "-i", src_path, "-o", str(out_path),
     "-t", theme, "-b", background, "-s", str(scale)]
   # Puppeteer config (custom Chrome path, sandbox flags, etc.).
-  # Both vars are checked: XAEIAN_MMDC_PUPPETEER_CONFIG is the pdfmarq name;
-  # DOCMARQ_MMDC_PUPPETEER_CONFIG is the docmarq-specific override.
+  # Both vars are checked: `XAEIAN_MMDC_PUPPETEER_CONFIG` is the pdfmarq name;
+  # `DOCMARQ_MMDC_PUPPETEER_CONFIG` is the docmarq-specific override.
   pp_config = (os.environ.get("DOCMARQ_MMDC_PUPPETEER_CONFIG")
     or os.environ.get("XAEIAN_MMDC_PUPPETEER_CONFIG"))
   if pp_config and Path(pp_config).is_file():
@@ -216,9 +207,9 @@ def _try_mermaid_ink(
   source:str, out_path:Path, *, theme:str,
   background:str,
 ) -> bool:
-  """HTTP fallback via mermaid.ink `/img/` endpoint. Returns `True` on
-  success. Uses base64-encoded source in the URL path (the API's preferred
-  encoding for direct GET requests).
+  """HTTP fallback via mermaid.ink `/img/` endpoint. Returns `True` on success.
+  Uses base64-encoded source in the URL path
+  (the API's preferred encoding for direct GET requests).
   """
   _warn_remote_once()
   try:
