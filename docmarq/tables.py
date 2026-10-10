@@ -7,9 +7,11 @@ Column widths come from content, HTML-style, and go out as a fixed layout:
 Word's own autofit lays a table out differently in every renderer.
 The rest is what Word doesn't hand us: zebra striping, header shading, borders, cell padding.
 """
+from docx.shared import Mm
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from docx.enum.table import WD_ALIGN_VERTICAL
+from .constants import DXA_PER_MM
 from .utils import color_hex, align_to_docx
 from .metrics import text_width_mm
 
@@ -172,9 +174,6 @@ def repeat_header_row(row):
 
 #----------------------------------------------------------------------------- Cell margins / align
 
-# OOXML cell margins use `dxa` = twentieths of a point. 1 mm = 1440/25.4 dxa.
-_DXA_PER_MM = 1440 / 25.4
-
 def set_cell_margins(cell, top:float=0, right:float=0, bot:float=0, left:float=0):
   """Set internal cell padding in mm via raw `<w:tcMar>`.
   Uses canonical `left` / `right` rather than bidi `start` / `end` for renderer compatibility
@@ -190,7 +189,7 @@ def set_cell_margins(cell, top:float=0, right:float=0, bot:float=0, left:float=0
     if el is None:
       el = OxmlElement(f"w:{side}")
       mar.append(el)
-    el.set(qn("w:w"), str(int(round(val * _DXA_PER_MM))))
+    el.set(qn("w:w"), str(int(round(val * DXA_PER_MM))))
     el.set(qn("w:type"), "dxa")
 
 def set_cell_vertical_align(cell, align:str="center"):
@@ -201,3 +200,76 @@ def set_cell_vertical_align(cell, align:str="center"):
     "bottom": WD_ALIGN_VERTICAL.BOTTOM,
   }
   cell.vertical_alignment = va_map.get(align, WD_ALIGN_VERTICAL.CENTER)
+
+#-------------------------------------------------------------------------------------- Table width
+
+def set_table_widths(tbl, col_widths_mm:list[float], left_pad_mm:float=0):
+  """Anchor a table's total/per-column widths and left edge via raw XML.
+
+  `<w:tblPr>` children must be in canonical schema order
+  (`tblW → jc → tblInd → tblBorders → tblLayout → tblCellMar → tblLook`);
+  strict renderers (OnlyOffice) fall back to defaults on out-of-order children.
+
+  `jc=left` is explicit because `tblInd` is measured from the leading edge, which `jc` defines.
+  `tblInd` equals the per-cell left padding (`tcMar/left`):
+  renderers anchor the table by cell content,
+  pulling the border left of the margin by that padding,
+  so an equal `tblInd` shifts it back onto the margin.
+  `tblCellMar` stays 0 so only the per-cell margin participates.
+  """
+  total_dxa = int(round(sum(col_widths_mm) * DXA_PER_MM))
+  left_dxa = int(round(left_pad_mm * DXA_PER_MM))
+  tbl_el = tbl._element
+  tbl_pr = tbl_el.find(qn("w:tblPr"))
+  # Drop the children we manage;
+  # keep refs to borders/look first so they re-insert at the right schema slot.
+  preserved_borders = tbl_pr.find(qn("w:tblBorders"))
+  preserved_look = tbl_pr.find(qn("w:tblLook"))
+  for tag in ("tblW", "jc", "tblInd", "tblBorders", "tblLayout",
+      "tblCellMar", "tblLook"):
+    for el in tbl_pr.findall(qn(f"w:{tag}")):
+      tbl_pr.remove(el)
+  # Build in canonical schema order:
+  # `tblW`, `jc`, `tblInd`, [borders], `tblLayout`, `tblCellMar`, [look] -
+  # borders/look carried over from the preserved refs.
+  tbl_w = OxmlElement("w:tblW")
+  tbl_w.set(qn("w:w"), str(total_dxa))
+  tbl_w.set(qn("w:type"), "dxa")
+  jc = OxmlElement("w:jc") # left - defines the `tblInd` leading edge
+  jc.set(qn("w:val"), "left")
+  tbl_ind = OxmlElement("w:tblInd") # match per-cell left padding (see docstring)
+  tbl_ind.set(qn("w:w"), str(left_dxa))
+  tbl_ind.set(qn("w:type"), "dxa")
+  tbl_layout = OxmlElement("w:tblLayout")
+  tbl_layout.set(qn("w:type"), "fixed")
+  tbl_cell_mar = OxmlElement("w:tblCellMar") # 0 on all sides, per-cell `tcMar` owns the padding
+  for side in ("top", "left", "bottom", "right"):
+    el = OxmlElement(f"w:{side}")
+    el.set(qn("w:w"), "0")
+    el.set(qn("w:type"), "dxa")
+    tbl_cell_mar.append(el)
+  ordered = [tbl_w, jc, tbl_ind]
+  if preserved_borders is not None:
+    ordered.append(preserved_borders)
+  ordered.append(tbl_layout)
+  ordered.append(tbl_cell_mar)
+  if preserved_look is not None:
+    ordered.append(preserved_look)
+  for el in ordered:
+    tbl_pr.append(el)
+  # Replace grid columns
+  old_grid = tbl_el.find(qn("w:tblGrid"))
+  if old_grid is not None:
+    tbl_el.remove(old_grid)
+  new_grid = OxmlElement("w:tblGrid")
+  for w_mm in col_widths_mm:
+    gc = OxmlElement("w:gridCol")
+    gc.set(qn("w:w"), str(int(round(w_mm * DXA_PER_MM))))
+    new_grid.append(gc)
+  # Insert `tblGrid` right after `tblPr` (OOXML schema requires this order).
+  tbl_el.insert(list(tbl_el).index(tbl_pr) + 1, new_grid)
+  # Also set each cell width so cell-level overrides are consistent.
+  for row in tbl.rows:
+    for i, w_mm in enumerate(col_widths_mm):
+      if i < len(row.cells):
+        row.cells[i].width = Mm(w_mm)

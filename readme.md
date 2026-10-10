@@ -17,6 +17,7 @@ You describe document flow; Word handles layout, pagination, and reflow on open.
 - **Engine and documents apart**: `docmarq.md` writes markdown content, a document package lays out the page around it
 - **Banner as contract**: in `docmarq.paper` YAML frontmatter becomes a styled banner with logo, status badge, version, dates
 - **Letters and contracts**: `docmarq.legal` sets a letter header from frontmatter and signing lines from the style, in one or two columns, or with language versions side by side
+- **Templates and series**: `docmarq.merge` fills a markdown template with one record, or with each record of a table, a document per record
 - **Cross-library parity**: API shape mirrors [`pdfmarq`](https://github.com/Xaeian/PDFMarQ), including `TableStyle`, `Styles`, `parse_color`, `rgb255`, page sizes, and `lang_style()` for i18n.
   The same markdown source and style can target both PDF and DOCX.
 - **Word-native output**: opens cleanly in Word, LibreOffice, Google Docs.
@@ -88,6 +89,7 @@ It covers a language preset, Word-native fonts, `link_root` for cross-document r
 - GitHub-flavored markdown _(tables, fenced code, lists, strikethrough)_
 - YAML frontmatter rendered as a page-1 banner _(logo, status badge, version, dates)_ by `docmarq.paper`, with signing lines from the style
 - Letters, statements and contracts by `docmarq.legal`: letter header from frontmatter, justified and hyphenated text, two balanced columns, language versions side by side _(see [`legal/guide`](https://github.com/Xaeian/DocMarQ/blob/main/docmarq/legal/guide.md))_
+- Mail merge by `docmarq.merge`: placeholders, conditions, loops and included clauses, every record checked before the first document _(see [`merge/readme`](https://github.com/Xaeian/DocMarQ/blob/main/docmarq/merge/readme.md))_
 - Columns in the core API: `doc.columns(2)`, and everything markdown writes flows through them
 - Page geometry, fonts, banner toggles and locale come from caller's `style=`, never from the document _(see [`md/guide`](https://github.com/Xaeian/DocMarQ/blob/main/docmarq/md/guide.md))_
 - Built-in language presets _(en|pl|de|fr|es|it|cs|sk)_ via `lang_style()`: covers banner labels, callouts, date format, page numbers
@@ -108,6 +110,7 @@ Not supported _(use `pdfmarq` if you need them)_: syntax highlighting in code bl
 - [`docmarq.md`](https://github.com/Xaeian/DocMarQ/blob/main/docmarq/md/readme.md): markdown engine _(optional `[md]` extra)_
 - [`docmarq.paper`](https://github.com/Xaeian/DocMarQ/blob/main/docmarq/paper/readme.md): documentation with a frontmatter banner
 - [`docmarq.legal`](https://github.com/Xaeian/DocMarQ/blob/main/docmarq/legal/readme.md): letters, statements, contracts, parallel versions
+- [`docmarq.merge`](https://github.com/Xaeian/DocMarQ/blob/main/docmarq/merge/readme.md): mail merge, one record or a document per record of a table
 
 ## See also
 

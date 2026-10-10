@@ -6,6 +6,8 @@ from dataclasses import dataclass
 # OOXML uses EMU (English Metric Units): 1 inch = 914400 EMU = 25.4 mm
 EMU_PER_MM = 36000
 EMU_PER_PT = 12700 # 1 pt = 1/72 inch
+# Widths, cell margins and column gaps go in dxa, twentieths of a point
+DXA_PER_MM = 1440 / 25.4
 
 #-------------------------------------------------------------------------------------------- Units
 

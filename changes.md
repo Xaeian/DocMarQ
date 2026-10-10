@@ -1,17 +1,21 @@
 # Changes `docmarq`
 
+## `0.4.1` Mail merge
+
+- Breaking: image helpers moved to `docmarq.images`
+- `docmarq.merge`: templates filled from one record or a table
+- `DOCX.new_para`, `new_table` and other block calls
+- Messages only through `warnings`
+- Fixes across frontmatter and titles
+
 ## `0.4.0` Legal documents
 
-- Breaking: `md_to_docx` and the banner moved to `docmarq.paper`, their fields to `PaperStyle`
+- Breaking: `md_to_docx` and the banner moved to `docmarq.paper`
 - Breaking: the markdown engine works in mm only
-- `docmarq.legal`: letters, contracts and language versions side by side
+- `docmarq.legal`: letters, contracts, language versions side by side
 - `docmarq.paper.md_into` writes after a cover
-- Core: `doc.columns()`, `doc.into()`, `doc.hyphenation()`, `doc.border()`, Word fields
-- Text: `justify`, `hyphenate`, `keep_together`, small capitals, heading sizes and gaps
-- Page number as `Page 1/5`, as in `pdfmarq`
-- Fix: `1)` printed as `1.`, a title list garbled in metadata, image over `---` lost as a heading
-- Fix: two tables in a row merged, repeated headings sharing a bookmark, gutter ignored in widths
-- Fix: table borders out of schema order, justified line before a hard break stretched
+- Columns, justified and hyphenated text, small capitals
+- Fixes across lists, tables, bookmarks and metadata
 
 ## `0.3.7` Table widths
 

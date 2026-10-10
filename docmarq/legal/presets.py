@@ -8,7 +8,7 @@ Example:
   >>> style = lang_style("pl", columns=2)
 """
 import copy
-from ..md.presets import LANG_PRESETS as _ENGINE
+from ..md import LANG_PRESETS as _ENGINE
 from ..parts import LANG_LABELS
 from .style import LegalStyle
 

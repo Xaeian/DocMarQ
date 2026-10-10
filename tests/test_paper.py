@@ -10,6 +10,7 @@ from docmarq.constants import A4
 from docmarq.parts import signatures, sign_labels, page_number, LANG_LABELS
 from docmarq.paper import md_to_docx, md_into, PaperStyle, lang_style, LANG_PRESETS
 from docmarq.md import MarkdownStyle, LANG_PRESETS as ENGINE_PRESETS, metadata_from_frontmatter
+from docmarq.md import split_frontmatter
 from conftest import NS, docx_xml, docx_text
 
 # Style fields md2paper sets by name from request options (its `_STYLE` and `docx_style`).
@@ -156,3 +157,58 @@ def status_given_as_a_number_is_a_badge(tmp_path):
   path = str(tmp_path / "s.docx")
   md_to_docx("---\ntitle: T\nstatus: 1\n---\n\nBody.\n", path)
   assert docx_xml(path).xpath("//w:t[.=' 1 ']", namespaces=NS)
+
+#-------------------------------------------------------------------------------------- Frontmatter
+
+def frontmatter_values_stay_as_written():
+  # YAML 1.1 types would print `id: 0012` as 10 and `version: 1.10` as 1.1
+  data, _ = split_frontmatter("---\nid: 0012\nversion: 1.10\ntime: 12:30\ncountry: NO\n"
+    "draft: false\nref:\n---\n\nBody.\n")
+  assert data == {"id": "0012", "version": "1.10", "time": "12:30", "country": "NO",
+    "draft": False, "ref": None}
+
+def strict_frontmatter_raises():
+  with pytest.raises(ValueError, match="invalid YAML"):
+    split_frontmatter("---\ndate: {{ day }}\n---\n\nBody.\n", strict=True)
+
+def strict_frontmatter_without_pyyaml_raises(monkeypatch):
+  import docmarq.md.frontmatter as frontmatter
+  def missing(text): raise ModuleNotFoundError("No module named 'yaml'")
+  monkeypatch.setattr(frontmatter, "read_yaml", missing)
+  with pytest.raises(ModuleNotFoundError):
+    split_frontmatter("---\ntitle: T\n---\n\nBody.\n", strict=True)
+
+def frontmatter_dates_stay_dates_and_nothing_is_none():
+  # dates and times stay typed, and `null` and `~` mean no value
+  from datetime import date, datetime
+  data, _ = split_frontmatter("---\nat: 2026-10-07T10:00:00\nday: 2026-10-07\na: null\nb: ~\n"
+    "---\n\nBody.\n")
+  assert data == {"at": datetime(2026, 10, 7, 10, 0), "day": date(2026, 10, 7),
+    "a": None, "b": None}
+
+def frontmatter_aliases_are_refused():
+  # a few lines of aliases can stand for gigabytes of text
+  with pytest.raises(ValueError):
+    split_frontmatter("---\na: &x [1]\nb: *x\n---\n\nBody.\n", strict=True)
+
+def byte_order_mark_leads_frontmatter():
+  assert split_frontmatter("\ufeff---\ntitle: T\n---\n\nBody.\n") == ({"title": "T"}, "Body.\n")
+
+def banner_prints_id_and_version_as_written(tmp_path):
+  path = str(tmp_path / "v.docx")
+  md_to_docx("---\ntitle: T\nid: 0012\nversion: 1.10\n---\n\nBody.\n", path)
+  text = docx_text(path)
+  assert "0012" in text and "1.10" in text
+
+@pytest.mark.parametrize("heading, title, dropped", [
+  ("# Sp\\. z o\\.o\\.", "Sp. z o.o.", True), ("# **Sp. z o.o.**", "Sp. z o.o.", True),
+  ("# `docmarq` guide", "`docmarq` guide", True), ("# `docmarq` guide", "docmarq guide", True),
+  ("# Report $x^2$", "Report", False), ("# Report[^1]\n\n[^1]: Note.", "Report", False),
+  ("# Report ![logo](x.png)", "Report", False),
+])
+def repeated_title_drops_only_when_nothing_else_goes_with_it(tmp_path, heading, title, dropped):
+  # parsed by the engine, with its math and footnote plugins
+  from docmarq.md import MarkdownRenderer
+  from docmarq.paper.render import _skip_matching_h1
+  tokens = MarkdownRenderer(DOCX(str(tmp_path / "t.docx"))).parse(heading + "\n\nBody.\n")
+  assert (len(_skip_matching_h1(tokens, title)) < len(tokens)) == dropped

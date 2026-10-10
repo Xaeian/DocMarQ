@@ -141,11 +141,19 @@ def _draw(
 #------------------------------------------------------------------------------------------ Helpers
 
 def _skip_matching_h1(tokens:list[Token], title:str) -> list[Token]:
-  """Drop first 3 tokens if they are `# <title>` matching the frontmatter title."""
+  r"""
+  Drop first 3 tokens if they are `# <title>` matching the frontmatter title.
+  Written or read alike: `# Sp\. z o\.o\.` and `# **Report**` match `Sp. z o.o.` and `Report`.
+  A heading holding more than text, code and emphasis, as a formula, must match as written.
+  """
   if len(tokens) < 3: return tokens
   t0, t1, t2 = tokens[0], tokens[1], tokens[2]
-  if (t0.type == "heading_open" and t0.tag == "h1"
-      and t1.type == "inline" and t2.type == "heading_close"
-      and (t1.content or "").strip() == title.strip()):
-    return tokens[3:]
-  return tokens
+  if not (t0.type == "heading_open" and t0.tag == "h1"
+      and t1.type == "inline" and t2.type == "heading_close"):
+    return tokens
+  children = t1.children or []
+  kinds = {"text", "code_inline", "softbreak", "em_open", "em_close", "strong_open",
+    "strong_close", "s_open", "s_close"}
+  text = "".join(c.content for c in children if c.type in ("text", "code_inline"))
+  read_alike = all(c.type in kinds for c in children) and text.strip() == title.strip()
+  return tokens[3:] if read_alike or (t1.content or "").strip() == title.strip() else tokens

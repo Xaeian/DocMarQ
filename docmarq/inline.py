@@ -73,9 +73,9 @@ def _apply_run_format(
   # `bg_color` (status badges, callout titles) and code shading are mutually exclusive;
   # code always wins with its own background.
   if seg.code:
-    _apply_run_shading(run, color_hex(code_bg or Defaults.CODE_BG))
+    apply_run_shading(run, color_hex(code_bg or Defaults.CODE_BG))
   elif seg.bg_color is not None:
-    _apply_run_shading(run, color_hex(seg.bg_color))
+    apply_run_shading(run, color_hex(seg.bg_color))
   if seg.superscript:
     f.superscript = True
   if seg.subscript:
@@ -93,7 +93,7 @@ def _highlight_value(name:str):
   }
   return table.get(name.lower())
 
-def _apply_run_shading(run, hex_color:str):
+def apply_run_shading(run, hex_color:str):
   """Apply background shading to a run via raw `<w:shd>` in `rPr`."""
   rpr = run._element.get_or_add_rPr()
   shd = OxmlElement("w:shd")

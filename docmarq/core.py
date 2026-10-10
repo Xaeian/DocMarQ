@@ -13,7 +13,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
-from .constants import Defaults
+from .constants import Defaults, DXA_PER_MM
 from .utils import (to_mm, parse_margin, align_to_docx, color_hex,
   rgb255, smaller_size, tight_line_height)
 from .styles import Style, TableStyle
@@ -24,7 +24,7 @@ from .svg import svg_to_png_buffer, is_svg
 from .fields import page_fields
 from .tables import (
   apply_table_borders, apply_cell_shading, set_cell_align, repeat_header_row,
-  set_cell_margins, set_cell_vertical_align, content_widths,
+  set_cell_margins, set_cell_vertical_align, content_widths, set_table_widths,
 )
 
 # Language tags Word names a language by, for the codes of the presets.
@@ -44,6 +44,10 @@ class _Target:
 
 class DOCX:
   """Main DOCX generator with fluent API.
+
+  A block of one's own, as the markdown engine and the document packages write theirs,
+  starts with `enter()` and takes `new_para()` or `new_table()` at the end of the write target.
+  It reports its gap below to `track_block_spacing()`, so the next block's gap collapses into it.
 
   Example:
     >>> with DOCX("out.docx") as doc:
@@ -86,7 +90,7 @@ class DOCX:
     self._num_ids: dict[int, int|None] = {} # list level → numbering instance
     self._para_default_color = None # per-paragraph color override; reset on flush
     self._last_space_after = 0 # pt - previous block's `space_after` (margin collapse)
-    self._extra_block_after = 0 # pt - one-shot `space_before` bonus (see `_track_block_spacing`)
+    self._extra_block_after = 0 # pt - one-shot `space_before` bonus (see `track_block_spacing`)
     self._bookmark_id = 0
     self._at = _Target(self._doc)
     self._cols = (1, 0.0) # columns of the current section: count, gap (mm)
@@ -136,6 +140,25 @@ class DOCX:
   def output_path(self) -> str:
     """Destination file path. Symmetric with `PDF.output_path`."""
     return self.path
+
+  @property
+  def paragraph(self):
+    """The open paragraph `text()` writes to, as python-docx has it, or `None`."""
+    return self._current_para
+
+  @property
+  def hyphenates(self) -> bool:
+    """Whether `hyphenation()` is on."""
+    return self._hyphenate
+
+  @property
+  def text_style(self) -> Style:
+    """Style of what is written next: font, colour, leading and gaps, as `style()` sets them."""
+    return self._style
+
+  @text_style.setter
+  def text_style(self, style:Style):
+    self._style = style
 
   #--------------------------------------------------------------------------- Section / page setup
 
@@ -261,7 +284,7 @@ class DOCX:
       cols = OxmlElement("w:cols")
       sect.insert_element_before(cols, *_SECT_AFTER_COLS)
     cols.set(qn("w:num"), str(count))
-    if count > 1: cols.set(qn("w:space"), str(round(gap_mm * _DXA_PER_MM)))
+    if count > 1: cols.set(qn("w:space"), str(round(gap_mm * DXA_PER_MM)))
     self._cols = (count, gap_mm)
     return self
 
@@ -276,7 +299,7 @@ class DOCX:
     last = self._doc.element.body.get_or_add_sectPr()
     p = last.getprevious()
     if p is None or p.tag != qn("w:p") or p.find(f"{qn('w:pPr')}/{qn('w:sectPr')}") is not None:
-      p = self._hairline()._p
+      p = self.hairline()._p
     p.set_sectPr(last.clone())
     for ref in last.xpath("w:headerReference|w:footerReference"):
       last.remove(ref)
@@ -284,19 +307,19 @@ class DOCX:
     last.start_type = WD_SECTION.CONTINUOUS
     return last
 
-  def _hairline(self):
+  def hairline(self):
     """
     Empty paragraph 1pt high after the last block:
     it ends a section where the last block is no paragraph, keeps two tables apart,
     or carries a break or a floating table's anchor.
     """
     self._flush_para()
-    p = self._new_para()
+    p = self.new_para()
     _hairline_format(p)
-    self._track_block_spacing(0)
+    self.track_block_spacing(0)
     return p
 
-  def _chain(self, write):
+  def chain(self, write):
     """
     Call `write()`, then chain the paragraphs it wrote, those in its tables too,
     with keep-with-next, all but the last, so Word keeps them on one page.
@@ -364,15 +387,15 @@ class DOCX:
     _child(rpr, "w:lang", after=_RPR_AFTER_LANG).set(qn("w:val"), _lang_tag(lang))
     for i in range(1, 7):
       try:
-        _no_hyphens(self._doc.styles[f"Heading {i}"].element)
+        no_hyphens(self._doc.styles[f"Heading {i}"].element)
       except KeyError:
         continue
     self._hyphenate = True
     return self
 
-  def _keep_words(self, p):
+  def keep_words(self, p):
     """Keep the words of paragraph `p` whole under `hyphenation()`; without it there is no need."""
-    if self._hyphenate: _no_hyphens(p._p)
+    if self._hyphenate: no_hyphens(p._p)
 
   #----------------------------------------------------------------------------------- Write target
 
@@ -398,8 +421,11 @@ class DOCX:
       if self._at.spare is not None: _hairline_format(self._at.spare)
       self._at, self._last_space_after, self._extra_block_after = outer
 
-  def _new_para(self, text:str="", style:str|None=None):
-    """New paragraph at the end of the write target, in its spare empty one when it has one."""
+  def new_para(self, text:str="", style:str|None=None):
+    """
+    New paragraph at the end of the write target, in its spare empty one when it has one.
+    It is bare: no gaps, and `text()` still writes to the open paragraph.
+    """
     at = self._at
     if at.spare is None: return at.box.add_paragraph(text, style=style)
     p, at.spare = at.spare, None
@@ -408,7 +434,7 @@ class DOCX:
     if style is not None: p.style = style
     return p
 
-  def _new_table(self, rows:int, cols:int):
+  def new_table(self, rows:int, cols:int):
     """
     New table at the end of the write target, a hairline apart from a table just before it.
 
@@ -418,7 +444,7 @@ class DOCX:
     at = self._at
     if at.box is self._doc:
       # Word joins two tables with nothing between them into one
-      if _last_block(self._doc).tag == qn("w:tbl"): self._hairline()
+      if _last_block(self._doc).tag == qn("w:tbl"): self.hairline()
       return self._doc.add_table(rows=rows, cols=cols)
     if at.spare is not None and _first_block(at.spare._p):
       at.spare._p.getparent().remove(at.spare._p)
@@ -440,10 +466,10 @@ class DOCX:
       align: `L` / `R` / `C` / `J`.
     """
     self._flush_para()
-    p = self._new_para(style=style)
+    p = self.new_para(style=style)
     if align:
       p.alignment = align_to_docx(align)
-    self._apply_para_spacing(p)
+    self.apply_para_spacing(p)
     self._current_para = p
     if text:
       self._add_run(p, RichSegment(text=text))
@@ -502,32 +528,33 @@ class DOCX:
     self._current_para = None
     self._para_default_color = None
 
-  def _apply_para_spacing(self, p):
+  def apply_para_spacing(self, p):
     """Apply line-height and before/after spacing with CSS-style margin collapse.
     Word SUMS adjacent paragraph margins (CSS takes the max),
     so `space_before` is shrunk by the previous block's `space_after`
     to land a gap of `max(prev_after, declared_before)`.
-    See `_collapsed_before`.
+    See `collapsed_before`.
     """
     pf = p.paragraph_format
     if self._style.line_height is not None:
       pf.line_spacing = self._style.line_height
     declared_before = self._style.space_before or 0
     declared_after = self._style.space_after or 0
-    pf.space_before = Pt(self._collapsed_before(declared_before))
+    pf.space_before = Pt(self.collapsed_before(declared_before))
     pf.space_after = Pt(declared_after)
     self._last_space_after = declared_after
 
-  def _collapsed_before(self, declared_before:float) -> float:
-    """Compute effective `space_before`:
-    collapse against previous block's `space_after`, then add any pending `extra_block_after`.
-    Consuming this helper resets `_extra_block_after` so the bonus applies once only.
+  def collapsed_before(self, declared_before:float) -> float:
+    """
+    Effective `space_before` of a block declaring `declared_before` pt:
+    collapsed against the previous block's `space_after`,
+    plus the one-shot bonus `track_block_spacing()` left, which this uses up.
     """
     val = max(0, declared_before - self._last_space_after) + self._extra_block_after
     self._extra_block_after = 0
     return val
 
-  def _track_block_spacing(self, after_pt:float, extra_for_next:float=0):
+  def track_block_spacing(self, after_pt:float, extra_for_next:float=0):
     """Record this block's `space_after` (for collapse against the next paragraph)
     plus an optional one-shot `space_before` bonus for it.
 
@@ -613,14 +640,14 @@ class DOCX:
     """
     self._flush_para()
     level = max(1, min(9, level))
-    p = self._new_para(text or "", style=f"Heading {level}")
+    p = self.new_para(text or "", style=f"Heading {level}")
     spec_before, spec_after = self._HEADING_SPACING_PT[min(level - 1, 5)]
     if space_before is not None: spec_before = space_before
     if space_after is not None: spec_after = space_after
-    eff_before = self._collapsed_before(spec_before)
+    eff_before = self.collapsed_before(spec_before)
     p.paragraph_format.space_before = Pt(eff_before)
     p.paragraph_format.space_after = Pt(spec_after)
-    self._track_block_spacing(spec_after)
+    self.track_block_spacing(spec_after)
     self._current_para = p
     return self
 
@@ -634,12 +661,12 @@ class DOCX:
     """
     self._flush_para()
     style_name = "List Bullet" if level == 0 else f"List Bullet {level + 1}"
-    p = self._new_para(text or "", style=self._known_style(style_name, "List Bullet"))
+    p = self.new_para(text or "", style=self._known_style(style_name, "List Bullet"))
     self._tighten_list_spacing(p)
     # Items pack tight (0/0); the last one needs air before the next block.
     # Which item is last isn't known yet, so every item parks the bonus -
     # only a following non-list paragraph consumes it (list items bypass it).
-    self._track_block_spacing(0, extra_for_next=4)
+    self.track_block_spacing(0, extra_for_next=4)
     self._current_para = p
     return self
 
@@ -661,14 +688,14 @@ class DOCX:
     style_name = self._known_style(
       "List Number" if level == 0 else f"List Number {level + 1}",
       "List Number")
-    p = self._new_para(text or "", style=style_name)
+    p = self.new_para(text or "", style=style_name)
     if start is not None:
       self._num_ids[level] = self._fresh_num_id(style_name, start, delim)
     num_id = self._num_ids.get(level)
     if num_id is not None:
       self._set_para_num(p, num_id)
     self._tighten_list_spacing(p)
-    self._track_block_spacing(0, extra_for_next=4)
+    self.track_block_spacing(0, extra_for_next=4)
     self._current_para = p
     return self
 
@@ -772,14 +799,14 @@ class DOCX:
     `language` is accepted but not used (no syntax highlight).
     """
     self._flush_para()
-    p = self._new_para()
+    p = self.new_para()
     pf = p.paragraph_format
-    pf.space_before = Pt(self._collapsed_before(2))
+    pf.space_before = Pt(self.collapsed_before(2))
     pf.space_after = Pt(6)
     pf.line_spacing = 1.2
     _apply_paragraph_shading(p, color_hex(bg_color))
     _set_pbdr(p._element, color_hex(border_color), size_eighths=4)
-    self._keep_words(p)
+    self.keep_words(p)
     lines = content.rstrip("\n").split("\n")
     for i, line in enumerate(lines):
       if i > 0:
@@ -787,7 +814,7 @@ class DOCX:
       run = p.add_run(line)
       run.font.name = font_family
       run.font.size = Pt(font_size)
-    self._track_block_spacing(6)
+    self.track_block_spacing(6)
     return self
 
   def blockquote(
@@ -806,15 +833,15 @@ class DOCX:
     Returns with `_current_para` set so `text()` can append rich runs.
     """
     self._flush_para()
-    p = self._new_para()
+    p = self.new_para()
     pf = p.paragraph_format
     pf.left_indent = Mm(to_mm(indent, self.unit))
-    pf.space_before = Pt(self._collapsed_before(space_before))
+    pf.space_before = Pt(self.collapsed_before(space_before))
     pf.space_after = Pt(space_after)
     _set_pbdr(p._element, color_hex(border_color), sides=("left",), size_eighths=24, space=4)
     self._current_para = p
     self._para_default_color = text_color
-    self._track_block_spacing(space_after)
+    self.track_block_spacing(space_after)
     if text:
       self._add_run(p, RichSegment(text=text))
     return self
@@ -822,13 +849,13 @@ class DOCX:
   def hr(self, color:tuple|str=(0.82, 0.84, 0.87), size_eighths:int=4) -> "DOCX":
     """Insert a horizontal rule - empty paragraph with bottom border."""
     self._flush_para()
-    p = self._new_para()
+    p = self.new_para()
     pf = p.paragraph_format
-    pf.space_before = Pt(self._collapsed_before(4))
+    pf.space_before = Pt(self.collapsed_before(4))
     pf.space_after = Pt(4)
     _set_pbdr(p._element, color_hex(color), sides=("bottom",),
       size_eighths=size_eighths)
-    self._track_block_spacing(4)
+    self.track_block_spacing(4)
     return self
 
   #----------------------------------------------------------------------------------------- Tables
@@ -859,7 +886,7 @@ class DOCX:
     if not rows:
       return self
     ncols = max(len(r) for r in rows)
-    tbl = self._new_table(len(rows), ncols)
+    tbl = self.new_table(len(rows), ncols)
     if word_style:
       try:
         tbl.style = word_style
@@ -893,13 +920,13 @@ class DOCX:
         family, eff_size_pt, bold_rows)
     else:
       col_w_mm = None
-    # Borders first: `_set_table_widths` reorders `tblPr` into canonical schema order
+    # Borders first: `set_table_widths` reorders `tblPr` into canonical schema order
     # and slots these borders correctly (strict renderers need the order).
     apply_table_borders(tbl, style.border_color, style.border_size)
     if col_w_mm:
       tbl.autofit = False
       tbl.allow_autofit = False
-      _set_table_widths(tbl, col_w_mm, left_pad_mm=style.cell_pad_h)
+      set_table_widths(tbl, col_w_mm, left_pad_mm=style.cell_pad_h)
     if style.table_align:
       tbl.alignment = {"L": WD_TABLE_ALIGNMENT.LEFT, "C": WD_TABLE_ALIGNMENT.CENTER,
         "R": WD_TABLE_ALIGNMENT.RIGHT}.get(style.table_align, WD_TABLE_ALIGNMENT.LEFT)
@@ -944,7 +971,7 @@ class DOCX:
         self._tighten_cell_paras(cell)
     # Cell spacing stays inside the table, so park a `space_before` bonus for the next paragraph -
     # else it sticks to the table's bottom border.
-    self._track_block_spacing(0, extra_for_next=6)
+    self.track_block_spacing(0, extra_for_next=6)
     return self
 
   def _tighten_cell_paras(self, cell):
@@ -956,7 +983,7 @@ class DOCX:
       pf.space_before = Pt(0)
       pf.space_after = Pt(0)
       pf.line_spacing = 1.15
-      self._keep_words(p)
+      self.keep_words(p)
 
   #----------------------------------------------------------------------------------------- Images
 
@@ -971,7 +998,7 @@ class DOCX:
     Raises `UnrecognizedImageError` for a format Word cannot embed.
     """
     self._flush_para()
-    p = self._new_para()
+    p = self.new_para()
     if align:
       p.alignment = align_to_docx(align)
     run = p.add_run()
@@ -985,7 +1012,7 @@ class DOCX:
         source = buf
     run.add_picture(source, **kwargs)
     # Treat image paragraph like a regular body block for collapse purposes.
-    self._track_block_spacing(0)
+    self.track_block_spacing(0)
     return self
 
   #------------------------------------------------------------------------------------ Page breaks
@@ -993,7 +1020,7 @@ class DOCX:
   def page_break(self) -> "DOCX":
     """Insert a hard page break."""
     self._flush_para()
-    p = self._new_para()
+    p = self.new_para()
     p.add_run().add_break(WD_BREAK.PAGE)
     return self
 
@@ -1103,7 +1130,7 @@ class DOCX:
     """Write the document to disk."""
     self._flush_para()
     # a document ends with a paragraph: Word adds a full-size one after a final table itself
-    if _last_block(self._doc).tag == qn("w:tbl"): self._hairline()
+    if _last_block(self._doc).tag == qn("w:tbl"): self.hairline()
     self._metadata.apply(self._doc)
     self._doc.save(self.path)
     return self
@@ -1209,13 +1236,13 @@ def _lang_tag(lang:str) -> str:
   """Language tag Word names `lang` by: `pl` → `pl-PL`; a tag with a region passes through."""
   return _LANG_TAGS.get(lang.lower(), lang.replace("_", "-"))
 
-def _mark_language(element, lang:str):
+def mark_language(element, lang:str):
   """Set every run under `element` in `lang`, which Word spell-checks and hyphenates it by."""
   tag = _lang_tag(lang)
   for r in element.iter(qn("w:r")):
     _child(r.get_or_add_rPr(), "w:lang", after=_RPR_AFTER_LANG).set(qn("w:val"), tag)
 
-def _no_hyphens(element):
+def no_hyphens(element):
   """Keep the words of a paragraph or paragraph style whole under automatic hyphenation."""
   pPr = element.get_or_add_pPr()
   if pPr.find(qn("w:suppressAutoHyphens")) is None:
@@ -1335,79 +1362,3 @@ def _level_with_delim(numbering, abstract_id:str, start:int, delim:str):
   _child(lvl, "w:start", first=True).set(qn("w:val"), str(max(1, int(start))))
   lvl.find(qn("w:lvlText")).set(qn("w:val"), f"%1{delim}")
   return lvl
-
-#-------------------------------------------------------------------------------------- Table width
-
-# `dxa` (twentieths of a point) is the OOXML native length unit for tables.
-_DXA_PER_MM = 1440 / 25.4
-
-def _set_table_widths(tbl, col_widths_mm:list[float], left_pad_mm:float=0):
-  """Anchor a table's total/per-column widths and left edge via raw XML.
-
-  `<w:tblPr>` children must be in canonical schema order
-  (`tblW → jc → tblInd → tblBorders → tblLayout → tblCellMar → tblLook`);
-  strict renderers (OnlyOffice) fall back to defaults on out-of-order children.
-
-  `jc=left` is explicit because `tblInd` is measured from the leading edge, which `jc` defines.
-  `tblInd` equals the per-cell left padding (`tcMar/left`):
-  renderers anchor the table by cell content,
-  pulling the border left of the margin by that padding,
-  so an equal `tblInd` shifts it back onto the margin.
-  `tblCellMar` stays 0 so only the per-cell margin participates.
-  """
-  total_dxa = int(round(sum(col_widths_mm) * _DXA_PER_MM))
-  left_dxa = int(round(left_pad_mm * _DXA_PER_MM))
-  tbl_el = tbl._element
-  tbl_pr = tbl_el.find(qn("w:tblPr"))
-  # Drop the children we manage;
-  # keep refs to borders/look first so they re-insert at the right schema slot.
-  preserved_borders = tbl_pr.find(qn("w:tblBorders"))
-  preserved_look = tbl_pr.find(qn("w:tblLook"))
-  for tag in ("tblW", "jc", "tblInd", "tblBorders", "tblLayout",
-      "tblCellMar", "tblLook"):
-    for el in tbl_pr.findall(qn(f"w:{tag}")):
-      tbl_pr.remove(el)
-  # Build in canonical schema order:
-  # `tblW`, `jc`, `tblInd`, [borders], `tblLayout`, `tblCellMar`, [look] -
-  # borders/look carried over from the preserved refs.
-  tbl_w = OxmlElement("w:tblW")
-  tbl_w.set(qn("w:w"), str(total_dxa))
-  tbl_w.set(qn("w:type"), "dxa")
-  jc = OxmlElement("w:jc") # left - defines the `tblInd` leading edge
-  jc.set(qn("w:val"), "left")
-  tbl_ind = OxmlElement("w:tblInd") # match per-cell left padding (see docstring)
-  tbl_ind.set(qn("w:w"), str(left_dxa))
-  tbl_ind.set(qn("w:type"), "dxa")
-  tbl_layout = OxmlElement("w:tblLayout")
-  tbl_layout.set(qn("w:type"), "fixed")
-  tbl_cell_mar = OxmlElement("w:tblCellMar") # 0 all sides; per-cell `tcMar` owns padding
-  for side in ("top", "left", "bottom", "right"):
-    el = OxmlElement(f"w:{side}")
-    el.set(qn("w:w"), "0")
-    el.set(qn("w:type"), "dxa")
-    tbl_cell_mar.append(el)
-  ordered = [tbl_w, jc, tbl_ind]
-  if preserved_borders is not None:
-    ordered.append(preserved_borders)
-  ordered.append(tbl_layout)
-  ordered.append(tbl_cell_mar)
-  if preserved_look is not None:
-    ordered.append(preserved_look)
-  for el in ordered:
-    tbl_pr.append(el)
-  # Replace grid columns
-  old_grid = tbl_el.find(qn("w:tblGrid"))
-  if old_grid is not None:
-    tbl_el.remove(old_grid)
-  new_grid = OxmlElement("w:tblGrid")
-  for w_mm in col_widths_mm:
-    gc = OxmlElement("w:gridCol")
-    gc.set(qn("w:w"), str(int(round(w_mm * _DXA_PER_MM))))
-    new_grid.append(gc)
-  # Insert `tblGrid` right after `tblPr` (OOXML schema requires this order).
-  tbl_el.insert(list(tbl_el).index(tbl_pr) + 1, new_grid)
-  # Also set each cell width so cell-level overrides are consistent.
-  for row in tbl.rows:
-    for i, w_mm in enumerate(col_widths_mm):
-      if i < len(row.cells):
-        row.cells[i].width = Mm(w_mm)

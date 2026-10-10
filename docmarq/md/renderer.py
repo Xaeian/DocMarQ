@@ -33,7 +33,8 @@ from PIL import Image
 from ..core import DOCX
 from ..constants import Align, Defaults
 from ..utils import mm_to_pt, eighths, color_hex, align_to_docx, smaller_size
-from ..svg import register_fonts
+from ..svg import register_fonts, is_svg
+from ..images import preprocess_to_buffer, pin_offsets
 from .style import MarkdownStyle
 from .frontmatter import split_frontmatter
 from .._warn import caller_level
@@ -224,14 +225,14 @@ class MarkdownRenderer:
     """
     if style is None: return self._render_tokens(tokens)
     own, self.style = self.style, style
-    body = self.doc._style.copy()
+    body = self.doc.text_style.copy()
     try:
       self.doc.font(family=style.font_body, size=style.body_size)
       self._typeset()
       self._render_tokens(tokens)
     finally:
       self.style = own
-      self.doc._style = body
+      self.doc.text_style = body
 
   def frontmatter_file(self, fm:dict, key:str, warn:bool=True) -> str|None:
     """
@@ -273,7 +274,7 @@ class MarkdownRenderer:
     which covers the common case well enough.
     """
     if not tokens: return
-    self.doc._chain(lambda: self._render_tokens(tokens))
+    self.doc.chain(lambda: self._render_tokens(tokens))
 
   #--------------------------------------------------------------------------------- Block dispatch
 
@@ -358,7 +359,7 @@ class MarkdownRenderer:
     Registers the slug as a Word bookmark so `[text](#slug)` internal links resolve here.
     """
     self.doc.heading(level=level, **self._head_gaps())
-    p = self.doc._current_para
+    p = self.doc.paragraph
     anchor = slug.slugify_inline(inline_token)
     if anchor:
       self.doc.bookmark(self._anchors + slug.dedupe(anchor, self._slug_uses))
@@ -422,7 +423,7 @@ class MarkdownRenderer:
 
   def _body_look(self):
     """Justify the body paragraph just opened, and keep it on one page, as `style` says."""
-    p = self.doc._current_para
+    p = self.doc.paragraph
     if self.style.justify: p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     if self.style.keep_together: p.paragraph_format.keep_together = True
 
@@ -508,7 +509,7 @@ class MarkdownRenderer:
     close_type = "ordered_list_close" if ordered else "bullet_list_close"
     end = find_close(tokens, start, open_type, close_type)
     if self._list_depth == 0 and self.style.keep_together:
-      self.doc._chain(lambda: self._render_items(tokens, start, end, ordered))
+      self.doc.chain(lambda: self._render_items(tokens, start, end, ordered))
     else:
       self._render_items(tokens, start, end, ordered)
     return end + 1
@@ -721,17 +722,17 @@ class MarkdownRenderer:
 
   def _math_run_props(self) -> tuple[int, str]:
     """`(size_halfpt, color_hex)` for OMML runs matching body font size/color."""
-    body_pt = self.doc._style.font_size or Defaults.FONT_SIZE
+    body_pt = self.doc.text_style.font_size or Defaults.FONT_SIZE
     return round(body_pt * 2), color_hex(self.style.body_color)
 
   def _render_inline_math(self, latex:str):
     """Inline `$...$`: append a native OMML equation to the current paragraph,
     falling back to an inline image when the LaTeX is outside the OMML subset.
     """
-    if self.doc._current_para is None:
+    if self.doc.paragraph is None:
       self.doc.para()
     size_halfpt, color_hex = self._math_run_props()
-    self._append_inline_math(self.doc._current_para, latex, size_halfpt, color_hex)
+    self._append_inline_math(self.doc.paragraph, latex, size_halfpt, color_hex)
 
   def _append_inline_math(self, p, latex:str, size_halfpt:int|None, color_hex:str):
     """Append inline math to paragraph `p` (works for body paragraphs and headings).
@@ -756,7 +757,7 @@ class MarkdownRenderer:
     r"""Display `$$...$$` (or ```math): a centered native OMML equation on its own paragraph,
     with an image fallback for unsupported LaTeX.
     A `\tag{...}` becomes the right-aligned equation label, Word style."""
-    self.doc._flush_para()
+    self.doc.enter()
     latex, tag = pop_tag(latex)
     size_halfpt, color_hex = self._math_run_props()
     if tag:
@@ -768,7 +769,7 @@ class MarkdownRenderer:
       p = self._tagged_equation_para(tag)
       # order in the XML is the order on the line: tab, equation, tab, label
       p._p.insert(list(p._p).index(p.runs[-1]._r), omath)
-      self.doc._track_block_spacing(self.doc._style.space_after or 0)
+      self.doc.track_block_spacing(self.doc.text_style.space_after or 0)
       return
     try:
       omath_para = build_omath_para(latex, size_halfpt=size_halfpt,
@@ -776,11 +777,11 @@ class MarkdownRenderer:
     except (MathConversionError, RecursionError):
       self._render_math_block_image(latex)
       return
-    p = self.doc._new_para()
-    self.doc._apply_para_spacing(p)
+    p = self.doc.new_para()
+    self.doc.apply_para_spacing(p)
     p.alignment = align_to_docx(Align.CENTER)
     p._p.append(omath_para)
-    self.doc._track_block_spacing(self.doc._style.space_after or 0)
+    self.doc.track_block_spacing(self.doc.text_style.space_after or 0)
 
   def _tagged_equation_para(self, tag:str):
     """Paragraph carrying the classic Word equation layout:
@@ -788,8 +789,8 @@ class MarkdownRenderer:
     the label after the second tab.
     The equation itself goes between the tabs."""
     content_w = self.doc.content_width
-    p = self.doc._new_para()
-    self.doc._apply_para_spacing(p)
+    p = self.doc.new_para()
+    self.doc.apply_para_spacing(p)
     pf = p.paragraph_format
     pf.tab_stops.add_tab_stop(Mm(content_w / 2), WD_TAB_ALIGNMENT.CENTER)
     pf.tab_stops.add_tab_stop(Mm(content_w), WD_TAB_ALIGNMENT.RIGHT)
@@ -805,7 +806,7 @@ class MarkdownRenderer:
     Last resort (no matplotlib, or mathtext also can't parse it):
     render the LaTeX body as inline `code` - never the raw `$...$` delimiters,
     so the no-`$`-leak contract holds."""
-    body_pt = self.doc._style.font_size or Defaults.FONT_SIZE
+    body_pt = self.doc.text_style.font_size or Defaults.FONT_SIZE
     result = render_math_png(latex, fontsize_pt=body_pt,
       color=self.style.body_color, fontset=self.style.math_fontset)
     if result is None:
@@ -820,7 +821,7 @@ class MarkdownRenderer:
       self._warn_math_fallback()
       self.doc.text(latex, code=True)
       return
-    image_utils.pin_offsets(run)
+    pin_offsets(run)
     # Shift down by the descent so formula baseline aligns with text baseline.
     # `<w:position>` is in half-points; positive = raised.
     descent_pt = baseline_mm / 25.4 * 72.0
@@ -830,7 +831,7 @@ class MarkdownRenderer:
   def _render_math_block_image(self, latex:str, tag:str|None=None):
     """Centered block image for a display formula outside the OMML subset.
     With a `tag`, the image sits between the label tabs instead."""
-    body_pt = self.doc._style.font_size or Defaults.FONT_SIZE
+    body_pt = self.doc.text_style.font_size or Defaults.FONT_SIZE
     # Display math is a touch larger than inline, matching LaTeX conventions.
     result = render_math_png(latex, fontsize_pt=body_pt * 1.25,
       color=self.style.body_color, fontset=self.style.math_fontset)
@@ -851,8 +852,8 @@ class MarkdownRenderer:
     p = self._tagged_equation_para(tag)
     run = p.runs[0]
     run.add_picture(buf, height=Mm(h_mm))
-    image_utils.pin_offsets(run)
-    self.doc._track_block_spacing(self.doc._style.space_after or 0)
+    pin_offsets(run)
+    self.doc.track_block_spacing(self.doc.text_style.space_after or 0)
 
   def _set_run_vertical_position(self, run, half_points:int):
     """Set `<w:position>` on a run (raises/lowers it; half-point units)."""
@@ -962,8 +963,8 @@ class MarkdownRenderer:
     `generated` marks a raster made here from vector source,
     which carries no resolution the width has to respect."""
     # The buffer is a re-save - DPI comes from the source. Vector has none.
-    dpi = None if generated or image_utils.is_svg(path) else image_utils.read_dpi(path)
-    buf = image_utils.preprocess_to_buffer(path)
+    dpi = None if generated or is_svg(path) else image_utils.read_dpi(path)
+    buf = preprocess_to_buffer(path)
     src = path if buf is None else buf
     w, h = self._compute_dims(src, content_w, self.style.image_max_h, dsl, dpi)
     if buf is not None: buf.seek(0)
@@ -1026,14 +1027,14 @@ class MarkdownRenderer:
   def _insert_pictures(self, items:list, align:str="C"):
     """One paragraph holding every `(src, width_mm, height_mm)` given, separated by a space run,
     aligned `L`, `C` or `R`."""
-    self.doc._flush_para()
-    p = self.doc._new_para()
+    self.doc.enter()
+    p = self.doc.new_para()
     p.alignment = align_to_docx(align)
     pf = p.paragraph_format
     pf.left_indent = Mm(0)
     pf.right_indent = Mm(0)
     pf.first_line_indent = Mm(0)
-    pf.space_before = Pt(self.doc._collapsed_before(2))
+    pf.space_before = Pt(self.doc.collapsed_before(2))
     pf.space_after = Pt(2)
     for n, (src, width_mm, height_mm) in enumerate(items):
       if n: p.add_run(" ")
@@ -1044,8 +1045,8 @@ class MarkdownRenderer:
       if height_mm is not None:
         kwargs["height"] = Mm(height_mm)
       run.add_picture(src, **kwargs)
-      image_utils.pin_offsets(run)
-    self.doc._track_block_spacing(2)
+      pin_offsets(run)
+    self.doc.track_block_spacing(2)
 
   #--------------------------------------------------------------------------------- Footnote block
 
@@ -1062,7 +1063,7 @@ class MarkdownRenderer:
       self.doc.heading(self.style.footnote_label, level=2, **self._head_gaps())
     else:
       self._hr()
-    body_pt = self.doc._style.font_size or Defaults.FONT_SIZE
+    body_pt = self.doc.text_style.font_size or Defaults.FONT_SIZE
     biblio_pt = smaller_size(body_pt)
     self.doc.font(size=biblio_pt)
     try:

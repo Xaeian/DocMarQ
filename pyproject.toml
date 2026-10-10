@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docmarq"
-version = "0.4.0"
+version = "0.4.1"
 description = "DOCX generation library with fluent API"
 readme = "readme.md"
 license = "MIT"
@@ -16,8 +16,8 @@ dependencies = ["python-docx", "svglib", "rlPyCairo", "Pillow"]
 
 [project.optional-dependencies]
 math = ["matplotlib"]
-md = ["PyYAML", "markdown-it-py", "mdit-py-plugins"]
-all = ["PyYAML", "markdown-it-py", "matplotlib", "mdit-py-plugins"]
+md = ["Jinja2>=3.1.6", "PyYAML", "markdown-it-py", "mdit-py-plugins"]
+all = ["Jinja2>=3.1.6", "PyYAML", "markdown-it-py", "matplotlib", "mdit-py-plugins"]
 
 [project.urls]
 Repository = "https://github.com/Xaeian/DocMarQ"

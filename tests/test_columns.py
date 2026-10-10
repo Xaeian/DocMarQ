@@ -60,7 +60,7 @@ def same_columns_add_no_section(doc):
 def columns_refuse_a_bad_count_and_a_cell(doc):
   with pytest.raises(ValueError):
     doc.columns(0)
-  tbl = doc._new_table(1, 1)
+  tbl = doc.new_table(1, 1)
   with doc.into(tbl.rows[0].cells[0], 50), pytest.raises(RuntimeError):
     doc.columns(2)
 
@@ -75,7 +75,7 @@ def geometry_reaches_every_section(doc):
 #------------------------------------------------------------------------------------- Write target
 
 def into_writes_in_the_cell_and_returns(doc):
-  tbl = doc._new_table(1, 2)
+  tbl = doc.new_table(1, 2)
   with doc.into(tbl.rows[0].cells[0], 60):
     assert doc.content_width == 60
     doc.para("first")
@@ -90,7 +90,7 @@ def into_writes_in_the_cell_and_returns(doc):
   assert root.xpath("string(/w:document/w:body/w:p[last()])", namespaces=NS) == "after"
 
 def table_first_in_a_cell_takes_the_empty_paragraph(doc):
-  tbl = doc._new_table(1, 1)
+  tbl = doc.new_table(1, 1)
   with doc.into(tbl.rows[0].cells[0], 80):
     doc.table([["x", "y"]])
     doc.para("under")
@@ -101,7 +101,7 @@ def table_first_in_a_cell_takes_the_empty_paragraph(doc):
   assert cell.xpath("string(w:p)", namespaces=NS) == "under"
 
 def table_in_a_cell_is_sized_to_it(doc):
-  tbl = doc._new_table(1, 1)
+  tbl = doc.new_table(1, 1)
   with doc.into(tbl.rows[0].cells[0], 80):
     doc.table([["x", "y"]])
   doc.save()
@@ -196,7 +196,7 @@ def tables_in_a_row_stay_apart_and_the_body_ends_on_a_paragraph(doc):
     assert p.xpath("string(w:pPr/w:spacing/@w:lineRule)", namespaces=NS) == "exact"
 
 def unused_cell_paragraph_is_a_hairline(doc):
-  tbl = doc._new_table(1, 1)
+  tbl = doc.new_table(1, 1)
   with doc.into(tbl.rows[0].cells[0], 50):
     pass
   doc.save()

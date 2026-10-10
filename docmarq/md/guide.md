@@ -196,6 +196,77 @@ A block that must stay together.
 `group` keeps its content on one page, breaking pre-emptively when the block would fit on the next; a group larger than a page flows normally.
 Both must stand alone in the comment, so `<!-- pagebreak now -->` is an ordinary comment and does nothing.
 
+## Templates
+
+A document with placeholders is a template: one record fills it into one document, a table of records into a series, as the same letter to many addresses.
+`pdfmarq.merge` and `docmarq.merge` fill it with data read from CSV, JSON or anything else by the script that calls them.
+A document that is never filled prints its braces as written.
+
+```md
+---
+title: Service contract
+date: "{{ signed }}"
+to: ["{{ name }} {{ surname }}", "{{ city }}"]
+vars:
+  rate: "30.50"   # default, a record can change it
+  id_card:        # left empty: every record must fill it
+---
+
+Concluded with **{{ name }} {{ surname }}**, identity card {{ id_card }}.
+
+{% if student == "yes" %}
+The contractor is a student.
+{% endif %}
+
+| Task | Hours |
+|---|--:|
+{% for task in tasks %}
+| {{ task.name }} | {{ task.hours }} |
+{% endfor %}
+```
+
+- A placeholder in frontmatter goes in quotes, as `date: "{{ signed }}"`.
+  Unquoted, YAML reads the braces as a mapping, and the template stops with that hint.
+- `vars` holds the variables of the file itself: defaults a record can change, and empty entries every record must fill.
+  An empty cell takes the default.
+  A placeholder inside a `vars` value prints as written, since `vars` hold values.
+- A line holding a tag vanishes when it prints nothing and stays a line of its own otherwise.
+  An optional table row or list item is one line, as `{% if note %}| {{ note }} |{% endif %}`, and keeps its indent.
+- A value prints as written, `*`, `|` and `<` included, without the spaces around it.
+  `{{ value | md }}` inserts markdown from the data, as `safe` does, and is the form inside code and math, where a backslash would show.
+- Values join in the text, as `{{ name }} {{ surname }}`: beside a `{% set %}` block or an `md` value, `~`, `join` and `format` escape them the wrong way.
+- A value of several lines keeps its lines, which inside a table cell breaks the row: join it there, as `{{ address | replace("\n", ", ") }}`.
+- Any text is true in `{% if %}`, `no`, `0` and Excel's `FALSE` included.
+  Compare instead, as `{% if student == "yes" %}`, or leave the cell empty.
+- `{{ value | default("-", true) }}` covers an empty cell; `default("-")` alone covers only a field the record lacks.
+- `{{ amount | number }}` and `{{ signed | date }}` print in the language and date format chosen at conversion, as `1 234,50` and `12.01.2026 r.` for Polish.
+- Literal `{{` or `{%`, as in LaTeX or a mermaid hexagon, goes inside `{% raw %}` and `{% endraw %}`.
+- Clauses kept in files of their own join with `{% include "clauses/" ~ clause ~ ".md" %}`, from the folder of the template.
+  A blank line before `{% endfor %}` keeps one clause from running into the next.
+
+When the script gives the whole table as one field, as `people`, the template makes one document with a section per record:
+
+```md
+{% for person in people %}
+## {{ person.name }} {{ person.surname }}
+
+Completed the course on {{ person.date }}.
+{% if not loop.last %}
+
+<!-- pagebreak -->
+{% endif %}
+
+{% endfor %}
+```
+
+The frontmatter, the page numbers and the signing lines then belong to the whole document, not to each record.
+
+Data from Excel, for whatever reads it:
+- save it as "CSV UTF-8";
+- format columns with leading zeros, as document numbers, as text, or Excel drops the zeros;
+- format dates as `YYYY-MM-DD`;
+- name columns as variables, `first_name` rather than `First name`.
+
 ## Pre-flight checklist
 
 1. `title:` and `author:` are set, and `status:` is honest.

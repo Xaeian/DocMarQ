@@ -2,7 +2,7 @@
 
 """Style of a legal document: the markdown style set for letters and contracts, plus their page."""
 from dataclasses import dataclass, field
-from ..md.style import MarkdownStyle
+from ..md import MarkdownStyle
 from ..parts import sign_labels, default_sign_labels
 
 #--------------------------------------------------------------------------------------- LegalStyle

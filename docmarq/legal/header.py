@@ -22,11 +22,11 @@ from docx.enum.text import WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from PIL import Image
-from ..core import DOCX, _set_table_widths
+from ..core import DOCX
 from ..constants import EMU_PER_MM
 from ..metrics import text_width_mm
 from ..svg import svg_to_png_buffer, is_svg
-from ..tables import remove_table_borders, set_cell_margins
+from ..tables import remove_table_borders, set_cell_margins, set_table_widths
 from ..utils import format_date, mm_to_pt, align_to_docx
 from .._warn import caller_level
 from .style import LegalStyle
@@ -73,18 +73,18 @@ def _lines(
   `indent` the left and right indents in mm.
   """
   doc.para(align=align)
-  p = doc._current_para
+  p = doc.paragraph
   pf = p.paragraph_format
   pf.space_before = Pt(0)
   pf.space_after = Pt(mm_to_pt(after))
   if indent[0]: pf.left_indent = Mm(indent[0])
   if indent[1]: pf.right_indent = Mm(indent[1])
-  doc._keep_words(p)
+  doc.keep_words(p)
   for i, line in enumerate(lines):
     if i: doc.line_break()
     for text, bold in [(line, False)] if isinstance(line, str) else line:
       doc.text(text, **_face(style, bold))
-  doc._track_block_spacing(mm_to_pt(after))
+  doc.track_block_spacing(mm_to_pt(after))
 
 #------------------------------------------------------------------------------------------- Header
 
@@ -148,9 +148,9 @@ def _sender_row(doc:DOCX, style:LegalStyle, sender:list[str], stamp:str, width:f
     _lines(doc, style, [stamp], "R", 0)
     _lines(doc, style, sender, "L", _ROW_GAP_MM)
     return
-  doc._flush_para()
-  tbl = doc._new_table(1, 2)
-  _set_table_widths(tbl, [width - right, right])
+  doc.enter()
+  tbl = doc.new_table(1, 2)
+  set_table_widths(tbl, [width - right, right])
   remove_table_borders(tbl)
   left, side = tbl.rows[0].cells
   for cell in (left, side):
@@ -159,7 +159,7 @@ def _sender_row(doc:DOCX, style:LegalStyle, sender:list[str], stamp:str, width:f
     _lines(doc, style, sender, "L", _ROW_GAP_MM)
   with doc.into(side, right):
     _lines(doc, style, [stamp], "R", _ROW_GAP_MM)
-  doc._track_block_spacing(0)
+  doc.track_block_spacing(0)
 
 def _title(
   doc:DOCX, style:LegalStyle, lines:list[str], rows:bool,
@@ -171,14 +171,14 @@ def _title(
   With `pic` the logo floats beside it, the title indented `clear` mm on both sides.
   """
   doc.para(align="C")
-  p = doc._current_para
+  p = doc.paragraph
   pf = p.paragraph_format
   # under header rows the gap above is `title_gap`, the row gap included
   pf.space_before = Pt(mm_to_pt(max(0, style.title_gap - _ROW_GAP_MM)) if rows else 0)
   pf.space_after = Pt(mm_to_pt(style.title_gap))
   pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
   pf.line_spacing = Pt(style.title_size * _TITLE_LEADING)
-  doc._keep_words(p)
+  doc.keep_words(p)
   if pic:
     pf.left_indent = pf.right_indent = Mm(clear)
     _float(p.add_run(), pic, style.logo_align)
@@ -189,7 +189,7 @@ def _title(
   for i, line in enumerate(lines):
     if i: doc.line_break()
     doc.text(line, **face)
-  doc._track_block_spacing(mm_to_pt(style.title_gap))
+  doc.track_block_spacing(mm_to_pt(style.title_gap))
 
 def _widest_word(style:LegalStyle, lines:list[str]) -> float:
   """Width (mm) of the widest word of the title, capitals standing in for small capitals."""
@@ -227,14 +227,14 @@ def _picture(style:LegalStyle, path:str) -> tuple|None:
 def _logo_row(doc:DOCX, style:LegalStyle, pic:tuple):
   """Logo in a paragraph of its own, aligned by `logo_align`, the row gap below."""
   src, w, h = pic
-  doc._flush_para()
-  p = doc._new_para()
+  doc.enter()
+  p = doc.new_para()
   p.alignment = align_to_docx(style.logo_align)
   pf = p.paragraph_format
   pf.space_before = Pt(0)
   pf.space_after = Pt(mm_to_pt(_ROW_GAP_MM))
   p.add_run().add_picture(src, width=Mm(w), height=Mm(h))
-  doc._track_block_spacing(mm_to_pt(_ROW_GAP_MM))
+  doc.track_block_spacing(mm_to_pt(_ROW_GAP_MM))
 
 def _float(run, pic:tuple, align:str):
   """
@@ -273,13 +273,13 @@ def draw_attachments(doc:DOCX, style:LegalStyle, items:list[str]):
   """Attachment list after the last block: its label in bold, then the items numbered."""
   if not items: return
   doc.para()
-  p = doc._current_para
+  p = doc.paragraph
   pf = p.paragraph_format
   pf.space_before = Pt(mm_to_pt(_LIST_GAP_MM))
   pf.space_after = Pt(0)
-  doc._keep_words(p)
+  doc.keep_words(p)
   doc.text(f"{style.attachments_label}:", **_face(style, bold=True))
   for i, item in enumerate(items, 1):
     doc.line_break()
     doc.text(f"{i}. {item}", **_face(style))
-  doc._track_block_spacing(0)
+  doc.track_block_spacing(0)

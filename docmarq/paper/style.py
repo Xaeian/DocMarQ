@@ -2,7 +2,7 @@
 
 """Style of a documentation DOCX: the markdown style plus banner, footer and signing lines."""
 from dataclasses import dataclass, field
-from ..md.style import MarkdownStyle
+from ..md import MarkdownStyle
 from ..parts import sign_labels, default_sign_labels
 
 #----------------------------------------------------------------------------------- Status palette

@@ -12,8 +12,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from .inline import RichSegment, _apply_run_format
 from .utils import mm_to_pt, color_hex, eighths
 from .fields import page_fields, page_fields_if_many
-from .tables import remove_table_borders, set_cell_margins
-from .core import _set_pbdr, _set_table_widths
+from .tables import remove_table_borders, set_cell_margins, set_table_widths
+from .core import _set_pbdr
 
 _SIGN_SPACING_MM = 6 # least space between two signing lines
 
@@ -116,13 +116,13 @@ def signatures(
   content_w = doc.content_width
   count = len(labels)
   if count == 1:
-    column(doc._new_para(), doc._new_para(), labels[0], max(0, content_w - width))
+    column(doc.new_para(), doc.new_para(), labels[0], max(0, content_w - width))
     return
   line_w = min(width, content_w / count - _SIGN_SPACING_MM)
   spacing = (content_w - count * line_w) / (count - 1)
   widths = [line_w if i % 2 == 0 else spacing for i in range(2 * count - 1)]
-  tbl = doc._new_table(1, len(widths))
-  _set_table_widths(tbl, widths)
+  tbl = doc.new_table(1, len(widths))
+  set_table_widths(tbl, widths)
   remove_table_borders(tbl)
   cells = tbl.rows[0].cells
   for cell in cells:

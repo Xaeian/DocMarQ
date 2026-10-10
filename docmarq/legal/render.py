@@ -11,11 +11,11 @@ from markdown_it.token import Token
 from docx.enum.text import WD_BREAK
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from ..core import DOCX, _set_table_widths, _mark_language, _no_hyphens
+from ..core import DOCX, mark_language, no_hyphens
 from ..constants import PageSize, A4
 from ..inline import RichSegment
 from ..parts import signatures, page_number
-from ..tables import remove_table_borders, set_cell_margins
+from ..tables import remove_table_borders, set_cell_margins, set_table_widths
 from ..utils import mm_to_pt
 from ..md import (MarkdownRenderer, split_frontmatter, docx_metadata, top_blocks,
   is_pagebreak_directive, is_group_open_directive)
@@ -118,9 +118,9 @@ def _preamble(
     body_size=style.preamble_size or style.body_size,
     para_gap=style.para_gap if style.preamble_para_gap is None else style.preamble_para_gap)
   renderer.render_tokens(tokens, look)
-  if floats: doc._hairline().add_run().add_break(WD_BREAK.LINE_CLEAR_ALL)
+  if floats: doc.hairline().add_run().add_break(WD_BREAK.LINE_CLEAR_ALL)
   # the clauses start as after a paragraph of the preamble, `preamble_gap` lower
-  doc._track_block_spacing(mm_to_pt(look.para_gap), extra_for_next=mm_to_pt(style.preamble_gap))
+  doc.track_block_spacing(mm_to_pt(look.para_gap), extra_for_next=mm_to_pt(style.preamble_gap))
 
 #---------------------------------------------------------------------------------------------- End
 
@@ -141,7 +141,7 @@ def _tail(doc:DOCX, style:LegalStyle, write):
     cell, width = _bottom_cell(doc)
     with doc.into(cell, width):
       write()
-    doc._hairline()
+    doc.hairline()
     return
   body = doc.doc.element.body
   start = len(body) - 1 # the body ends with its `w:sectPr`
@@ -153,9 +153,9 @@ def _tail(doc:DOCX, style:LegalStyle, write):
 def _bottom_cell(doc:DOCX) -> tuple:
   """`(cell, width)` of a borderless table one text width wide, floating at the bottom margin."""
   width = doc.content_width
-  doc._flush_para()
-  tbl = doc._new_table(1, 1)
-  _set_table_widths(tbl, [width])
+  doc.enter()
+  tbl = doc.new_table(1, 1)
+  set_table_widths(tbl, [width])
   remove_table_borders(tbl)
   cell = tbl.rows[0].cells[0]
   set_cell_margins(cell, top=0, right=0, bot=0, left=0)
@@ -272,27 +272,27 @@ class _Grid:
         left=half if i else 0, right=half if i < self.count - 1 else 0)
       with self.doc.into(cell, self.width):
         # a row follows the one above as a paragraph does: its first gap collapses into theirs
-        self.doc._track_block_spacing(mm_to_pt(self.styles[i].para_gap))
+        self.doc.track_block_spacing(mm_to_pt(self.styles[i].para_gap))
         write(i)
       lang = self.styles[i].hyphenate
-      if lang: _mark_language(cell._tc, lang)
+      if lang: mark_language(cell._tc, lang)
       # a version naming no language is not split by the rules of another's
-      elif self.doc._hyphenate:
-        for p in cell._tc.iter(qn("w:p")): _no_hyphens(p)
+      elif self.doc.hyphenates:
+        for p in cell._tc.iter(qn("w:p")): no_hyphens(p)
     return cells[0]._tc.getparent()
 
   def page_break(self):
     """End the table, so the rows after a page break start a new one on the next page."""
     if self.table is None: return
     self.table = None
-    self.doc._hairline().paragraph_format.page_break_before = True
+    self.doc.hairline().paragraph_format.page_break_before = True
 
 def _grid_table(doc:DOCX, count:int, width:float, gap:float):
   """Borderless one-row table of `count` columns `width` mm wide, `gap` mm apart."""
-  doc._flush_para()
-  tbl = doc._new_table(1, count)
+  doc.enter()
+  tbl = doc.new_table(1, count)
   half = gap / 2
-  _set_table_widths(tbl, [width + (half if i else 0) + (half if i < count - 1 else 0)
+  set_table_widths(tbl, [width + (half if i else 0) + (half if i < count - 1 else 0)
     for i in range(count)])
   remove_table_borders(tbl)
   return tbl

@@ -95,7 +95,7 @@ Word ends the columns of a section level when it closes this way, on its last pa
 ## Writing into a table cell
 
 ```py
-tbl = doc.doc.add_table(rows=1, cols=2)
+tbl = doc.new_table(1, 2)               # a bare table at the end of the write target
 with doc.into(tbl.rows[0].cells[0], 80): # cell width in mm
   doc.para("Written in the cell.")
   doc.table([["a", "b"]])               # sized to the cell
@@ -103,6 +103,29 @@ doc.para("Back after the table.")
 ```
 
 Every block call writes into the cell while the `with` lasts, and the cell's width stands in for `content_width`.
+
+## Blocks of your own
+
+The markdown engine and the document packages write their blocks through these calls too.
+
+```py
+from docmarq.tables import set_table_widths
+from docmarq.images import preprocess_to_buffer, pin_offsets
+doc.enter()                      # close the open paragraph
+p = doc.new_para()               # bare: no gaps, and not the one text() writes to
+doc.apply_para_spacing(p)        # the style's leading and gaps, the gap above collapsed
+doc.keep_words(p)                # no hyphens in it under hyphenation()
+p.add_run("A block of my own")
+doc.track_block_spacing(6)       # its gap below in pt, for the next block to collapse into
+tbl = doc.new_table(1, 2)        # a bare table, a hairline apart from a table before it
+set_table_widths(tbl, [60, 100]) # fixed column widths in mm
+run = tbl.rows[0].cells[0].paragraphs[0].add_run()
+run.add_picture(preprocess_to_buffer("logo.png")) # a PNG Word takes, transparent margins cropped
+pin_offsets(run)                 # the picture flush with the cell, in LibreOffice too
+doc.chain(lambda: doc.para("Kept with the next one.")) # what it writes stays on one page
+doc.hairline()                   # a 1pt paragraph: ends a section, keeps two tables apart
+doc.paragraph, doc.text_style    # the paragraph text() writes to, and the style it writes in
+```
 
 ## Tables
 
@@ -241,6 +264,7 @@ md_to_docx(text, "doc.docx", page=A4.landscape())
 
 The markdown engine is [`docmarq.md`](md/readme.md).
 Documentation with a banner comes from [`docmarq.paper`](paper/readme.md), letters and contracts from [`docmarq.legal`](legal/readme.md).
+[`docmarq.merge`](merge/readme.md) fills a markdown template with one record, or one per record of a table.
 
 ## Advanced
 

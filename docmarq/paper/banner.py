@@ -11,11 +11,12 @@ import warnings
 from docx.shared import Mm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.image.exceptions import UnrecognizedImageError
-from ..core import DOCX, _set_table_widths
-from ..inline import _apply_run_shading
-from ..tables import remove_table_borders, set_cell_margins, set_cell_vertical_align
+from ..core import DOCX
+from ..inline import apply_run_shading
+from ..tables import (remove_table_borders, set_cell_margins, set_cell_vertical_align,
+  set_table_widths)
+from ..images import preprocess_to_buffer, pin_offsets
 from ..utils import color_hex, rgb255, tight_line_height_pt, format_date, eighths
-from ..md import image_utils
 from .style import PaperStyle, UNKNOWN_STATUS
 
 _SEP = "  •  " # U+2022 BULLET between the parts of a line, more visible than a middle dot
@@ -44,9 +45,9 @@ class Banner:
     doc = self.doc
     def new_para(*, space_before:float=0, space_after:float=0, exact_pt:float|None=None):
       doc.para()
-      p = doc._current_para
+      p = doc.paragraph
       _space(p, space_before, space_after, exact_pt)
-      doc._keep_words(p)
+      doc.keep_words(p)
     def add_run(text, *, bold=False, color=None, bg=None, size=None):
       doc.text(text, bold=bold, color=color, bg_color=bg, size=size)
     self._content(new_para, add_run)
@@ -54,9 +55,9 @@ class Banner:
   def _table(self):
     """Masthead beside the logo: a borderless 1×2 table, logo left, text right."""
     doc = self.doc
-    doc._flush_para()
-    tbl = doc._new_table(1, 2)
-    _set_table_widths(tbl, [_LOGO_COL_MM, doc.content_width - _LOGO_COL_MM])
+    doc.enter()
+    tbl = doc.new_table(1, 2)
+    set_table_widths(tbl, [_LOGO_COL_MM, doc.content_width - _LOGO_COL_MM])
     remove_table_borders(tbl)
     left, right = tbl.rows[0].cells
     set_cell_margins(left, top=0, right=4, bot=0, left=0)
@@ -76,10 +77,10 @@ class Banner:
     pf.space_before = Pt(0)
     pf.space_after = Pt(0)
     run = p.add_run()
-    buf = image_utils.preprocess_to_buffer(self.logo)
+    buf = preprocess_to_buffer(self.logo)
     try:
       run.add_picture(buf if buf is not None else self.logo, width=Mm(max_w))
-      image_utils.pin_offsets(run)
+      pin_offsets(run)
     except (OSError, ValueError, UnrecognizedImageError) as e:
       warnings.warn(
         f"frontmatter logo {self.logo!r} could not be embedded, banner renders without it: {e}",
@@ -96,14 +97,14 @@ class Banner:
         p = cell.paragraphs[0]
         p.text = ""
       _space(p, space_before, space_after, exact_pt)
-      self.doc._keep_words(p)
+      self.doc.keep_words(p)
       p_now[:] = [p]
     def add_run(text, *, bold=False, color=None, bg=None, size=None):
       run = p_now[0].add_run(text)
       if bold: run.bold = True
       if size is not None: run.font.size = Pt(size)
       if color is not None: run.font.color.rgb = RGBColor(*rgb255(color))
-      if bg is not None: _apply_run_shading(run, color_hex(bg))
+      if bg is not None: apply_run_shading(run, color_hex(bg))
     self._content(new_para, add_run)
 
   def _content(self, new_para, add_run):

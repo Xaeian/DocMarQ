@@ -166,11 +166,8 @@ def _try_mmdc(
   css_path = None
   cmd = [mmdc, "-i", src_path, "-o", str(out_path),
     "-t", theme, "-b", background, "-s", str(scale)]
-  # Puppeteer config (custom Chrome path, sandbox flags, etc.).
-  # Both vars are checked: `XAEIAN_MMDC_PUPPETEER_CONFIG` is the pdfmarq name;
-  # `DOCMARQ_MMDC_PUPPETEER_CONFIG` is the docmarq-specific override.
-  pp_config = (os.environ.get("DOCMARQ_MMDC_PUPPETEER_CONFIG")
-    or os.environ.get("XAEIAN_MMDC_PUPPETEER_CONFIG"))
+  # Puppeteer config: a custom Chrome path, sandbox flags and the like.
+  pp_config = os.environ.get("DOCMARQ_MMDC_PUPPETEER_CONFIG")
   if pp_config and Path(pp_config).is_file():
     cmd += ["-p", pp_config]
   if font_family and font_dir:
@@ -186,20 +183,13 @@ def _try_mmdc(
         css_path = None
   try:
     result = subprocess.run(cmd, capture_output=True, timeout=timeout, text=True)
-  except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
-    if os.environ.get("DOCMARQ_DEBUG"):
-      print(f"[docmarq.mermaid] mmdc exception: {e}")
+  except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
     _safe_remove(src_path)
     if css_path: _safe_remove(css_path)
     return False
   _safe_remove(src_path)
   if css_path: _safe_remove(css_path)
-  if result.returncode != 0 or not out_path.is_file():
-    if os.environ.get("DOCMARQ_DEBUG"):
-      tail = (result.stderr or result.stdout or "").strip().splitlines()[-3:]
-      print(f"[docmarq.mermaid] mmdc rc={result.returncode}: " + " | ".join(tail))
-    return False
-  return True
+  return result.returncode == 0 and out_path.is_file()
 
 #----------------------------------------------------------------------------- Backend: mermaid.ink
 
@@ -226,9 +216,7 @@ def _try_mermaid_ink(
       return False
     out_path.write_bytes(data)
     return True
-  except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as e:
-    if os.environ.get("DOCMARQ_DEBUG"):
-      print(f"[docmarq.mermaid] mermaid.ink failed: {e}")
+  except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
     return False
 
 #------------------------------------------------------------------------------------------ Helpers
