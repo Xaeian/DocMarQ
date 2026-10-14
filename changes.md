@@ -6,7 +6,7 @@
 - `docmarq.merge`: templates filled from one record or a table
 - `DOCX.new_para`, `new_table` and other block calls
 - Messages only through `warnings`
-- Fixes across frontmatter and titles
+- Fix: frontmatter and titles
 
 ## `0.4.0` Legal documents
 
