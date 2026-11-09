@@ -41,7 +41,8 @@ class TempDocxCase(unittest.TestCase):
 
   @staticmethod
   def md_url(path:str) -> str:
-    """Path spelled for a markdown link target.
+    """
+    Path spelled for a markdown link target.
 
     A backslash escapes the next character in CommonMark,
     so a Windows path has to travel with forward slashes.
@@ -51,8 +52,10 @@ class TempDocxCase(unittest.TestCase):
 #----------------------------------------------------------------------------- Blocks in list items
 
 class TestBlocksInListItems(TempDocxCase):
-  """Code, quotes and tables under a bullet are the ordinary shape of technical markdown.
-  A list item carries the same content a document body can."""
+  """
+  Code, quotes and tables under a bullet are the ordinary shape of technical markdown.
+  A list item carries the same content a document body can.
+  """
   MD = (
     "- item one\n\n"
     "  ```python\n  CODEMARKER = 1\n  ```\n\n"
@@ -77,8 +80,10 @@ class TestBlocksInListItems(TempDocxCase):
 #------------------------------------------------------------------------------------------- Images
 
 class TestSvgImages(TempDocxCase):
-  """`python-docx` reads raster formats only, so an SVG has to be rasterized on the way in,
-  for the fluent API as much as for markdown figures."""
+  """
+  `python-docx` reads raster formats only, so an SVG has to be rasterized on the way in,
+  for the fluent API as much as for markdown figures.
+  """
   def test_fluent_image_accepts_svg(self):
     p = self.path()
     d = DOCX(p)
@@ -95,7 +100,8 @@ class TestSvgImages(TempDocxCase):
     self.assertIn("graphic", docx.Document(p).element.xml)
 
   def test_missing_rasterizer_costs_one_figure(self):
-    """No rasterizing backend is a degraded figure, not a dead render.
+    """
+    No rasterizing backend is a degraded figure, not a dead render.
 
     `rlPyCairo` needs a native cairo build,
     so the import can fail on a machine that has the package installed.
@@ -105,8 +111,7 @@ class TestSvgImages(TempDocxCase):
     real_import = builtins.__import__
 
     def blocking_import(name, *a, **kw):
-      if name in blocked:
-        raise ImportError(f"No module named {name!r}")
+      if name in blocked: raise ImportError(f"No module named {name!r}")
       return real_import(name, *a, **kw)
 
     p = self.path()
@@ -143,6 +148,19 @@ class TestSvgImages(TempDocxCase):
       builtins.__import__ = real_import
     self.assertIn("BODYMARK", docx_text(p))
 
+  def test_arrowheads_survive_rasterizing(self):
+    """svglib drops `<marker>`: expanded first, the red head of a black arrow reaches the PNG."""
+    from PIL import Image
+    from docmarq.svg import svg_to_png_buffer
+    arrow = os.path.join(self._tmp.name, "arrow.svg")
+    with open(arrow, "w", encoding="utf-8") as f:
+      f.write('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">'
+        '<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">'
+        '<path d="M0 0 L10 5 L0 10 Z" fill="#ff0000"/></marker></defs>'
+        '<line x1="10" y1="50" x2="190" y2="50" stroke="#000000" marker-end="url(#a)"/></svg>')
+    colors = Image.open(svg_to_png_buffer(arrow)).convert("RGB").getcolors(1 << 24)
+    self.assertTrue(any(r > 200 and g < 60 and b < 60 for _, (r, g, b) in colors))
+
   def test_unreadable_svg_degrades_to_alt_text(self):
     """A broken figure costs its own figure, never the whole render."""
     p = self.path()
@@ -154,12 +172,46 @@ class TestSvgImages(TempDocxCase):
     self.assertIn("TAILMARK", body)
     self.assertIn("ALTMARK", body)
 
+class TestPicturesInTextAndCells(TempDocxCase):
+  """An image in a line of text or alone in a table cell is a picture, as pdfmarq draws it."""
+  def pictures(self, element) -> list[float]:
+    """Heights (mm) of the pictures under `element`."""
+    return [int(e.get("cy")) / 36000 for e in element.iter(qn("wp:extent"))]
+
+  def test_image_in_a_line_sits_in_it(self):
+    """It stays in its paragraph, as tall as `inline_image_max_h` at body size."""
+    p = self.path()
+    big = os.path.join(self._tmp.name, "big.svg") # taller than a line, so the cap holds it
+    with open(big, "w", encoding="utf-8") as f:
+      f.write('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">'
+        '<rect width="200" height="100" fill="#37f"/></svg>')
+    md_to_docx(f"Flow ![]({self.md_url(big)}) goes on.\n", p)
+    line = next(par for par in docx.Document(p).paragraphs if "Flow" in par.text)
+    heights = self.pictures(line._element)
+    self.assertEqual(1, len(heights))
+    self.assertAlmostEqual(5.5, heights[0], places=1)
+
+  def test_missing_image_in_a_line_leaves_its_alt(self):
+    p = self.path()
+    md_to_docx("Flow ![LOGO](missing.png) goes on.\n", p)
+    self.assertIn("[LOGO]", docx_text(p))
+
+  def test_image_alone_in_a_cell_is_a_picture(self):
+    p = self.path()
+    image = self.md_url(self.write_svg())
+    md_to_docx(f"| Figure | Text |\n|---|---|\n| ![]({image}) | words |\n", p)
+    table = docx.Document(p).tables[0]
+    self.assertEqual(1, len(self.pictures(table.cell(1, 0)._element)))
+    self.assertEqual("words", table.cell(1, 1).text)
+
 #----------------------------------------------------------------------------------- List numbering
 
 class TestOrderedListNumbering(TempDocxCase):
-  """`numId` is the counter Word increments,
+  """
+  `numId` is the counter Word increments,
   so each ordered list needs its own instance to start over,
-  and a CommonMark `start` has to reach the file."""
+  and a CommonMark `start` has to reach the file.
+  """
   def test_second_list_restarts(self):
     p = self.path()
     md_to_docx("1. alpha\n2. beta\n\nbetween\n\n1. gamma\n2. delta\n", p)
@@ -200,8 +252,10 @@ class TestOrderedListNumbering(TempDocxCase):
 #--------------------------------------------------------------------------------------------- Runs
 
 class TestRunFormatting(TempDocxCase):
-  """`text()` documents `link_url` among its kwargs,
-  and a run appended to a heading belongs to that heading's type."""
+  """
+  `text()` documents `link_url` among its kwargs,
+  and a run appended to a heading belongs to that heading's type.
+  """
   def test_link_url_produces_a_hyperlink(self):
     p = self.path()
     d = DOCX(p)
@@ -215,8 +269,7 @@ class TestRunFormatting(TempDocxCase):
     d.heading("HEAD", 1).text(" appended")
     d.save()
     for para in docx.Document(p).paragraphs:
-      if "HEAD" not in para.text:
-        continue
+      if "HEAD" not in para.text: continue
       for run in para.runs:
         self.assertIsNone(run.font.size, "appended run pins a body size")
         self.assertIsNone(run.font.name, "appended run pins a body family")
@@ -224,8 +277,10 @@ class TestRunFormatting(TempDocxCase):
 #-------------------------------------------------------------------------------------- OOXML order
 
 class TestParagraphPropertyOrder(TempDocxCase):
-  """`pPr` children are a sequence in `CT_PPrBase`:
-  `pBdr` and `shd` come before `spacing` and `ind`, or a strict renderer may drop them."""
+  """
+  `pPr` children are a sequence in `CT_PPrBase`:
+  `pBdr` and `shd` come before `spacing` and `ind`, or a strict renderer may drop them.
+  """
   ORDER = ("pStyle", "numPr", "pBdr", "shd", "spacing", "ind", "contextualSpacing")
 
   def test_border_and_shading_precede_spacing(self):
@@ -240,8 +295,11 @@ class TestParagraphPropertyOrder(TempDocxCase):
 #-------------------------------------------------------------------------------------- Frontmatter
 
 class TestFrontmatter(TempDocxCase):
-  """A leading `---` is a thematic break as often as a frontmatter opener.
-  Only a YAML mapping is frontmatter; the rest is content and stays."""
+  """
+  A leading `---` is a thematic break as often as a frontmatter opener.
+  Only a YAML mapping is frontmatter.
+  The rest is content and stays.
+  """
   def test_leading_rule_keeps_its_content(self):
     p = self.path()
     md_to_docx("---\n# Intro\nBODYTEXT here\n---\n# Section 2\n", p)
@@ -265,8 +323,10 @@ class TestFrontmatter(TempDocxCase):
 #------------------------------------------------------------------------------------------ Mermaid
 
 class TestMermaidNetwork(unittest.TestCase):
-  """The mermaid.ink fallback sends the diagram source to a third party,
-  so it answers to a switch."""
+  """
+  The mermaid.ink fallback sends the diagram source to a third party,
+  so it answers to a switch.
+  """
   def test_remote_false_makes_no_request(self):
     import docmarq.md.mermaid as mermaid
     attempts = []
@@ -292,7 +352,7 @@ class TestMermaidNetwork(unittest.TestCase):
       path.unlink(missing_ok=True)
 
   def test_cache_key_matches_pdfmarq(self):
-    """The README promises a cache shared with pdfmarq; the key is that promise."""
+    """The README promises a cache shared with pdfmarq, and the key is that promise."""
     try:
       import pdfmarq.md.mermaid as other
     except ImportError:

@@ -87,7 +87,7 @@ The text is set in `body_color`, and Word keeps two lines of a paragraph on each
 `title_caps` sets the lowercase letters in Word's small capitals.
 Write `title: Umowa zlecenie`, not in capitals.
 A document of one page never carries a page number.
-`lang_style(lang, **overrides)` layers a language preset (`en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`) under the overrides.
+`lang_style(lang, **overrides)` layers a language preset (`en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`, `pt`) under the overrides.
 A preset also sets `hyphenate` to its language, so Word splits words at line ends.
 `LegalStyle()` alone keeps them whole.
 

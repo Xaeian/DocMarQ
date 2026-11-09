@@ -39,8 +39,7 @@ def _face(family:str, bold:bool) -> ImageFont.FreeTypeFont|None:
   for name in heavy if bold else regular:
     try:
       return ImageFont.truetype(name, _LOAD_PT)
-    except OSError:
-      continue
+    except OSError: continue
   return None
 
 #------------------------------------------------------------------------------------------ Measure
@@ -48,7 +47,6 @@ def _face(family:str, bold:bool) -> ImageFont.FreeTypeFont|None:
 def text_width_mm(text:str, family:str, size_pt:float, bold:bool=False) -> float:
   """Width of `text` set in `family` at `size_pt`, in mm."""
   face = _face(family, bold)
-  if face is not None:
-    return face.getlength(text) * size_pt / _LOAD_PT * Unit.PT
+  if face is not None: return face.getlength(text) * size_pt / _LOAD_PT * Unit.PT
   # Helvetica is wider than Calibri, so a guess from it errs toward a column that holds its words
   return stringWidth(text, "Helvetica-Bold" if bold else "Helvetica", size_pt) * Unit.PT

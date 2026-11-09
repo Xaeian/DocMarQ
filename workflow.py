@@ -88,7 +88,7 @@ def scan(pkg_dir:str) -> Project:
   return Project(
     name=PATH.basename(pkg_dir),
     pythons=pythons(floor(root, pkg_dir)),
-    cairo="svglib" in deps,
+    cairo="pycairo" in deps, # builds against the system cairo, also under `rlPyCairo`
     services=services,
     extra="[all]" if "all" in extras else "",
     typed=FILE.exists(PATH.join(pkg_dir, "py.typed")),
@@ -145,6 +145,17 @@ def verify_block(project:Project) -> str:
     "      - run: cd /tmp/t && python -m pytest tests\n"
   )
 
+def cairo_block(project:Project) -> str:
+  """
+  The system cairo that `pycairo` builds against, empty when nothing pulls it in.
+  Only a Linux job needs it: Windows takes `pycairo` as a wheel.
+  """
+  if not project.cairo: return ""
+  return (
+    "      - run: sudo apt-get update && "
+    "sudo apt-get install -y libcairo2-dev pkg-config python3-dev\n"
+  )
+
 def services_block(project:Project) -> str:
   """The service containers and the passwords the suite reads, empty when none apply."""
   if not project.services: return ""
@@ -167,6 +178,7 @@ def generate_ci(project:Project) -> str:
   pytest = "pytest " if project.tests else ""
   install = f'pip install {pytest}".{project.extra}"'
   suite = "      - run: python -m pytest tests -q\n" if project.tests else ""
+  cairo = cairo_block(project)
   return HEADER + f"""name: CI
 
 on:
@@ -191,7 +203,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: {matrix_python}
-      - run: {install}
+{cairo}      - run: {install}
 {suite}
   windows:
     runs-on: windows-latest
@@ -216,7 +228,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "{project.pythons[0]}"
-      - run: pip install build
+{cairo}      - run: pip install build
       - run: python -m build
 {verify_block(project)}"""
 
@@ -224,10 +236,6 @@ def generate_publish(project:Project, ci:bool=False) -> str:
   """Publishing over OIDC. With `ci`, it waits for the gate instead of shipping unchecked."""
   gate = "  ci:\n    uses: ./.github/workflows/ci.yml\n\n" if ci else ""
   needs = "    needs: ci\n" if ci else ""
-  cairo_step = (
-    "      - run: sudo apt-get update && "
-    "sudo apt-get install -y libcairo2-dev pkg-config python3-dev\n"
-  ) if project.cairo else ""
   return HEADER + f"""name: Publish PyPI
 
 on:
@@ -245,7 +253,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "{project.pythons[0]}"
-{cairo_step}      - run: pip install build
+{cairo_block(project)}      - run: pip install build
       - run: python -m build
 {verify_block(project)}      - uses: pypa/gh-action-pypi-publish@release/v1
 """
@@ -271,7 +279,7 @@ def generate(package:str, folder:str|None=None, ci:bool=False) -> None:
   if repo:
     p.gap(f"https://github.com/{c.SKY}{repo}{c.END}")
   if project.cairo:
-    p.inf(f"Cairo: {c.VIOLET}libcairo2-dev{c.GREY} (svglib detected){c.END}")
+    p.inf(f"Cairo: {c.VIOLET}libcairo2-dev{c.GREY} (pycairo detected){c.END}")
   if project.services:
     p.inf(f"Servers: {c.VIOLET}{', '.join(project.services)}{c.GREY} (drivers detected){c.END}")
   if project.typed:
@@ -288,9 +296,9 @@ def generate(package:str, folder:str|None=None, ci:bool=False) -> None:
 
 EXAMPLES = """
 examples:
-  py workflow.py xaeian              Just publish.yml
-  py workflow.py xaeian --ci         Add ci.yml and gate publishing on it
-  py workflow.py xaeian -o .github   Custom output folder
+  py workflow.py xaeian             # publish.yml only
+  py workflow.py xaeian --ci        # add ci.yml and gate publishing on it
+  py workflow.py xaeian -o .github  # custom output folder
 """
 
 if __name__ == "__main__":
@@ -300,7 +308,7 @@ if __name__ == "__main__":
   parser.add_argument("-o", "--output", default=None, metavar="DIR",
     help="Output folder (default: .github/workflows)")
   parser.add_argument("--ci", action="store_true",
-    help="Add ci.yml and gate publishing on it; a generated gate is kept without this")
+    help="Add ci.yml and gate publishing on it (kept once generated)")
   add_help(parser)
   args = parser.parse_args()
   generate(args.package, args.output, args.ci)

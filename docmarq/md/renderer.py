@@ -32,9 +32,11 @@ from docx.image.exceptions import UnrecognizedImageError
 from PIL import Image
 from ..core import DOCX
 from ..constants import Align, Defaults
+from ..styles import TableStyle
 from ..utils import mm_to_pt, eighths, color_hex, align_to_docx, smaller_size
 from ..svg import register_fonts, is_svg
 from ..images import preprocess_to_buffer, pin_offsets
+from ..tables import TablePicture
 from .style import MarkdownStyle
 from .frontmatter import split_frontmatter
 from .._warn import caller_level
@@ -48,8 +50,10 @@ from .math import latex_to_omath, MathConversionError, build_omath_para, pop_tag
 _ROW_MIN_SLOT_MM = 20 # figures narrower than this wrap to another row
 
 def _image_row(inline_token:Token) -> list[Token]|None:
-  """Image children of a paragraph holding nothing but local images.
-  Anything else gives `None`, a remote reference included: it has no file to size."""
+  """
+  Image children of a paragraph holding nothing but local images.
+  Anything else gives `None`, a remote reference included: it has no file to size.
+  """
   imgs = []
   for c in inline_token.children or []:
     if c.type == "image":
@@ -66,8 +70,10 @@ def _row_columns(avail_mm:float, gap_mm:float) -> int:
   return max(1, int((avail_mm + gap_mm) // (_ROW_MIN_SLOT_MM + gap_mm)))
 
 def _split_rows(n:int, cols:int) -> list[int]:
-  """Row sizes for `n` figures: balanced, none wider than `cols`.
-  Eight figures over seven columns is `4+4`, not `7+1`."""
+  """
+  Row sizes for `n` figures: balanced, none wider than `cols`.
+  Eight figures over seven columns is `4+4`, not `7+1`.
+  """
   rows = -(-n // cols)
   base, extra = divmod(n, rows)
   return [base + (i < extra) for i in range(rows)]
@@ -78,7 +84,8 @@ _MATH_INLINE_RE = re.compile(r"\\\((.+?)\\\)")
 _MATH_BLOCK_LINE_RE = re.compile(r"^(\s*)\\\[\s*(.+?)\s*\\\]\s*$")
 
 def normalize_math_delimiters(md_text:str) -> str:
-  r"""LaTeX math delimiters `\[...\]` / `\(...\)` become `$$` / `$...$`.
+  r"""
+  LaTeX math delimiters `\[...\]` / `\(...\)` become `$$` / `$...$`.
 
   The bracket forms are what LaTeX sources and AI assistants emit;
   only the dollar forms reach the parser.
@@ -118,7 +125,8 @@ class MarkdownRenderer:
     self, doc:DOCX, style:MarkdownStyle|None = None,
     base_dir:str|None = None, font_dir:str|None = None,
   ):
-    """Create a renderer bound to `doc`.
+    """
+    Create a renderer bound to `doc`.
 
     Args:
       doc: Target `DOCX` instance.
@@ -252,7 +260,8 @@ class MarkdownRenderer:
   #------------------------------------------------------------------------------------- Directives
 
   def _find_group_close(self, tokens:list[Token], start:int) -> int:
-    """Return index of the matching `<!-- /group -->` for the open at `start`.
+    """
+    Return index of the matching `<!-- /group -->` for the open at `start`.
     Returns `len(tokens)` for unclosed groups (warns, renders to EOF).
     """
     close = _group_close(tokens, start)
@@ -264,7 +273,8 @@ class MarkdownRenderer:
     return len(tokens)
 
   def _render_group(self, tokens:list[Token]):
-    """Render group content with Word `keep_with_next` chaining.
+    """
+    Render group content with Word `keep_with_next` chaining.
 
     Word handles pagination itself - we tell it to keep our paragraphs together
     via `<w:keepNext/>` on each paragraph except the last in the group.
@@ -331,7 +341,7 @@ class MarkdownRenderer:
       elif tt == "table_open": i = self._render_table(tokens, i)
       elif tt == "footnote_block_open": i = self._render_footnote_block(tokens, i)
       elif tt == "html_block":
-        # Only directive comments are handled; arbitrary HTML is dropped.
+        # Directive comments are handled and any other HTML is dropped.
         content = t.content or ""
         if is_pagebreak_directive(content):
           self.doc.page_break()
@@ -352,7 +362,8 @@ class MarkdownRenderer:
   #--------------------------------------------------------------------------------------- Headings
 
   def _render_heading(self, inline_token:Token, level:int):
-    """Emit a heading.
+    """
+    Emit a heading.
     Bold/italic/strike pass through;
     font family/size/color inherit from the Heading paragraph style
     (so inline `code` keeps heading size, just switches family).
@@ -381,8 +392,11 @@ class MarkdownRenderer:
     return gaps
 
   def _add_runs_to_heading(self, p, inline_token:Token):
-    """Walk inline children and add runs to a Heading paragraph.
-    Inherits size/color from the Heading style; overrides font when `font_head` set."""
+    """
+    Walk inline children and add runs to a Heading paragraph.
+    Inherits size/color from the Heading style.
+    Overrides the font when `font_head` is set.
+    """
     state = {"bold": False, "italic": False, "strike": False}
     font_head = self.style.font_head
     for c in (inline_token.children or []):
@@ -428,7 +442,8 @@ class MarkdownRenderer:
     if self.style.keep_together: p.paragraph_format.keep_together = True
 
   def _add_runs_to_current_para(self, inline_token:Token):
-    """State-machine walk of inline children.
+    """
+    State-machine walk of inline children.
     Translates each child into one or more `doc.text()` / `doc.link()` / `doc.line_break()` calls.
     """
     state = {"bold": False, "italic": False, "strike": False,
@@ -461,7 +476,7 @@ class MarkdownRenderer:
       elif ct == "s_close": state["strike"] = False
       elif ct == "link_open":
         href = get_attr(c, "href") or ""
-        # `#anchor` validated against pre-scanned slugs; unknown → plain text.
+        # `#anchor` validated against pre-scanned slugs, unknown → plain text.
         anchor = slug.resolve_anchor(href, self._known_slugs)
         if anchor is not None:
           state["link_target"] = self._anchors + anchor
@@ -474,31 +489,25 @@ class MarkdownRenderer:
         self._render_inline_math(c.content)
       elif ct == "softbreak": self.doc.text(" ")
       elif ct == "hardbreak": self.doc.line_break()
-      elif ct == "image":
-        # an image in a line of text leaves its alt text in italics; a figure takes a paragraph
-        alt = c.content or "[image]"
-        self.doc.text(alt, italic=True)
+      elif ct == "image": self._render_inline_image(c)
       elif ct == "footnote_ref":
         # `[^N]` → superscript `[1]` link style.
         label = (c.meta or {}).get("label") or ""
         self.doc.text(f"[{label}]", superscript=True, color=self.style.link_color)
 
   def _resolve_link(self, href:str) -> str|None:
-    """Resolve local hrefs against `link_root`/`link_base`.
+    """
+    Resolve local hrefs against `link_root`/`link_base`.
     URLs with a schema or hash-anchor are returned as-is.
     `None` means "render text but don't linkify" (for unresolvable local refs).
     """
-    if not href:
-      return None
-    if href.startswith(("http://", "https://", "mailto:", "ftp://")):
-      return href
-    if href.startswith("#"):
-      return None # internal anchors handled via bookmark targets
+    if not href: return None
+    if href.startswith(("http://", "https://", "mailto:", "ftp://")): return href
+    if href.startswith("#"): return None # internal anchors handled via bookmark targets
     if self.style.link_root:
       base = self.style.link_base.strip("/")
       root = self.style.link_root.rstrip("/")
-      if href.startswith("/"):
-        return f"{root}{href}"
+      if href.startswith("/"): return f"{root}{href}"
       return f"{root}/{base}/{href}" if base else f"{root}/{href}"
     return None
 
@@ -518,7 +527,7 @@ class MarkdownRenderer:
     """Items of the list opened at `start` and closed at `end`."""
     depth = self._list_depth
     self._list_depth += 1
-    # Only the first item opens a numbering instance; the rest continue it.
+    # The first item opens a numbering instance and the rest continue it.
     num_start = _list_start(tokens[start]) if ordered else None
     delim = (tokens[start].markup or ".") if ordered else None # the author's `1.` or `1)`
     j = start + 1
@@ -552,10 +561,13 @@ class MarkdownRenderer:
     depth:int, delim:str|None,
     num_start:int|None = None,
   ):
-    """Render one list item.
-    First inline content goes into a list-styled paragraph; nested lists recurse with deeper depth.
+    """
+    Render one list item.
+    First inline content goes into a list-styled paragraph.
+    Nested lists recurse one level deeper.
     Code, quotes, tables and math under the bullet go through the top-level block dispatch,
-    so a list item carries the same content a document body can."""
+    so a list item carries the same content a document body can.
+    """
     first_block = True
     k = start
     while k < end:
@@ -589,15 +601,14 @@ class MarkdownRenderer:
 
   @staticmethod
   def _spacing_for(idx:int, total:int, before:float, after:float) -> tuple[float, float]:
-    """Pick `(space_before, space_after)` for paragraph `idx` in a group of `total`.
+    """
+    Pick `(space_before, space_after)` for paragraph `idx` in a group of `total`.
     First gets `before`, last gets `after`, inner gets 0/0 -
-    so the left bar reads as one continuous block rather than stacked stripes."""
-    if total <= 1:
-      return (before, after)
-    if idx == 0:
-      return (before, 0)
-    if idx == total - 1:
-      return (0, after)
+    so the left bar reads as one continuous block rather than stacked stripes.
+    """
+    if total <= 1: return (before, after)
+    if idx == 0: return (before, 0)
+    if idx == total - 1: return (0, after)
     return (0, 0)
 
   # Quote content is flattened to `inline` tokens;
@@ -606,9 +617,11 @@ class MarkdownRenderer:
   _QUOTE_UNSUPPORTED = ("fence", "code_block")
 
   def _collect_blockquote_inlines(self, tokens:list[Token], start:int, end:int) -> list[Token]:
-    """Flat list of every `inline` token directly inside the blockquote.
+    """
+    Flat list of every `inline` token directly inside the blockquote.
     Nested blockquotes / lists / code blocks not supported -
-    they'd require recursion and per-block grouping."""
+    they'd require recursion and per-block grouping.
+    """
     out = []
     dropped = []
     j = start + 1
@@ -628,8 +641,7 @@ class MarkdownRenderer:
   def _render_blockquote(self, tokens:list[Token], start:int) -> int:
     end = find_close(tokens, start, "blockquote_open", "blockquote_close")
     callout_type = self._detect_callout(tokens, start, end) # `> [!NOTE]` form
-    if callout_type:
-      return self._render_callout(tokens, start, end, callout_type)
+    if callout_type: return self._render_callout(tokens, start, end, callout_type)
     inlines = self._collect_blockquote_inlines(tokens, start, end)
     total = len(inlines)
     for idx, inline in enumerate(inlines):
@@ -643,16 +655,17 @@ class MarkdownRenderer:
     return end + 1
 
   def _detect_callout(self, tokens:list[Token], start:int, end:int) -> str|None:
-    """Callout type ('note', 'tip', ...) if the blockquote opens with `[!TYPE]`, else `None`.
-    Looks at the first inline token only."""
+    """
+    Callout type ('note', 'tip', ...) if the blockquote opens with `[!TYPE]`, else `None`.
+    Looks at the first inline token only.
+    """
     j = start + 1
     while j < end:
       if tokens[j].type == "inline":
         content = tokens[j].content or ""
         first_line = content.split("\n", 1)[0]
         m = CALLOUT_RE.match(first_line)
-        if m:
-          return m.group(1).lower()
+        if m: return m.group(1).lower()
         return None
       j += 1
     return None
@@ -661,7 +674,8 @@ class MarkdownRenderer:
     self, tokens:list[Token], start:int, end:int,
     kind:str,
   ) -> int:
-    """Render a GitHub callout: colored title row + body in muted blockquote.
+    """
+    Render a GitHub callout: colored title row + body in muted blockquote.
     All paragraphs in the group share tight inner spacing
     so the left bar reads as a single continuous block regardless of body length.
     """
@@ -694,22 +708,21 @@ class MarkdownRenderer:
 
   @staticmethod
   def _strip_callout_marker(inline_token:Token) -> Token|None:
-    """Return a shallow copy of `inline_token`
+    """
+    Return a shallow copy of `inline_token`
     with the leading `[!TYPE]` marker text + the softbreak right after it removed from `children`.
     Returns `None` if no real content remains after stripping.
     """
     children = inline_token.children or []
-    if not children:
-      return None
+    if not children: return None
     new_children = list(children)
-    # Drop the `[!TYPE]` text token if present; leave unchanged if it doesn't match.
+    # The `[!TYPE]` marker goes, anything else stays.
     if new_children[0].type == "text" and CALLOUT_RE.match(new_children[0].content):
       new_children.pop(0)
       # Drop the following softbreak so the body doesn't start with a blank line.
       if new_children and new_children[0].type in ("softbreak", "hardbreak"):
         new_children.pop(0)
-    if not new_children:
-      return None
+    if not new_children: return None
     # `Token(type, tag, nesting)` - copy remaining fields manually.
     clone = type(inline_token)(inline_token.type, inline_token.tag,
       inline_token.nesting)
@@ -726,7 +739,8 @@ class MarkdownRenderer:
     return round(body_pt * 2), color_hex(self.style.body_color)
 
   def _render_inline_math(self, latex:str):
-    """Inline `$...$`: append a native OMML equation to the current paragraph,
+    """
+    Inline `$...$`: append a native OMML equation to the current paragraph,
     falling back to an inline image when the LaTeX is outside the OMML subset.
     """
     if self.doc.paragraph is None:
@@ -735,8 +749,9 @@ class MarkdownRenderer:
     self._append_inline_math(self.doc.paragraph, latex, size_halfpt, color_hex)
 
   def _append_inline_math(self, p, latex:str, size_halfpt:int|None, color_hex:str):
-    """Append inline math to paragraph `p` (works for body paragraphs and headings).
-    Native OMML first; image fallback on conversion failure.
+    """
+    Append inline math to paragraph `p` (works for body paragraphs and headings).
+    Native OMML first, an image when conversion fails.
 
     `size_halfpt=None` lets the math runs inherit the paragraph's run size -
     used for headings so `# Result $x^2$` sizes the formula to the heading, not the body.
@@ -754,9 +769,11 @@ class MarkdownRenderer:
     self._append_inline_math_image(p, latex)
 
   def _render_math_block(self, latex:str):
-    r"""Display `$$...$$` (or ```math): a centered native OMML equation on its own paragraph,
+    r"""
+    Display `$$...$$` (or ```math): a centered native OMML equation on its own paragraph,
     with an image fallback for unsupported LaTeX.
-    A `\tag{...}` becomes the right-aligned equation label, Word style."""
+    A `\tag{...}` becomes the right-aligned equation label, Word style.
+    """
     self.doc.enter()
     latex, tag = pop_tag(latex)
     size_halfpt, color_hex = self._math_run_props()
@@ -784,10 +801,12 @@ class MarkdownRenderer:
     self.doc.track_block_spacing(self.doc.text_style.space_after or 0)
 
   def _tagged_equation_para(self, tag:str):
-    """Paragraph carrying the classic Word equation layout:
+    """
+    Paragraph carrying the classic Word equation layout:
     a center tab in the middle of the text width, a right tab at its edge,
     the label after the second tab.
-    The equation itself goes between the tabs."""
+    The equation itself goes between the tabs.
+    """
     content_w = self.doc.content_width
     p = self.doc.new_para()
     self.doc.apply_para_spacing(p)
@@ -801,11 +820,13 @@ class MarkdownRenderer:
   #---------------------------------------------------------------------------- Math image fallback
 
   def _append_inline_math_image(self, p, latex:str):
-    """Render `latex` to a PNG and embed it inline in paragraph `p`,
+    """
+    Render `latex` to a PNG and embed it inline in paragraph `p`,
     dropped onto the text baseline.
     Last resort (no matplotlib, or mathtext also can't parse it):
     render the LaTeX body as inline `code` - never the raw `$...$` delimiters,
-    so the no-`$`-leak contract holds."""
+    so the no-`$`-leak contract holds.
+    """
     body_pt = self.doc.text_style.font_size or Defaults.FONT_SIZE
     result = render_math_png(latex, fontsize_pt=body_pt,
       color=self.style.body_color, fontset=self.style.math_fontset)
@@ -823,14 +844,16 @@ class MarkdownRenderer:
       return
     pin_offsets(run)
     # Shift down by the descent so formula baseline aligns with text baseline.
-    # `<w:position>` is in half-points; positive = raised.
+    # `<w:position>` is in half-points, positive = raised.
     descent_pt = baseline_mm / 25.4 * 72.0
     if descent_pt > 0.1:
       self._set_run_vertical_position(run, -round(descent_pt * 2))
 
   def _render_math_block_image(self, latex:str, tag:str|None=None):
-    """Centered block image for a display formula outside the OMML subset.
-    With a `tag`, the image sits between the label tabs instead."""
+    """
+    Centered block image for a display formula outside the OMML subset.
+    With a `tag`, the image sits between the label tabs instead.
+    """
     body_pt = self.doc.text_style.font_size or Defaults.FONT_SIZE
     # Display math is a touch larger than inline, matching LaTeX conventions.
     result = render_math_png(latex, fontsize_pt=body_pt * 1.25,
@@ -856,7 +879,7 @@ class MarkdownRenderer:
     self.doc.track_block_spacing(self.doc.text_style.space_after or 0)
 
   def _set_run_vertical_position(self, run, half_points:int):
-    """Set `<w:position>` on a run (raises/lowers it; half-point units)."""
+    """Set `<w:position>` on a run, raising or lowering it, in half-points."""
     rpr = run._element.get_or_add_rPr()
     pos = rpr.find(qn("w:position"))
     if pos is None:
@@ -865,8 +888,10 @@ class MarkdownRenderer:
     pos.set(qn("w:val"), str(half_points))
 
   def _warn_math_fallback(self):
-    """Warn on total render failure.
-    Message varies: matplotlib missing vs. present but unable to parse this LaTeX."""
+    """
+    Warn on total render failure.
+    Message varies: matplotlib missing vs. present but unable to parse this LaTeX.
+    """
     try:
       import matplotlib # noqa: F401
       msg = ("math formula is outside both the OMML subset and matplotlib "
@@ -878,9 +903,39 @@ class MarkdownRenderer:
 
   #----------------------------------------------------------------------------------------- Images
 
+  def _render_inline_image(self, img:Token):
+    """
+    An image in a line of text, sized and set as pdfmarq sets it:
+    `inline_image_max_h` tall at body size, scaling with the text around it,
+    its bottom a quarter of the size below the baseline.
+    One that will not load leaves `[alt]` in muted italics.
+    """
+    s = self.style
+    size_pt = self.doc.text_style.font_size or Defaults.FONT_SIZE
+    info, picture = self._load_picture(img)
+    if picture is None:
+      alt = img.content or get_attr(img, "src") or ""
+      self.doc.text(f"[{alt}]", italic=True, color=s.muted_color)
+      return
+    w_mm, h_mm = image_utils.size_inline(info, s.inline_image_max_h * size_pt / s.body_size)
+    if self.doc.paragraph is None: self.doc.para()
+    run = self.doc.paragraph.add_run()
+    run.add_picture(picture, width=Mm(w_mm), height=Mm(h_mm))
+    pin_offsets(run)
+    self._set_run_vertical_position(run, -round(size_pt * 0.24 * 2)) # half-points
+
+  def _load_picture(self, img:Token) -> tuple:
+    """`(info, picture)` of a local image ready to embed, `(None, None)` when it will not load."""
+    path = image_utils.resolve_path(get_attr(img, "src") or "", self.base_dir)
+    info = image_utils.load_image_info(path, {"title": get_attr(img, "title")}) if path else None
+    picture = preprocess_to_buffer(path) if info else None
+    return (info, picture) if picture is not None else (None, None)
+
   def _render_images(self, imgs:list[Token]):
-    """Draw an image-only paragraph: one figure, or a balanced grid of rows.
-    Never hands it back: a row that cannot be prepared becomes stacked figures."""
+    """
+    Draw an image-only paragraph: one figure, or a balanced grid of rows.
+    Never hands it back: a row that cannot be prepared becomes stacked figures.
+    """
     if len(imgs) == 1:
       self._render_block_image(get_attr(imgs[0], "src"), imgs[0])
       return
@@ -897,23 +952,24 @@ class MarkdownRenderer:
           self._render_block_image(get_attr(img, "src"), img)
 
   def _render_image_row(self, imgs:list[Token], slot:float) -> bool:
-    """Lay one row of figures side by side, each in a `slot`-wide cell.
-    All-or-nothing: a file that will not load cancels the row."""
+    """
+    Lay one row of figures side by side, each in a `slot`-wide cell.
+    All-or-nothing: a file that will not load cancels the row.
+    """
     items = []
     try:
       for img in imgs:
         path = image_utils.resolve_path(get_attr(img, "src") or "", self.base_dir)
-        if not path or not os.path.isfile(path):
-          return False
+        if not path or not os.path.isfile(path): return False
         dsl = image_utils.parse_image_dsl(get_attr(img, "title"))
         items.append(self._prepare_picture(path, slot, dsl))
       self._insert_pictures(items)
-    except (OSError, ValueError, UnrecognizedImageError):
-      return False
+    except (OSError, ValueError, UnrecognizedImageError): return False
     return True
 
   def _render_block_image(self, src:str, img:Token):
-    """Embed an image as a centered block paragraph.
+    """
+    Embed an image as a centered block paragraph.
     Falls back to italic alt text when the file is missing.
     Title DSL `![alt](src "key=val")` controls sizing and alignment
     (see `image_utils.parse_image_dsl`).
@@ -935,7 +991,8 @@ class MarkdownRenderer:
     self, path:str, dsl:image_utils.ImageDSL|None = None,
     generated:bool = False,
   ) -> bool:
-    """Insert image scaled per DSL overrides with `style.image_max_h` cap.
+    """
+    Insert image scaled per DSL overrides with `style.image_max_h` cap.
 
     Every image goes through Pillow to:
       1. Crop transparent padding - Word renders the full transparent canvas,
@@ -950,18 +1007,19 @@ class MarkdownRenderer:
     try:
       item = self._prepare_picture(path, self.doc.content_width, dsl, generated)
       self._insert_pictures([item], dsl.align or "C")
-    except (OSError, ValueError, UnrecognizedImageError):
-      return False
+    except (OSError, ValueError, UnrecognizedImageError): return False
     return True
 
   def _prepare_picture(
     self, path:str, content_w:float, dsl,
     generated:bool = False,
   ) -> tuple:
-    """`(src, width_mm, height_mm)` ready for `_insert_pictures`.
+    """
+    `(src, width_mm, height_mm)` ready for `_insert_pictures`.
     `src` is the preprocessed buffer when Pillow could open the file, else the path.
     `generated` marks a raster made here from vector source,
-    which carries no resolution the width has to respect."""
+    which carries no resolution the width has to respect.
+    """
     # The buffer is a re-save - DPI comes from the source. Vector has none.
     dpi = None if generated or is_svg(path) else image_utils.read_dpi(path)
     buf = preprocess_to_buffer(path)
@@ -981,16 +1039,17 @@ class MarkdownRenderer:
       with Image.open(src) as im:
         nat_w, nat_h = im.size
       if seek: seek(0)
-    except (OSError, ValueError):
-      return (None, max_h)
+    except (OSError, ValueError): return (None, max_h)
     return image_utils.apply_dsl_dims(nat_w, nat_h, content_w, max_h, dsl,
       dpi, self.style.image_min_dpi)
 
   #---------------------------------------------------------------------------------------- Mermaid
 
   def _render_mermaid(self, source:str, info_rest:str=""):
-    """Render mermaid via `mmdc` (or `mermaid.ink`) to PNG and embed.
-    `info_rest` is parsed as image DSL. Falls back to a code block on failure."""
+    """
+    Render mermaid via `mmdc` (or `mermaid.ink`) to PNG and embed.
+    `info_rest` is parsed as image DSL. Falls back to a code block on failure.
+    """
     s = self.style
     if not s.mermaid_enable:
       self._fallback_mermaid_code(source)
@@ -1006,8 +1065,10 @@ class MarkdownRenderer:
       self._fallback_mermaid_code(source)
 
   def _fallback_mermaid_code(self, source:str):
-    """Render mermaid source as a regular fenced code block -
-    used when `mmdc` is unavailable or the diagram fails to compile."""
+    """
+    Render mermaid source as a regular fenced code block -
+    used when `mmdc` is unavailable or the diagram fails to compile.
+    """
     self.doc.code_block(
       source,
       language="mermaid",
@@ -1017,7 +1078,8 @@ class MarkdownRenderer:
     )
 
   def _insert_picture(self, src, width_mm:float|None, height_mm:float|None):
-    """Centered paragraph + picture run with explicit dimensions.
+    """
+    Centered paragraph + picture run with explicit dimensions.
     `src` may be a path or `BytesIO`.
     Bypasses `doc.image()` to pass both width and height simultaneously
     after scaled dims are computed.
@@ -1025,8 +1087,10 @@ class MarkdownRenderer:
     self._insert_pictures([(src, width_mm, height_mm)])
 
   def _insert_pictures(self, items:list, align:str="C"):
-    """One paragraph holding every `(src, width_mm, height_mm)` given, separated by a space run,
-    aligned `L`, `C` or `R`."""
+    """
+    One paragraph holding every `(src, width_mm, height_mm)` given, separated by a space run,
+    aligned `L`, `C` or `R`.
+    """
     self.doc.enter()
     p = self.doc.new_para()
     p.alignment = align_to_docx(align)
@@ -1051,16 +1115,24 @@ class MarkdownRenderer:
   #--------------------------------------------------------------------------------- Footnote block
 
   def _render_footnote_block(self, tokens:list[Token], start:int) -> int:
-    """Render the footnote bibliography section appended by markdown-it.
-    Emits an H2 heading (when `style.footnote_label` is set) or a thin HR,
-    then one paragraph per footnote prefixed with `[N]`.
+    """
+    Render the footnote bibliography section appended by markdown-it.
+    Emits an H2 heading when `style.footnote_label` is set, `True` writing `footnote_word`,
+    or else a thin HR, then one paragraph per footnote prefixed with `[N]`.
+    A document that ends with a heading has titled the section itself,
+    so the entries follow that heading as a paragraph would, with no second title and no rule.
     Runs are one pt smaller than body (`smaller_size`)
     so the bibliography reads as compact reference material.
     Heading keeps its style-driven size.
     """
     end = find_close(tokens, start, "footnote_block_open", "footnote_block_close")
-    if self.style.footnote_label:
-      self.doc.heading(self.style.footnote_label, level=2, **self._head_gaps())
+    label = self.style.footnote_label
+    if start > 0 and tokens[start - 1].type == "heading_close":
+      pass # the author's own title, its level and its word, right above the entries
+    elif label:
+      title = self.style.footnote_word if label is True else label
+      # as an author's `## ` heading: its font, and an anchor for links
+      self._render_heading(self._md.parseInline(title)[0], 2)
     else:
       self._hr()
     body_pt = self.doc.text_style.font_size or Defaults.FONT_SIZE
@@ -1084,7 +1156,8 @@ class MarkdownRenderer:
     self, tokens:list[Token], start:int, end:int,
     label:str,
   ):
-    """Render a single footnote item:
+    """
+    Render a single footnote item:
     a paragraph beginning with `[label] ` followed by the footnote's inline content.
     Multi-paragraph footnotes emit additional plain paragraphs (no further prefix).
     """
@@ -1104,7 +1177,7 @@ class MarkdownRenderer:
           self._render_paragraph(inline)
         k += 3
       elif t.type == "footnote_anchor":
-        k += 1 # back-reference decoration; no DOCX equivalent
+        k += 1 # back-reference decoration, with no DOCX equivalent
       else:
         k += 1
 
@@ -1112,11 +1185,11 @@ class MarkdownRenderer:
 
   def _render_table(self, tokens:list[Token], start:int) -> int:
     end = find_close(tokens, start, "table_open", "table_close")
-    header_cells: list[str] = []
-    body_rows: list[list[str]] = []
+    header_cells: list[str|TablePicture] = []
+    body_rows: list[list[str|TablePicture]] = []
     aligns: list[str] = []
     in_header = False
-    current_row: list[str] = []
+    current_row: list[str|TablePicture] = []
     j = start + 1
     while j < end:
       t = tokens[j]
@@ -1135,28 +1208,46 @@ class MarkdownRenderer:
           else: aligns.append(Align.LEFT)
         close_type = "th_close" if tt == "th_open" else "td_close"
         k = j + 1
-        cell_text = ""
+        cell: str|TablePicture = ""
         while k < end and tokens[k].type != close_type:
-          if tokens[k].type == "inline": cell_text = self._inline_to_plain(tokens[k])
+          if tokens[k].type == "inline": cell = self._table_cell(tokens[k])
           k += 1
-        current_row.append(cell_text)
+        current_row.append(cell)
         j = k
       j += 1
     self.doc.table(
       header=header_cells if header_cells else None,
       body=body_rows,
       aligns=aligns if aligns else None,
+      style=TableStyle(cell_pad_h=self.style.table_h_pad),
     )
     return end + 1
+
+  def _table_cell(self, inline:Token) -> str|TablePicture:
+    """
+    What a table cell holds: the picture of a cell that is one local image,
+    sized as pdfmarq sizes it, else its text flattened by `_inline_to_plain`.
+    """
+    children = [c for c in inline.children or [] if c.type not in ("softbreak", "hardbreak")]
+    if len(children) != 1 or children[0].type != "image": return self._inline_to_plain(inline)
+    info, picture = self._load_picture(children[0])
+    if picture is None: return self._inline_to_plain(inline)
+    s = self.style
+    low, high = image_utils.cell_intrinsic_w_mm(info, s.inline_image_max_h, s.cell_image_max_w,
+      cell_image_scale=s.cell_image_scale)
+    width, height = image_utils.size_cell(info, high, s.image_max_h, s.inline_image_max_h,
+      s.cell_image_max_w, s.cell_image_scale)
+    return TablePicture(picture, width, height, low, high)
 
   #---------------------------------------------------------------------------------------- Helpers
 
   @staticmethod
   def _inline_to_plain(inline_token:Token) -> str:
-    """Flatten an inline token into a plain string for cells/short snippets.
+    """
+    Flatten an inline token into a plain string for cells/short snippets.
 
     A cell holds text, so formatting that needs its own XML does not survive:
-    a link keeps its words and loses the href, an image leaves its alt text,
+    a link keeps its words and loses the href, an image among text leaves `[alt]`,
     and math stays in `$...$` notation.
     Footnote references keep their `[n]` marker
     so the note at the end of the document still has something pointing at it.
@@ -1168,12 +1259,11 @@ class MarkdownRenderer:
       elif c.type == "footnote_ref":
         parts.append(f"[{(c.meta or {}).get('label') or ''}]")
       elif c.type == "math_inline":
-        # Tables take plain strings; preserve LaTeX in `$...$` notation.
+        # Tables take plain strings, so LaTeX stays in `$...$` notation.
         parts.append(f"${c.content}$")
       elif c.type == "image":
-        # A cell holds a string, so the picture cannot travel - its alt can
-        alt = (c.content or "").strip()
-        parts.append(alt or "[image]")
+        # A cell of text and pictures holds a string: the picture cannot travel, its alt can
+        parts.append(f"[{(c.content or '').strip() or get_attr(c, 'src')}]")
       elif c.type == "softbreak": parts.append(" ")
       elif c.type == "hardbreak": parts.append("\n")
     return "".join(parts)
@@ -1181,18 +1271,17 @@ class MarkdownRenderer:
 #------------------------------------------------------------------------------------------ Helpers
 
 def _list_start(token:Token) -> int:
-  """Opening number of an ordered list from its `start` attribute.
+  """
+  Opening number of an ordered list from its `start` attribute.
 
   CommonMark lets a list open at any number ("5.");
   markdown-it puts it on the token only when it differs from 1.
   """
   raw = get_attr(token, "start")
-  if raw is None:
-    return 1
+  if raw is None: return 1
   try:
     return max(1, int(raw))
-  except (TypeError, ValueError):
-    return 1
+  except (TypeError, ValueError): return 1
 
 def _group_close(tokens:list[Token], start:int) -> int|None:
   """

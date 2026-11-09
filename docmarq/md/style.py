@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 #-------------------------------------------------------------------------- Callout palette default
 
 def _default_callout_colors() -> dict:
-  """GitHub-style callout colors per type (border, text/icon).
+  """
+  GitHub-style callout colors per type (border, text/icon).
   Each entry: lowercase type → `(border_rgb, text_rgb)` in 0..1 range.
   """
   return {
@@ -28,7 +29,7 @@ class MarkdownStyle:
   """Visual style for markdown rendering. GitHub-light defaults."""
   # Fonts - both ship with Windows out of the box (Vista+),
   # so Word users don't need to install anything.
-  # Calibri is the canonical Office body font; Consolas is its companion monospace.
+  # Calibri is the canonical Office body font, Consolas its companion monospace.
   font_body: str = "Calibri"
   font_head: str = "Calibri"
   font_mono: str = "Consolas"
@@ -102,7 +103,7 @@ class MarkdownStyle:
   # `False` keeps rendering strictly local.
   mermaid_remote: bool = True
   mermaid_theme: str = "default" # `mmdc` theme: default / dark / forest / neutral
-  mermaid_background: str = "transparent" # bg color; transparent matches page
+  mermaid_background: str = "transparent" # bg color: transparent matches the page
   mermaid_scale: float = 3 # PNG oversampling factor
   mermaid_cli: str = "mmdc" # CLI binary name / path
 
@@ -117,16 +118,18 @@ class MarkdownStyle:
   code_block_border: tuple = (0.82, 0.84, 0.87) # #d0d7de
   quote_border: tuple = (0.82, 0.84, 0.87)
   hr_color: tuple = (0.82, 0.84, 0.87)
-  # Inert: `==mark==` stays literal text; kept so a pdfmarq style carries over.
+  # Inert: `==mark==` stays literal text.
+  # Kept so a pdfmarq style carries over.
   mark_bg: str = "yellow"
-  hr_thick: float = 0.5 # pt - rules and signing lines; Word keeps eighths of a point
+  hr_thick: float = 0.5 # pt - rules and signing lines, kept by Word in eighths of a point
 
   # Image sizing (mm)
   image_max_h: float = 120 # cap block image height
-  image_min_dpi: int = 150 # block image fills text width down to this; 0 = always
-  # Inert: inline images render as italic alt text, which no height cap applies to.
-  # Block figures answer to `image_max_h`.
-  inline_image_max_h: float = 5.5 # cap inline image height (~2ex @ 11pt)
+  image_min_dpi: int = 150 # block image fills text width down to this, 0 = always
+  inline_image_max_h: float = 5.5 # cap inline icons, at `body_size`
+  cell_image_max_w: float = 60 # absolute cap on the width of an image cell's column
+  cell_image_scale: float = 0.5 # an image cell renders at this share of its natural size
+  table_h_pad: float = 2 # mm horizontal padding of a table cell, as pdfmarq gives it
 
   # Local-link handling.
   # `[x](file.md)` with no schema gets resolved to `{link_root}/{link_base}/file.md`
@@ -147,9 +150,8 @@ class MarkdownStyle:
 
   #-------------------------------------------------------------------------------------- Footnotes
 
-  # Footnote section heading.
-  # `None` (default) emits just a thin HR above the bibliography:
-  # the smaller font signals reference matter.
-  # Set to a string (e.g. `"References"`, `"Bibliografia"`)
-  # to add an H2 heading above the footnotes.
-  footnote_label: str|None = None
+  # Above the footnotes, the bibliography: a thin rule with `None`, which suits a note or an act,
+  # or a title the renderer writes as a level-2 heading, which suits a thesis.
+  # `True` writes `footnote_word` in the style's language, a string writes itself.
+  footnote_label: str|bool|None = None
+  footnote_word: str = "References"

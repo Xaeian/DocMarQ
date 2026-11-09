@@ -213,8 +213,9 @@ Their labels and the date format in each language are in `docmarq.parts.LANG_LAB
 ## Page sizes
 
 ```py
-from docmarq import A4, A3, A5, LETTER, LEGAL
+from docmarq import A4, A3, A5, LETTER, LEGAL, SLIDE
 DOCX("out.docx", width=LETTER.width, height=LETTER.height)
+DOCX("deck.docx", width=SLIDE.width, height=SLIDE.height) # 16:9, as PowerPoint sets a slide
 DOCX("out.docx").landscape() # swap width/height for every section
 ```
 

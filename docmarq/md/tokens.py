@@ -1,6 +1,8 @@
-"""Helpers for walking markdown-it token lists.
+"""
+Helpers for walking markdown-it token lists.
 `*_open` / `*_close` pair structure requires attr lookup and depth-tracking close-finding;
-this module centralises both so callers stay free of boilerplate."""
+this module centralises both so callers stay free of boilerplate.
+"""
 import re
 from markdown_it.token import Token
 
@@ -8,21 +10,20 @@ from markdown_it.token import Token
 
 def get_attr(token:Token, name:str) -> str|None:
   """Return the value of HTML attribute `name` from a token, or `None`."""
-  if not token.attrs:
-    return None
-  if isinstance(token.attrs, dict):
-    return token.attrs.get(name)
+  if not token.attrs: return None
+  if isinstance(token.attrs, dict): return token.attrs.get(name)
   for k, v in token.attrs:
-    if k == name:
-      return v
+    if k == name: return v
   return None
 
 #----------------------------------------------------------------------------------- Range scanning
 
 def find_close(tokens:list[Token], start:int, open_type:str, close_type:str) -> int:
-  """Return index of the matching close token for the open token at `start`.
+  """
+  Return index of the matching close token for the open token at `start`.
   Falls back to last index on imbalance -
-  markdown-it always produces balanced output for valid input, so this is a safety net only."""
+  markdown-it always produces balanced output for valid input, so this is a safety net only.
+  """
   depth = 0
   for j in range(start, len(tokens)):
     tt = tokens[j].type
@@ -30,8 +31,7 @@ def find_close(tokens:list[Token], start:int, open_type:str, close_type:str) -> 
       depth += 1
     elif tt == close_type:
       depth -= 1
-      if depth == 0:
-        return j
+      if depth == 0: return j
   return len(tokens) - 1
 
 #----------------------------------------------------------------------------------------- Callouts

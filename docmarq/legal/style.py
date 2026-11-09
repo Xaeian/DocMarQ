@@ -44,7 +44,7 @@ class LegalStyle(MarkdownStyle):
   header_size: float = 10 # pt - place and date, sender, recipient, attachments
   to_align: str = "R" # L | R: the recipient flush with the left or the right margin
   ref_label: str = "Ref." # before `ref`: a case or reference number, bold, under the recipient
-  logo_align: str = "L" # L | C | R; at a side, the title and preamble may run beside it
+  logo_align: str = "L" # L | C | R, and at a side the title and preamble may run beside it
   logo_max_h: float = 20 # mm
   logo_max_w: float = 50 # mm
   # strftime syntax, applied to a YAML date or an ISO `YYYY-MM-DD` text.
@@ -61,7 +61,8 @@ class LegalStyle(MarkdownStyle):
   sign_bottom: bool = False
   attachments_label: str = "Attachments"
 
-  # Page number prefix; `None` disables the footer. A single page never carries one.
+  # Page number prefix, or `None` for no footer.
+  # A single page never carries one.
   page_number_label: str|None = "Page"
   # `Page X / Y` vs just `Page X`.
   page_number_total: bool = True

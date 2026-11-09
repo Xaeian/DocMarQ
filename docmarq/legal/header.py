@@ -137,8 +137,8 @@ def draw_header(
 def _sender_row(doc:DOCX, style:LegalStyle, sender:list[str], stamp:str, width:float):
   """
   The sender on the left, place and date on the right of its first line.
-  Beside the stamp the sender wraps in the room left; with too little room for a word,
-  the stamp takes a line of its own above the sender.
+  Beside the stamp the sender wraps in the room left.
+  With too little room for a word, the stamp takes a line of its own above the sender.
   """
   if not sender or not stamp:
     _lines(doc, style, sender or [stamp], "L" if sender else "R", _ROW_GAP_MM)

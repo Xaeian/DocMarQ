@@ -91,7 +91,8 @@ If a document may end up as DOCX, do not lean on anything in the middle column.
 | `<b> <i> <code> …`            | rendered                            | dropped, text survives                 |
 
 A formula itself is safe in both.
-What is not safe is a table cell carrying anything beyond plain text: in DOCX a cell is a string, so formatting flattens and a picture is reduced to its alt text.
+What is not safe is a table cell mixing text with anything beyond plain text: in DOCX a cell is a string, so formatting flattens and a picture among the text is reduced to `[alt]`.
+A picture alone in a cell is drawn in both formats.
 PDF renders the HTML tags `<b>/<strong>`, `<i>/<em>`, `<code>`, `<br>` and `<hr>`.
 A tag carrying attributes is stripped, so `<b class="x">` is not one of them.
 All other HTML goes in both formats, and DOCX drops even those, so prefer `---` over `<hr>`.
@@ -116,7 +117,7 @@ It fills text width as far as its resolution allows, stops at 120mm tall and sit
 PDF and DOCX land on the same box.
 
 Images alone in a paragraph share that width: two side by side become two half-width figures, eight become two rows of four.
-An image on the same line as text stays inline at line height, and DOCX keeps only its alt text - so put caption in the next paragraph, never beside the picture.
+An image on the same line as text stays inline at line height, in both formats - so put caption in the next paragraph, never beside the picture.
 
 The title slot sizes a figure by hand when automatic size is wrong:
 

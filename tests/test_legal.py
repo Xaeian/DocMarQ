@@ -32,7 +32,10 @@ CONTRACT = "---\ntitle: Service contract\nlogo: logo.png\n---\n\n" \
 
 @pytest.fixture
 def render(tmp_path):
-  """Render `md` with `style`, a 60×20 logo beside it; return the document root and its path."""
+  """
+  Render `md` with `style`, a 60×20 logo beside it.
+  Returns the document root and its path.
+  """
   Image.new("RGB", (60, 20), (30, 60, 120)).save(tmp_path / "logo.png")
   def run(md:str, style:LegalStyle):
     path = str(tmp_path / "legal.docx")

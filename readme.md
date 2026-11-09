@@ -100,7 +100,7 @@ It covers a language preset, Word-native fonts, `link_root` for cross-document r
 - Mermaid diagrams via `mermaid-cli` _(local)_ or `mermaid.ink` _(network fallback)_, with a shared cache with `pdfmarq`
 - Footnotes, nested lists, blockquotes, GitHub callouts _(`> [!NOTE]`, `> [!WARNING]`, …)_
 - Images alone in a paragraph become figures sharing text width, wrapping into a grid beyond it
-- An image on the same line as text keeps only its alt text, so give a figure its own paragraph
+- An image on the same line as text stays at line height, as in PDF, so give a figure its own paragraph
 
 Not supported _(use `pdfmarq` if you need them)_: syntax highlighting in code blocks, emoji shortcodes, task lists, inline HTML.
 

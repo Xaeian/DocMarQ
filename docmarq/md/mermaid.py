@@ -12,7 +12,7 @@ We try multiple rendering backends in priority order and use the first one that 
      **The diagram source is sent to a third-party server.**
      Warns once per process;
      `MarkdownStyle(mermaid_remote=False)` or `compile_to_png(remote=False)` keeps rendering local.
-  3. `None` - no backend succeeded; caller falls back to a code block.
+  3. `None` - no backend succeeded, and the caller falls back to a code block.
 
 Output is always PNG since python-docx can't embed SVG.
 Results are cached to `~/.cache/marq/mermaid/{hash}.png`,
@@ -37,7 +37,8 @@ def _cache_key(
   source:str, theme:str, background:str, scale:float,
   font_family:str = "", font_dir:str = "", cli:str = "",
 ) -> str:
-  """SHA1 over every input that affects rendering.
+  """
+  SHA1 over every input that affects rendering.
   Different theme, bg, scale, font or cli must produce a different cache file.
   Font means family *and* directory - the same family name can resolve to a different TTF.
 
@@ -65,31 +66,32 @@ def _cache_path(key:str) -> Path:
   return _CACHE_DIR / f"{key}.png"
 
 def _tmp_path(out_path:Path) -> Path:
-  """Unique sibling temp path.
+  """
+  Unique sibling temp path.
   Rendering straight into the cache name would leave a truncated PNG behind
-  on a crash or a killed subprocess."""
+  on a crash or a killed subprocess.
+  """
   return out_path.with_name(f"{out_path.stem}.{os.getpid()}.tmp{out_path.suffix}")
 
 def _valid_png(path:Path) -> bool:
-  """True when `path` holds a PNG that decodes.
+  """
+  True when `path` holds a PNG that decodes.
   A half-written leftover has to be re-rendered
-  rather than served as a cache hit for the life of the installation."""
-  if not path.is_file() or path.stat().st_size == 0:
-    return False
+  rather than served as a cache hit for the life of the installation.
+  """
+  if not path.is_file() or path.stat().st_size == 0: return False
   try:
     with Image.open(path) as im:
       im.verify()
     return True
-  except Exception:
-    return False
+  except Exception: return False
 
 _REMOTE_WARNED = False
 
 def _warn_remote_once() -> None:
   """Warn once per process before any diagram source leaves the machine."""
   global _REMOTE_WARNED
-  if _REMOTE_WARNED:
-    return
+  if _REMOTE_WARNED: return
   _REMOTE_WARNED = True
   warnings.warn(
     "mermaid: local `mmdc` not found, falling back to the mermaid.ink "
@@ -108,7 +110,8 @@ def compile_to_png(
   font_family:str|None = None, font_dir:str|None = None,
   remote:bool = True,
 ) -> str|None:
-  """Render mermaid `source` to a PNG file.
+  """
+  Render mermaid `source` to a PNG file.
   Returns a path the caller can embed;
   cache hits return the cached file, cache misses try `mmdc` first then mermaid.ink.
   Returns `None` when no backend succeeded.
@@ -125,8 +128,7 @@ def compile_to_png(
   key = _cache_key(source, theme, background, scale,
     font_family or "", font_dir or "", cli)
   cached = _cache_path(key)
-  if _valid_png(cached):
-    return str(cached)
+  if _valid_png(cached): return str(cached)
   cached.unlink(missing_ok=True) # drop a corrupt leftover
   tmp = _tmp_path(cached)
   ok = _try_mmdc(source, tmp, cli=cli, theme=theme,
@@ -151,9 +153,11 @@ def _try_mmdc(
   background:str, scale:float, timeout:float,
   font_family:str|None = None, font_dir:str|None = None,
 ) -> bool:
-  """Local `mmdc` subprocess. Returns `True` on success.
+  """
+  Local `mmdc` subprocess. Returns `True` on success.
   When `font_family`+`font_dir` are set and a matching TTF is found,
-  a temp CSS file with `@font-face` is injected via `--cssFile`."""
+  a temp CSS file with `@font-face` is injected via `--cssFile`.
+  """
   mmdc = shutil.which(cli)
   if mmdc is None: return False
   try:
@@ -161,8 +165,7 @@ def _try_mmdc(
         encoding="utf-8") as f:
       f.write(source)
       src_path = f.name
-  except OSError:
-    return False
+  except OSError: return False
   css_path = None
   cmd = [mmdc, "-i", src_path, "-o", str(out_path),
     "-t", theme, "-b", background, "-s", str(scale)]
@@ -197,7 +200,8 @@ def _try_mermaid_ink(
   source:str, out_path:Path, *, theme:str,
   background:str,
 ) -> bool:
-  """HTTP fallback via mermaid.ink `/img/` endpoint. Returns `True` on success.
+  """
+  HTTP fallback via mermaid.ink `/img/` endpoint. Returns `True` on success.
   Uses base64-encoded source in the URL path
   (the API's preferred encoding for direct GET requests).
   """
@@ -212,12 +216,10 @@ def _try_mermaid_ink(
     req = urllib.request.Request(url, headers={"User-Agent": "docmarq/0.1"})
     with urllib.request.urlopen(req, timeout=30) as resp:
       data = resp.read()
-    if not data or not data.startswith(b"\x89PNG"):
-      return False
+    if not data or not data.startswith(b"\x89PNG"): return False
     out_path.write_bytes(data)
     return True
-  except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
-    return False
+  except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError): return False
 
 #------------------------------------------------------------------------------------------ Helpers
 
@@ -225,5 +227,4 @@ def _safe_remove(path):
   """`os.remove` that swallows missing-file errors."""
   try:
     os.remove(path)
-  except OSError:
-    pass
+  except OSError: pass

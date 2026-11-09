@@ -12,7 +12,8 @@ from markdown_it.token import Token
 #------------------------------------------------------------------------------------------ Slugify
 
 def slugify_inline(inline_token:Token) -> str:
-  """GitHub-style slug from an inline token's children.
+  """
+  GitHub-style slug from an inline token's children.
   Lower-case, spaces collapsed to single hyphens, non-word chars dropped.
   Unicode letters and digits pass through `str.isalnum`.
   """
@@ -32,7 +33,8 @@ def slugify_inline(inline_token:Token) -> str:
   return "".join(out).strip("-")
 
 def collect_heading_slugs(tokens:list[Token]) -> set[str]:
-  """Walk tokens and collect every heading's slug.
+  """
+  Walk tokens and collect every heading's slug.
   Feeds `resolve_anchor` so unknown `#anchor` hrefs render as plain text
   instead of producing broken jumps.
   """
@@ -61,12 +63,12 @@ def dedupe(slug:str, seen:dict) -> str:
 #------------------------------------------------------------------------------------ Anchor lookup
 
 def resolve_anchor(href:str, known:set[str]) -> str|None:
-  """Map a `#slug` href to a known heading bookmark name.
+  """
+  Map a `#slug` href to a known heading bookmark name.
   Returns the slug on match, `None` otherwise.
   Handles markdown-it's URL-encoded non-ASCII slugs
   (PL/DE/CZ/SK characters get percent-encoded by the parser).
   """
-  if not href.startswith("#"):
-    return None
+  if not href.startswith("#"): return None
   slug = urllib.parse.unquote(href[1:])
   return slug if slug in known else None

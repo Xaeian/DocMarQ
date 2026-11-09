@@ -1,8 +1,10 @@
 # docmarq/fonts.py
 
-"""Font configuration helpers.
+"""
+Font configuration helpers.
 
-Word fonts are referenced by family name only; rasterization is host-side.
+Word fonts are referenced by family name only.
+Rasterization is host-side.
 No embedding: if the target machine lacks the font, Word substitutes silently.
 To embed, add `<w:embedTrueTypeFonts/>` to `settings.xml`.
 
@@ -38,7 +40,8 @@ _MODE_FALLBACK = {
 }
 
 def resolve_ttf(font_dir:str, family:str, mode:str="Regular") -> Path|None:
-  """Find the TTF backing one face, walking `_MODE_FALLBACK` when it is absent.
+  """
+  Find the TTF backing one face, walking `_MODE_FALLBACK` when it is absent.
 
   Layout is `<font_dir>/<family>/<family>-<mode>.ttf`,
   with the subfolder named either as-is or lowercase, and a flat `<font_dir>` accepted as well.

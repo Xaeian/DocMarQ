@@ -1,7 +1,9 @@
 # tests/conftest.py
 
-"""Collect only functions defined in the test module, since `python_functions = ["*"]`.
-Carries the shared DOCX validator too."""
+"""
+Collect only functions defined in the test module, since `python_functions = ["*"]`.
+Carries the shared DOCX validator too.
+"""
 
 import inspect
 from pathlib import Path
@@ -40,8 +42,7 @@ def docx_numbered_paras(path:str) -> list:
   from docx.oxml.ns import qn
   out = []
   for p in docx.Document(path).paragraphs:
-    if not p.text:
-      continue
+    if not p.text: continue
     num_id = None
     pPr = p._p.find(qn("w:pPr"))
     if pPr is not None:
@@ -60,8 +61,7 @@ def docx_start_overrides(path:str) -> dict:
   numbering = docx.Document(path).part.numbering_part.element
   for num in numbering.findall(qn("w:num")):
     override = num.find(qn("w:lvlOverride"))
-    if override is None:
-      continue
+    if override is None: continue
     start = override.find(qn("w:startOverride"))
     if start is not None:
       found[num.get(qn("w:numId"))] = start.get(qn("w:val"))
@@ -74,8 +74,7 @@ def docx_ppr_children(path:str) -> list:
   out = []
   for p in docx.Document(path).paragraphs:
     pPr = p._p.find(qn("w:pPr"))
-    if pPr is None:
-      continue
+    if pPr is None: continue
     kids = [c.tag.split("}")[1] for c in pPr]
     if "pBdr" in kids or "shd" in kids:
       out.append(kids)

@@ -8,6 +8,8 @@ EMU_PER_MM = 36000
 EMU_PER_PT = 12700 # 1 pt = 1/72 inch
 # Widths, cell margins and column gaps go in dxa, twentieths of a point
 DXA_PER_MM = 1440 / 25.4
+# Exact mm ↔ pt conversion (1 inch = 72pt = 25.4mm)
+MM_TO_PT = 72 / 25.4
 
 #-------------------------------------------------------------------------------------------- Units
 
@@ -35,16 +37,18 @@ A3 = PageSize(297, 420)
 A5 = PageSize(148, 210)
 LETTER = PageSize(215.9, 279.4)
 LEGAL = PageSize(215.9, 355.6)
+SLIDE = PageSize(960 * Unit.PT, 540 * Unit.PT) # 16:9, as PowerPoint sets a slide
 
 # Named presets are the only page sizes callers can select by string.
 # Arbitrary `[w, h]` stays available through `PageSize(w, h)`,
 # where the units are explicit and a typo cannot silently produce a 5x5000mm page.
 PAGE_PRESETS: dict[str, PageSize] = {
-  "A4": A4, "A3": A3, "A5": A5, "LETTER": LETTER, "LEGAL": LEGAL,
+  "A4": A4, "A3": A3, "A5": A5, "LETTER": LETTER, "LEGAL": LEGAL, "SLIDE": SLIDE,
 }
 
 def page_size(name:str) -> PageSize:
-  """Resolve a preset name to a `PageSize`, case-insensitively.
+  """
+  Resolve a preset name to a `PageSize`, case-insensitively.
 
   Raises `ValueError` for an unknown name.
   Callers validate user input at their own boundary,
@@ -95,7 +99,7 @@ class Defaults:
   # h1..h6 sizes in pt.
   HEAD_SIZES = (20, 16, 13, 11, 11, 11)
   HEAD_UNDERLINE_LEVELS = (1, 2) # which heading levels get bottom border
-  # Inline `code` runs; 0-1 tuples so `color_hex` emits `1F2328` / `F2F4F6`.
+  # Inline `code` runs, as 0-1 tuples so `color_hex` emits `1F2328` / `F2F4F6`.
   CODE_FAMILY = "Consolas"
   CODE_SIZE_RATIO = 0.92 # of body size, when no explicit code size is set
   CODE_COLOR = (0.09, 0.11, 0.13)

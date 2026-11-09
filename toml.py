@@ -364,9 +364,9 @@ def generate(package:str, output:str|None=None, auto_deps:bool=False):
 
 EXAMPLES = """
 examples:
-  py toml.py xaeian              Generate from package dir
-  py toml.py xaeian -o out.toml  Custom output path
-  py toml.py xaeian --auto-deps  Auto-detect dependencies from imports
+  py toml.py xaeian              # generate from the package directory
+  py toml.py xaeian -o out.toml  # custom output path
+  py toml.py xaeian --auto-deps  # detect dependencies from imports
 """
 
 if __name__ == "__main__":

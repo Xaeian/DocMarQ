@@ -28,6 +28,9 @@ class PaperStyle(MarkdownStyle):
   # Footer page numbering. `None` disables the footer entirely.
   page_number_label: str|None = "Page"
   page_number_total: bool = True # `Page X/Y` vs just `Page X`
+  # A paper titles its bibliography unasked, in the style's language, `Literatura` in `pl`.
+  # `None` draws the engine's thin rule, as a note or an act has it.
+  footnote_label: str|bool|None = True
 
   # Mini-banner on continuation pages (page 2+).
   # Word header gets the document id (if frontmatter has one) or short title fragment.
@@ -47,7 +50,8 @@ class PaperStyle(MarkdownStyle):
   banner_label_updated: str = "Updated"
 
   # Signing lines at the very end, independent of `banner`.
-  # `True` or a `sign_labels` scenario draws its labels; a list draws custom ones verbatim.
+  # `True` or a `sign_labels` scenario draws its labels.
+  # A list draws custom ones verbatim.
   sign: bool|str|list = False
   sign_labels: dict = field(default_factory=default_sign_labels)
   sign_gap: float = 25 # mm - blank space above the line, for the handwriting

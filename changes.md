@@ -1,5 +1,12 @@
 # Changes `docmarq`
 
+## `0.5.0` Slides
+
+- `SLIDE` page size, pictures in table cells
+- Bibliography title in papers, `pt` preset
+- Fix: images in text and table cells printed as `[image]`
+- Fixes across SVG arrowheads and table padding
+
 ## `0.4.1` Mail merge
 
 - Breaking: image helpers moved to `docmarq.images`

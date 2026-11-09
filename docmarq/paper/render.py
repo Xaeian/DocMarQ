@@ -72,7 +72,8 @@ def md_into(
   Write markdown after the last block of `doc` as `md_to_docx` writes a new file:
   core properties, banner, compact header, page number, content and signing lines.
 
-  For a document that opens with pages of its own, as a cover; the caller saves it.
+  For a document that opens with pages of its own, as a cover.
+  The caller saves it.
   Header and footer belong to the whole document, so a cover carries the page number too,
   and a banner, which keeps the first page clear of the compact header, belongs on page 1.
   """

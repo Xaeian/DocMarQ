@@ -111,10 +111,15 @@ PaperStyle(
   page_number_total=True,      # False → "Strona 1" without total
   date_format="%d.%m.%Y",      # strftime pattern
   skip_dup_title=True,         # drop `# X` if it matches frontmatter title
+  footnote_label=True,         # the bibliography titled in the style's language; None for a rule
 )
 ```
 
 The engine's fields - fonts, sizes, `justify`, `keep_together` - are there too, since `PaperStyle` extends `MarkdownStyle`.
+
+A paper titles its bibliography unasked: the footnotes collected at the end go under a level-2 heading in the style's language, `Literatura` in `pl`, `References` in `en`.
+A document that ends with a heading of its own has titled them already, as `### Literatura` at the very end, and gets no second title.
+`footnote_label="Bibliografia"` titles them with its own word, `footnote_label=None` draws the engine's thin rule instead.
 
 ### Banner labels (i18n)
 
@@ -122,7 +127,7 @@ Labels in banner, footer, and callouts are style fields.
 Defaults are English.
 Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
 
-Built-in presets cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`.
+Built-in presets cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`, `pt`.
 Each configures `page_number_label`, `date_format`, banner labels _(author / created / updated)_, signing scenarios _(`sign_labels`)_, and the engine's callout labels.
 
 ```py

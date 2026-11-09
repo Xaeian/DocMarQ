@@ -1,9 +1,11 @@
 # docmarq/inline.py
 
-"""Rich inline runs - mixed-style spans within a single paragraph.
+"""
+Rich inline runs - mixed-style spans within a single paragraph.
 
 Emits Word runs (`<w:r>`) instead of PDF drawing ops.
-`python-docx` owns line-breaking and justification; we only build the run list.
+`python-docx` owns line-breaking and justification.
+This module only builds the run list.
 """
 from dataclasses import dataclass
 from docx.shared import Pt, RGBColor
@@ -17,7 +19,8 @@ from .utils import color_hex, rgb255
 
 @dataclass
 class RichSegment:
-  """Single styled run. Multiple segments compose into one paragraph.
+  """
+  Single styled run. Multiple segments compose into one paragraph.
 
   `link_url` makes the run a clickable external hyperlink.
   `link_target` references an internal bookmark by name.
@@ -25,7 +28,7 @@ class RichSegment:
   """
   text: str
   family: str|None = None # `None` → inherit current paragraph font
-  size: float|None = None # pt; `None` → inherit
+  size: float|None = None # pt, `None` → inherit
   color: tuple|str|None = None
   bold: bool = False
   italic: bool = False
@@ -50,8 +53,10 @@ def _apply_run_format(
   code_color:tuple|str|None = None,
   code_bg:tuple|str|None = None,
 ):
-  """Apply `RichSegment` styling to a `python-docx` `Run`.
-  Unset `code_*` arguments fall back to `Defaults.CODE_*`."""
+  """
+  Apply `RichSegment` styling to a `python-docx` `Run`.
+  Unset `code_*` arguments fall back to `Defaults.CODE_*`.
+  """
   f = run.font
   if seg.code:
     f.name = code_family or Defaults.CODE_FAMILY

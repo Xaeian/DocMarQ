@@ -19,8 +19,7 @@ try:
     TemplateNotFound, TemplateSyntaxError, meta)
   from jinja2.sandbox import ImmutableSandboxedEnvironment, SecurityError
   from markupsafe import Markup
-except ModuleNotFoundError as e:
-  raise ImportError("Install with: pip install docmarq[md]") from e
+except ModuleNotFoundError as e: raise ImportError("Install with: pip install docmarq[md]") from e
 from .._warn import caller_level
 from ..utils import format_date
 from ..md import split_frontmatter
@@ -46,6 +45,7 @@ _RESERVED = {"true", "false", "none", "True", "False", "None", "and", "or", "not
 # The no-break space keeps a number on one line.
 _SEPARATORS = {
   "pl": (",", "\u00a0"), "cs": (",", "\u00a0"), "sk": (",", "\u00a0"), "fr": (",", "\u00a0"),
+  "pt": (",", "\u00a0"),
   "de": (",", "."), "es": (",", "."), "it": (",", "."),
   "en": (".", ","),
 }
@@ -151,8 +151,7 @@ def merge(
   parsed = [_parse(text, body_env, plain_env, base_dir) for text in versions]
   try:
     pattern = plain_env.from_string(_mark_lines(name)) if name else None
-  except TemplateSyntaxError as e:
-    raise MergeError([f"name: {e.message}"]) from None
+  except TemplateSyntaxError as e: raise MergeError([f"name: {e.message}"]) from None
   if not rows: raise MergeError(["no records to fill"])
   problems = _field_problems(rows)
   if problems: raise MergeError(problems)
@@ -267,8 +266,7 @@ def _fields(body_env, body:str, plain_env, fronts:list[str]) -> set[str]|None:
       seen.add(included)
       try:
         todo.append((body_env, included, body_env.loader.get_source(body_env, included)[0]))
-      except TemplateNotFound:
-        return None # rendering names the missing file
+      except TemplateNotFound: return None # rendering names the missing file
   return fields
 
 #-------------------------------------------------------------------------------------------- Lines
@@ -314,8 +312,7 @@ def _fill(t:_Template, record:dict) -> str:
   front = _render_front(t.front, context, "")
   try:
     body = _unmark(t.body.render(context))
-  except Exception as e:
-    raise _Problem(_located(e, t)) from None
+  except Exception as e: raise _Problem(_located(e, t)) from None
   # a body opening with `---` needs a frontmatter block before it, or it is read as one
   if not front and not body.startswith("---"): return body
   return "---\n" + yaml.safe_dump(front, allow_unicode=True, sort_keys=False,
@@ -326,8 +323,7 @@ def _render_front(value, context:dict, path:str):
   if isinstance(value, Template):
     try:
       return _unmark(value.render(context))
-    except Exception as e:
-      raise _Problem(f"frontmatter {path}: {_message(e)}") from None
+    except Exception as e: raise _Problem(f"frontmatter {path}: {_message(e)}") from None
   if isinstance(value, list):
     return [_render_front(v, context, f"{path}[{i}]") for i, v in enumerate(value)]
   if isinstance(value, dict):
@@ -386,8 +382,7 @@ def _located(error:Exception, t:_Template) -> str:
   if isinstance(error, TemplateSyntaxError) and error.name:
     return f"{error.name}:{error.lineno}: {error.message}"
   for frame in reversed(traceback.extract_tb(error.__traceback__)):
-    if frame.filename == "<template>":
-      return f"line {frame.lineno + t.offset}: {_message(error)}"
+    if frame.filename == "<template>": return f"line {frame.lineno + t.offset}: {_message(error)}"
     if t.base_dir and not frame.filename.endswith(".py"):
       where = Path(os.path.relpath(frame.filename, t.base_dir)).as_posix()
       return f"{where}:{frame.lineno}: {_message(error)}"
@@ -482,8 +477,7 @@ def _plain(value):
 def _repeat_size(left, right) -> int:
   """Length of a text or list repeated by `*`, 0 for a product of numbers."""
   for seq, times in ((left, right), (right, left)):
-    if isinstance(seq, (str, list, tuple)) and isinstance(times, int):
-      return len(seq) * times
+    if isinstance(seq, (str, list, tuple)) and isinstance(times, int): return len(seq) * times
   return 0
 
 #------------------------------------------------------------------------------------------ Filters
@@ -554,8 +548,7 @@ def _decimal(value) -> Decimal|None:
       text = text.replace(mark, "." if text.count(mark) == 1 else "")
   try:
     number = Decimal(text)
-  except InvalidOperation:
-    raise ValueError(f"{value!r} is no number") from None
+  except InvalidOperation: raise ValueError(f"{value!r} is no number") from None
   if not number.is_finite() or abs(number.adjusted()) > _MAX_EXPONENT:
     raise ValueError(f"{value!r} is no number")
   return number

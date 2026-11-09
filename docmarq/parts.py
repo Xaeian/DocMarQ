@@ -72,6 +72,12 @@ LANG_LABELS: dict[str, dict] = {
     "sign_labels": {"signature": ["Podpis"], "approval": ["Vypracoval", "Schválil"],
       "contract": ["Objednávateľ", "Zhotoviteľ"]},
   },
+  "pt": {
+    "page_number_label": "Página",
+    "date_format": "%d/%m/%Y",
+    "sign_labels": {"signature": ["Assinatura"], "approval": ["Elaborado por", "Aprovado por"],
+      "contract": ["Contratante", "Prestador"]},
+  },
 }
 
 def sign_labels(sign:bool|str|list, scenarios:dict) -> list[str]:
@@ -94,7 +100,8 @@ def signatures(
   """
   Signing lines after the last block, under each its label in `face`, centred.
 
-  One line sits at the right margin; several span margin to margin, spread evenly.
+  One line sits at the right margin.
+  Several span margin to margin, spread evenly.
   `gap` mm of blank space above them takes the handwriting, `width` mm is the widest a line gets.
   The lines are bottom borders `thick` pt thick in the colour of `face`, in a Word border style:
   `single`, or `dotted` as on a form.
@@ -143,7 +150,8 @@ def page_number(
   `Label N/M`, or `Label N` without `show_total`, centred in footer paragraph `p`.
 
   The numbers are Word fields, worked out on every page.
-  `face` sets their font, size and colour; without one they take the footer's style.
+  `face` sets their font, size and colour.
+  Without one they take the footer's style.
   With `many`, only a document of more than one page shows them.
   """
   def look(run):

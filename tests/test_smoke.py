@@ -1,7 +1,9 @@
 # tests/test_smoke.py
 
-"""End-to-end smoke: the public API writes a valid DOCX to disk.
-No crash, and the ZIP magic header is there."""
+"""
+End-to-end smoke: the public API writes a valid DOCX to disk.
+No crash, and the ZIP magic header is there.
+"""
 
 from conftest import assert_valid_docx
 from docmarq import DOCX, Align, Styles
@@ -55,7 +57,8 @@ def docx_blockquote_hr_code(tmp_path):
   assert_valid_docx(path)
 
 def docx_colors_hex_and_tuple(tmp_path):
-  # `parse_color` returns floats 0-1 in both libs; `rgb255` converts at the OOXML boundary.
+  # `parse_color` returns floats 0-1 in both libs.
+  # `rgb255` converts at the OOXML boundary.
   # Mixing hex strings and float tuples in the same document must produce no crash.
   path = tmp_path / "colors.docx"
   with DOCX(str(path)) as doc:

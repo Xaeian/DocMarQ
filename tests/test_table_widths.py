@@ -10,16 +10,17 @@ A long URL never squeezes the columns beside it.
 import pytest
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from conftest import docx_grid_mm
-from docmarq import DOCX, TableStyle
+from docmarq import DOCX
 from docmarq.constants import Unit, Defaults
 from docmarq.utils import smaller_size
 from docmarq.paper import md_to_docx
+from docmarq.md import MarkdownStyle
 from docmarq.metrics import text_width_mm
 from docmarq.tables import _fit_columns, _cap_widths
 
 LONG = "a description long enough to wrap inside its table cell " * 2
 URL = "https://example.com/very/long/path/to/some/resource/file.pdf"
-PAD = TableStyle().cell_pad_h # a side
+PAD = MarkdownStyle().table_h_pad # a side of a markdown table's cell
 SIZE = smaller_size(Defaults.FONT_SIZE) # table text, one ladder step below the body
 CONTENT = 170 # A4 less its 20 mm margins
 

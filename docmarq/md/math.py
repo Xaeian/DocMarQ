@@ -35,8 +35,10 @@ from lxml import etree
 #------------------------------------------------------------------------------------------- Errors
 
 class MathConversionError(Exception):
-  """Raised when a LaTeX construct falls outside the supported OMML subset.
-  The renderer catches this and falls back to an image render of the whole formula."""
+  """
+  Raised when a LaTeX construct falls outside the supported OMML subset.
+  The renderer catches this and falls back to an image render of the whole formula.
+  """
 
 #------------------------------------------------------------------------------------ Symbol tables
 
@@ -90,7 +92,7 @@ SYMBOLS: dict[str, str] = {
   # named numbers / constants often used
 }
 
-# Dots/spacing that just emit literal glyphs handled above; spacing commands:
+# Spacing commands, as Unicode spaces (the dots are glyphs, in the table above):
 SPACES: dict[str, str] = {
   ",": " ",  # thin space
   ":": " ",  # medium space
@@ -114,7 +116,8 @@ LIM_FUNCTIONS: set[str] = {"lim", "limsup", "liminf", "max", "min", "sup", "inf"
   "argmax", "argmin"}
 
 # Big operators → (glyph, default-omit-when-integral).
-# Integrals use OMML's default n-ary char so we omit `chr`; everything else sets it explicitly.
+# Integrals use OMML's default n-ary char, so `chr` is left out.
+# Everything else sets it explicitly.
 BIG_OPERATORS: dict[str, str] = {
   "sum": "∑", "prod": "∏", "coprod": "∐",
   "int": "∫", "iint": "∬", "iiint": "∭", "oint": "∮",
@@ -175,7 +178,7 @@ MATRIX_ENVS: dict[str, tuple[str|None, str|None]] = {
 #------------------------------------------------------------------------------------- OMML helpers
 
 def _el(tag:str, **attrs) -> "OxmlElement":
-  """Create an OMML/WML element; `attrs` are `m:val`-style (namespace `m`)."""
+  """Create an OMML/WML element, its `attrs` `m:val`-style (namespace `m`)."""
   e = OxmlElement(tag)
   for k, v in attrs.items():
     e.set(qn(f"m:{k}"), str(v))
@@ -188,9 +191,11 @@ def _prop(parent, tag:str, **attrs):
   return child
 
 def _xml_safe(text:str) -> str:
-  """Drop XML-1.0-illegal control chars (NUL etc.).
+  """
+  Drop XML-1.0-illegal control chars (NUL etc.).
   lxml raises `ValueError` on them, which would escape the `MathConversionError` contract;
-  stripping keeps a stray control byte from crashing the converter."""
+  stripping keeps a stray control byte from crashing the converter.
+  """
   return "".join(
     ch for ch in text
     if ord(ch) in (9, 10, 13)
@@ -200,14 +205,17 @@ def _xml_safe(text:str) -> str:
   )
 
 class _Build:
-  """OMML builder bound to a run color + size so every leaf run is styled consistently.
-  Kept tiny - just `run()` plus the structural constructors live on the parser."""
+  """
+  OMML builder bound to a run color + size so every leaf run is styled consistently.
+  Kept tiny - just `run()` plus the structural constructors live on the parser.
+  """
   def __init__(self, size_halfpt:int|None, color_hex:str|None):
     self.size_halfpt = size_halfpt
     self.color_hex = color_hex
 
   def run(self, text:str, sty:str|None=None, scr:str|None=None) -> "OxmlElement":
-    """Build `<m:r>` with optional math style/script and shared color/size.
+    """
+    Build `<m:r>` with optional math style/script and shared color/size.
 
     `sty`: p/b/i/bi (plain/bold/italic/bold-italic).
     Letters default to italic in Word's math font, so we only emit a style when overriding.
@@ -243,13 +251,15 @@ class _Build:
 #---------------------------------------------------------------------------------------- Tokenizer
 
 def _tokenize(src:str) -> list[str]:
-  """Split LaTeX math source into tokens:
+  """
+  Split LaTeX math source into tokens:
   commands (`\\frac`, `\\,`), the structural chars `{} ^ _ &`, the row break `\\\\`,
   single characters, and a single `" "` token for any whitespace run.
 
   Whitespace is insignificant in math mode (the cursor skips `" "` tokens),
   but `\\text{a b}` must keep its spaces - so we emit one collapsed space token
-  rather than dropping whitespace, letting text mode recover it."""
+  rather than dropping whitespace, letting text mode recover it.
+  """
   tokens: list[str] = []
   i, n = 0, len(src)
   while i < n:
@@ -288,7 +298,8 @@ def _tokenize(src:str) -> list[str]:
 #------------------------------------------------------------------------------------------- Parser
 
 class _Parser:
-  """Recursive-descent LaTeX-math → OMML converter.
+  """
+  Recursive-descent LaTeX-math → OMML converter.
 
   `parse_sequence` produces a flat node list (runs + structures) for a container;
   scripts (`^`/`_`) bind to the preceding atom;
@@ -329,8 +340,7 @@ class _Parser:
     return t
 
   def _expect(self, tok:str):
-    if self._peek() != tok:
-      raise MathConversionError(f"expected {tok!r}, got {self._peek()!r}")
+    if self._peek() != tok: raise MathConversionError(f"expected {tok!r}, got {self._peek()!r}")
     self._next()
 
   #-------------------------------------------------------------------------------------- sequences
@@ -340,8 +350,7 @@ class _Parser:
     out: list = []
     while True:
       t = self._peek()
-      if t is None or t in stops:
-        break
+      if t is None or t in stops: break
       if t in ("&", "\\\\"):
         # Stray cell/row separators outside a matrix: treat as a space.
         self.pos += 1
@@ -371,15 +380,12 @@ class _Parser:
       op = self._next()
       script = self.parse_atom()
       if op == "_":
-        if sub is not None:
-          raise MathConversionError("double subscript")
+        if sub is not None: raise MathConversionError("double subscript")
         sub = script
       else:
-        if sup is not None:
-          raise MathConversionError("double superscript")
+        if sup is not None: raise MathConversionError("double superscript")
         sup = script
-    if sub is None and sup is None:
-      return base
+    if sub is None and sup is None: return base
     e = self.b.wrap("m:e", base)
     if sub is not None and sup is not None:
       node = _el("m:sSubSup")
@@ -399,14 +405,15 @@ class _Parser:
   #------------------------------------------------------------------------------------------ atoms
 
   def parse_atom(self) -> list:
-    """Parse a single base atom (no scripts).
-    Returns a node list so a braced group `{...}` can expand to multiple runs under one base."""
+    """
+    Parse a single base atom (no scripts).
+    Returns a node list so a braced group `{...}` can expand to multiple runs under one base.
+    """
     # Depth guard: pathological nesting must raise `MathConversionError`
     # (caught by the renderer → image fallback),
     # never overflow into `RecursionError` (which is uncaught and would abort the whole document).
     self.depth += 1
-    if self.depth > self.MAX_DEPTH:
-      raise MathConversionError("nesting too deep")
+    if self.depth > self.MAX_DEPTH: raise MathConversionError("nesting too deep")
     try:
       return self._parse_atom_inner()
     finally:
@@ -414,27 +421,26 @@ class _Parser:
 
   def _parse_atom_inner(self) -> list:
     t = self._next()
-    if t is None:
-      raise MathConversionError("unexpected end of formula")
+    if t is None: raise MathConversionError("unexpected end of formula")
     if t == "{":
       seq = self.parse_sequence({"}"})
       self._expect("}")
       return seq
-    if t == "}":
-      raise MathConversionError("unbalanced '}'")
+    if t == "}": raise MathConversionError("unbalanced '}'")
     if t in ("^", "_"):
       # script with no base, e.g. leading `_x`: empty base.
       self.pos -= 1
       return [self.b.run("")]
-    if t.startswith("\\"):
-      return self._parse_command(t)
+    if t.startswith("\\"): return self._parse_command(t)
     # Ordinary character.
     return [self._char_run(t)]
 
   def _char_run(self, ch:str):
-    """Single-character run.
+    """
+    Single-character run.
     Digits/operators stay upright automatically in Word's math font;
-    single ASCII letters render italic by default."""
+    single ASCII letters render italic by default.
+    """
     if ch == "-":
       ch = "−" # proper minus sign
     return self.b.run(ch)
@@ -454,10 +460,8 @@ class _Parser:
     if name in SPACES:
       glyph = SPACES[name]
       return [self.b.run(glyph)] if glyph else []
-    if name in SYMBOLS:
-      return [self.b.run(SYMBOLS[name])]
-    if name in FUNCTIONS:
-      return [self.b.run(name, sty="p"), self.b.run(" ")]
+    if name in SYMBOLS: return [self.b.run(SYMBOLS[name])]
+    if name in FUNCTIONS: return [self.b.run(name, sty="p"), self.b.run(" ")]
     if name == "bmod" or name == "mod":
       return [self.b.run(" "), self.b.run("mod", sty="p"), self.b.run(" ")]
     if name == "pmod":
@@ -466,28 +470,18 @@ class _Parser:
         self._delimit("(", ")", [self.b.run("mod ", sty="p")] + arg)]
     if name == "frac" or name == "dfrac" or name == "tfrac" or name == "cfrac":
       return [self._parse_frac(bar=True)]
-    if name == "binom" or name == "dbinom" or name == "tbinom":
-      return [self._parse_binom()]
-    if name == "sqrt":
-      return [self._parse_sqrt()]
-    if name in ACCENTS:
-      return [self._parse_accent(ACCENTS[name])]
-    if name in ("overline",):
-      return [self._parse_bar(pos="top")]
-    if name in ("underline",):
-      return [self._parse_bar(pos="bot")]
-    if name in ("overbrace", "underbrace"):
-      return [self._parse_groupchr(name)]
-    if name in FONT_CMDS:
-      return self._parse_font(name)
-    if name == "left":
-      return [self._parse_delim()]
-    if name == "begin":
-      return [self._parse_environment()]
+    if name == "binom" or name == "dbinom" or name == "tbinom": return [self._parse_binom()]
+    if name == "sqrt": return [self._parse_sqrt()]
+    if name in ACCENTS: return [self._parse_accent(ACCENTS[name])]
+    if name in ("overline",): return [self._parse_bar(pos="top")]
+    if name in ("underline",): return [self._parse_bar(pos="bot")]
+    if name in ("overbrace", "underbrace"): return [self._parse_groupchr(name)]
+    if name in FONT_CMDS: return self._parse_font(name)
+    if name == "left": return [self._parse_delim()]
+    if name == "begin": return [self._parse_environment()]
     if name in ("displaystyle", "textstyle", "scriptstyle", "limits", "nolimits"):
       return [] # styling hints - no structural effect here
-    if name in ("right", "end"):
-      raise MathConversionError(f"stray \\{name}")
+    if name in ("right", "end"): raise MathConversionError(f"stray \\{name}")
     raise MathConversionError(f"unsupported command \\{name}")
 
   #------------------------------------------------------------------------------------- structures
@@ -597,12 +591,9 @@ class _Parser:
   _DELIM_CHARS = set("()[]|/.<>")
 
   def _delim_glyph(self, tok:str|None) -> str:
-    if tok is None:
-      raise MathConversionError("missing delimiter")
-    if tok in DELIMS:
-      return DELIMS[tok]
-    if len(tok) == 1 and tok in self._DELIM_CHARS:
-      return tok
+    if tok is None: raise MathConversionError("missing delimiter")
+    if tok in DELIMS: return DELIMS[tok]
+    if len(tok) == 1 and tok in self._DELIM_CHARS: return tok
     raise MathConversionError(f"unsupported delimiter {tok!r}")
 
   def _delimit(self, open_chr:str, close_chr:str, nodes:list, sep:str|None=None):
@@ -623,18 +614,17 @@ class _Parser:
   def _parse_nary(self, name:str):
     self._next() # consume the operator command
     sub = sup = None
-    # Limits may appear in either order; skip `\limits` / `\nolimits` hints.
+    # Limits may appear in either order.
+    # The `\limits` and `\nolimits` hints are skipped.
     while True:
       t = self._peek()
       if t == "_":
         self._next()
-        if sub is not None:
-          raise MathConversionError("double subscript")
+        if sub is not None: raise MathConversionError("double subscript")
         sub = self.parse_atom()
       elif t == "^":
         self._next()
-        if sup is not None:
-          raise MathConversionError("double superscript")
+        if sup is not None: raise MathConversionError("double superscript")
         sup = self.parse_atom()
       elif t in ("\\limits", "\\nolimits", "\\displaystyle"):
         self._next()
@@ -659,13 +649,14 @@ class _Parser:
     return nary
 
   def _parse_operand(self) -> list:
-    """One scripted atom as a big operator's operand.
+    """
+    One scripted atom as a big operator's operand.
     Stops at separators / relations would be ideal,
     but a single atom matches LaTeX binding and avoids over-greedy capture;
-    the remainder trails as siblings."""
+    the remainder trails as siblings.
+    """
     t = self._peek()
-    if t is None or t in ("}", "&", "\\\\", "\\right", "\\end"):
-      return []
+    if t is None or t in ("}", "&", "\\\\", "\\right", "\\end"): return []
     if t in ("+", "-", "=", ")", "]"):
       return [] # operator/closer immediately after - empty operand
     return self.parse_one()
@@ -694,8 +685,7 @@ class _Parser:
 
   @staticmethod
   def _wrap_single(nodes:list):
-    if len(nodes) == 1:
-      return nodes[0]
+    if len(nodes) == 1: return nodes[0]
     box = _el("m:e")
     for n in nodes:
       box.append(n)
@@ -705,8 +695,7 @@ class _Parser:
 
   def _parse_environment(self):
     env = self._read_env_name()
-    if env not in MATRIX_ENVS:
-      raise MathConversionError(f"unsupported environment {env!r}")
+    if env not in MATRIX_ENVS: raise MathConversionError(f"unsupported environment {env!r}")
     # `array` (and friends) carry an optional `[pos]` then a mandatory `{col-spec}` argument;
     # consume both so the spec doesn't leak into cell 1.
     if env == "array":
@@ -722,8 +711,7 @@ class _Parser:
     cell_tokens: list[str] = []
     while True:
       t = self._peek()
-      if t is None:
-        raise MathConversionError(f"unterminated \\begin{{{env}}}")
+      if t is None: raise MathConversionError(f"unterminated \\begin{{{env}}}")
       if t == "\\begin":
         depth += 1
         self._next()
@@ -734,8 +722,7 @@ class _Parser:
         self._next()
         grp = self._copy_brace_group()
         depth -= 1
-        if depth == 0:
-          break
+        if depth == 0: break
         cell_tokens.append("\\end")
         cell_tokens.extend(grp)
         continue
@@ -751,37 +738,35 @@ class _Parser:
     return name.rstrip("*")
 
   def _copy_brace_group(self) -> list[str]:
-    """Consume a `{...}` and return the literal tokens incl. both braces,
+    """
+    Consume a `{...}` and return the literal tokens incl. both braces,
     so a nested `\\begin{matrix}` round-trips into the cell stream
-    as separate `{`, name-chars..., `}` tokens (not a single re-serialized blob)."""
+    as separate `{`, name-chars..., `}` tokens (not a single re-serialized blob).
+    """
     self._expect("{")
     out = ["{"]
     depth = 1
     while True:
       t = self._next()
-      if t is None:
-        raise MathConversionError("unterminated environment name")
+      if t is None: raise MathConversionError("unterminated environment name")
       out.append(t)
       if t == "{":
         depth += 1
       elif t == "}":
         depth -= 1
-        if depth == 0:
-          return out
+        if depth == 0: return out
 
   def _copy_bracket_group(self):
     """Consume and discard an optional `[...]` argument (e.g. `array` `[t]`)."""
     self._next() # `[`
     while True:
       t = self._next()
-      if t is None or t == "]":
-        return
+      if t is None or t == "]": return
 
   def _build_matrix(self, env:str, tokens:list[str]):
     rows = _split_rows(tokens)
     mat = _el("m:m")
-    if not rows:
-      raise MathConversionError("empty matrix")
+    if not rows: raise MathConversionError("empty matrix")
     ncols = max(len(r) for r in rows)
     mpr = _el("m:mPr")
     _prop(mpr, "m:baseJc", val="center")
@@ -802,8 +787,7 @@ class _Parser:
         mr.append(self.b.wrap("m:e", nodes))
       mat.append(mr)
     beg, end = MATRIX_ENVS[env]
-    if beg is None and end is None:
-      return mat
+    if beg is None and end is None: return mat
     return self._delimit(beg or "", end or "", [mat])
 
   #----------------------------------------------------------------------------------- text helpers
@@ -816,24 +800,23 @@ class _Parser:
       buf: list[str] = []
       while True:
         t = self._next()
-        if t is None:
-          raise MathConversionError("unterminated group")
+        if t is None: raise MathConversionError("unterminated group")
         if t == "{":
           depth += 1
         elif t == "}":
           depth -= 1
-          if depth == 0:
-            break
+          if depth == 0: break
         buf.append(t)
       return buf
     t = self._next()
-    if t is None:
-      raise MathConversionError("missing argument")
+    if t is None: raise MathConversionError("missing argument")
     return [t]
 
   def _grab_group_raw_tokens(self) -> list[str]:
-    """Like `_grab_group_tokens` but keeps `" "` (space) tokens,
-    for text mode where `\\text{a b}` must preserve its spaces."""
+    """
+    Like `_grab_group_tokens` but keeps `" "` (space) tokens,
+    for text mode where `\\text{a b}` must preserve its spaces.
+    """
     self._skip_ws()
     if self.pos < len(self.toks) and self.toks[self.pos] == "{":
       self.pos += 1
@@ -846,20 +829,21 @@ class _Parser:
           depth += 1
         elif t == "}":
           depth -= 1
-          if depth == 0:
-            return buf
+          if depth == 0: return buf
         buf.append(t)
       raise MathConversionError("unterminated group")
     # Single (non-space) token argument.
     t = self._next()
-    if t is None:
-      raise MathConversionError("missing argument")
+    if t is None: raise MathConversionError("missing argument")
     return [t]
 
   @staticmethod
   def _tokens_to_text(tokens:list[str]) -> str:
-    """Flatten tokens back to literal text for `\\text{...}`.
-    Known escapes map to their glyph; unknown commands keep their name."""
+    """
+    Flatten tokens back to literal text for `\\text{...}`.
+    Known escapes map to their glyph.
+    Unknown commands keep their name.
+    """
     out = []
     for t in tokens:
       if t == "\\\\":
@@ -881,11 +865,13 @@ class _Parser:
 #---------------------------------------------------------------------------------- post-processing
 
 def _restyle_runs(nodes:list, sty:str|None, scr:str|None):
-  """Apply a font style/script to every `<m:r>` descendant in `nodes`.
+  """
+  Apply a font style/script to every `<m:r>` descendant in `nodes`.
 
   `CT_RPr` has a strict child order (`lit`, `nor`, `scr`, `sty`, `brk`, `aln`),
   so when a scr-bearing font (`\\mathbb`) wraps a sty-bearing one (`\\mathbf`/`\\sin`)
-  we must INSERT `m:scr` before the existing `m:sty`, not append after it."""
+  we must INSERT `m:scr` before the existing `m:sty`, not append after it.
+  """
   for node in nodes:
     if node.tag == qn("m:r"):
       rpr = node.find(qn("m:rPr"))
@@ -905,13 +891,15 @@ def _restyle_runs(nodes:list, sty:str|None, scr:str|None):
       _restyle_runs(list(node), sty, scr)
 
 def _coalesce_runs(el) -> None:
-  """Merge adjacent `<m:r>` siblings with identical run properties into one run,
+  """
+  Merge adjacent `<m:r>` siblings with identical run properties into one run,
   concatenating their text.
   Mirrors how Word itself stores math
   (one run per styled span, not per character), shrinking output.
 
   Rebuilds the child list in one pass (detach-all then re-append survivors)
-  so it stays O(n) - a naive per-merge `remove()` would be O(n^2) on big spans."""
+  so it stays O(n) - a naive per-merge `remove()` would be O(n^2) on big spans.
+  """
   def sig(r):
     parts = []
     for tag in ("m:rPr", "w:rPr"):
@@ -976,7 +964,8 @@ def latex_to_omath(
   latex:str, size_halfpt:int|None = None,
   color_hex:str|None = None, display:bool = False,
 ) -> "OxmlElement":
-  """Convert LaTeX math to an `<m:oMath>` OMML element.
+  """
+  Convert LaTeX math to an `<m:oMath>` OMML element.
 
   Args:
     latex: Formula source without `$` delimiters.
@@ -987,8 +976,7 @@ def latex_to_omath(
   Returns an `<m:oMath>` lxml element ready to append to a `<w:p>`.
   Raises `MathConversionError` for unsupported constructs.
   """
-  if not latex or not latex.strip():
-    raise MathConversionError("empty formula")
+  if not latex or not latex.strip(): raise MathConversionError("empty formula")
   if len(latex) > 5000:
     # Real formulas are never this long;
     # route oversized input to the image fallback rather than building a pathological OMML tree.
@@ -997,10 +985,8 @@ def latex_to_omath(
   parser = _Parser(_tokenize(latex), build, display)
   nodes = parser.parse_sequence(set())
   parser._skip_ws() # a trailing space token is not "leftover" content
-  if parser.pos < len(parser.toks):
-    raise MathConversionError(f"trailing tokens at {parser.pos}")
-  if not nodes:
-    raise MathConversionError("no content")
+  if parser.pos < len(parser.toks): raise MathConversionError(f"trailing tokens at {parser.pos}")
+  if not nodes: raise MathConversionError("no content")
   omath = _el("m:oMath")
   for n in nodes:
     omath.append(n)
@@ -1011,15 +997,16 @@ def latex_to_omath(
 _TAG_SPLIT_RE = re.compile(r"\\tag(\*?)\{([^{}]*)\}")
 
 def pop_tag(formula:str) -> tuple[str, str|None]:
-  r"""Split a `\tag{...}` out of a display formula.
+  r"""
+  Split a `\tag{...}` out of a display formula.
 
   Returns `(formula_without_tag, label)` -
   `label` is `(X1.1)` for `\tag`, bare for `\tag*`, `None` when there is no tag.
-  Neither engine typesets `\tag`; the renderer prints the label where the equation number goes.
+  Neither engine typesets `\tag`.
+  The renderer prints the label where the equation number goes.
   """
   m = _TAG_SPLIT_RE.search(formula)
-  if m is None:
-    return formula, None
+  if m is None: return formula, None
   label = m.group(2).strip()
   if not m.group(1):
     label = f"({label})"
@@ -1029,7 +1016,8 @@ def build_omath_para(
   latex:str, size_halfpt:int|None = None,
   color_hex:str|None = None, align:str = "center",
 ) -> "OxmlElement":
-  """Convert LaTeX to a display `<m:oMathPara>` (centered block equation).
+  """
+  Convert LaTeX to a display `<m:oMathPara>` (centered block equation).
 
   Wraps `latex_to_omath(display=True)` in an `<m:oMathPara>` with the given justification.
   Raises `MathConversionError` on unsupported input.
@@ -1050,21 +1038,24 @@ _TAG_RE = re.compile(r"\\tag\s*\{[^{}]*\}")
 _COLOR_RE = re.compile(r"\\(?:text)?color\s*\{[^{}]*\}")
 
 def _normalize_for_mathtext(latex:str) -> str:
-  """Strip a few common constructs matplotlib mathtext can't parse
+  """
+  Strip a few common constructs matplotlib mathtext can't parse
   so the image fallback succeeds instead of degrading to text.
-  Conservative: only removes wrappers, never changes the math meaning."""
+  Conservative: only removes wrappers, never changes the math meaning.
+  """
   s = latex
-  s = _BIG_DELIM_RE.sub("", s)  # `\big(` → `(`; mathtext sizes via `\left\right`
+  s = _BIG_DELIM_RE.sub("", s)  # `\big(` → `(`, as mathtext sizes via `\left\right`
   s = _CANCEL_RE.sub("", s)     # `\cancel{x}` → `{x}`
   s = _TAG_RE.sub("", s)        # drop `\tag{1}`
-  s = _COLOR_RE.sub("", s)      # `\color{red}{x}` → `{x}`; `\textcolor{red}{x}` → `{x}`
+  s = _COLOR_RE.sub("", s)      # `\color{red}{x}` → `{x}`, `\textcolor{red}{x}` → `{x}`
   return s
 
 def render_math_png(
   latex:str, fontsize_pt:float = 11,
   color:tuple = (0, 0, 0), fontset:str = "stix", dpi:int = 300,
 ):
-  """Render a formula to a transparent PNG via matplotlib mathtext.
+  """
+  Render a formula to a transparent PNG via matplotlib mathtext.
 
   Returns `(BytesIO, width_mm, height_mm, baseline_from_bottom_mm)`
   or `None` when matplotlib is unavailable or the formula fails to parse.
@@ -1076,8 +1067,7 @@ def render_math_png(
     matplotlib.use("Agg")
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_agg import FigureCanvasAgg
-  except ImportError:
-    return None
+  except ImportError: return None
   latex = _normalize_for_mathtext(latex)
   try:
     import matplotlib as mpl
@@ -1099,5 +1089,4 @@ def render_math_png(
       bbox_inches="tight", pad_inches=0.01, dpi=dpi)
     buf.seek(0)
     return buf, w_mm, h_mm, baseline_mm
-  except Exception:
-    return None
+  except Exception: return None

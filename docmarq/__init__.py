@@ -17,7 +17,7 @@ Example:
 
 #--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 __repo__ = "Xaeian/DocMarQ"
 __python__ = ">=3.10"
 __description__ = "DOCX generation library with fluent API"
@@ -34,7 +34,7 @@ __import_names__ = {"python-docx": "docx", "Pillow": "PIL"}
 
 from .constants import (
   Unit, PageSize, Align, Colors, Defaults,
-  A4, A3, A5, LETTER, LEGAL, EMU_PER_MM, EMU_PER_PT,
+  A4, A3, A5, LETTER, LEGAL, SLIDE, EMU_PER_MM, EMU_PER_PT,
 )
 from .styles import Style, TableStyle, Styles
 from .layout import PageGeometry
@@ -50,7 +50,7 @@ from .core import DOCX
 __all__ = [
   "DOCX", "register_fonts",
   "Unit", "PageSize", "Align", "Colors", "Defaults",
-  "A4", "A3", "A5", "LETTER", "LEGAL", "EMU_PER_MM", "EMU_PER_PT",
+  "A4", "A3", "A5", "LETTER", "LEGAL", "SLIDE", "EMU_PER_MM", "EMU_PER_PT",
   "Style", "TableStyle", "Styles",
   "PageGeometry",
   "Metadata", "Bookmark",

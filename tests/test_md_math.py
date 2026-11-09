@@ -1,6 +1,7 @@
 # tests/test_md_math.py
 
-"""Math (OMML): LaTeX→OMML converter structures + `md_to_docx` integration.
+"""
+Math (OMML): LaTeX→OMML converter structures + `md_to_docx` integration.
 
 Converter tests assert the right OMML structures appear
 and that unsupported input raises `MathConversionError`
@@ -171,8 +172,7 @@ def deep_nesting_terminates_without_other_error():
   deep = r"\frac{1}{" * 50 + "x" + "}" * 50
   try:
     latex_to_omath(deep)
-  except MathConversionError:
-    pass
+  except MathConversionError: pass
 
 #-------------------------------------------------------------------------- Integration: md_to_docx
 
@@ -291,7 +291,7 @@ def left_right_rejects_arbitrary_char():
     latex_to_omath(r"\left a x \right b")
 
 def nul_byte_sanitized_not_valueerror():
-  # Must not raise the low-level lxml ValueError; NUL is stripped.
+  # NUL is stripped rather than raising the low-level lxml ValueError.
   el = latex_to_omath("x\x00y")
   assert "\x00" not in "".join(t.text or "" for t in el.iter(qn("m:t")))
 

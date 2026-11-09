@@ -12,7 +12,8 @@ from .svg import svg_to_png_buffer, is_svg
 #--------------------------------------------------------------------------------------- Preprocess
 
 def preprocess_to_buffer(path:str):
-  """Open `path`, crop alpha-transparent borders, re-save as PNG into a `BytesIO`.
+  """
+  Open `path`, crop alpha-transparent borders, re-save as PNG into a `BytesIO`.
   Returns the buffer or `None` if Pillow / file unavailable.
 
   SVG inputs route through `svg_to_png_buffer` first
@@ -26,10 +27,8 @@ def preprocess_to_buffer(path:str):
   python-docx rejects JPEGs with non-standard APP segments (e.g. APP2 ICC profile);
   re-saving as PNG avoids that.
   """
-  if not os.path.isfile(path):
-    return None
-  if is_svg(path):
-    return svg_to_png_buffer(path)
+  if not os.path.isfile(path): return None
+  if is_svg(path): return svg_to_png_buffer(path)
   try:
     im = Image.open(path)
     if im.mode == "P":
@@ -44,8 +43,7 @@ def preprocess_to_buffer(path:str):
     im.save(buf, format="PNG")
     buf.seek(0)
     return buf
-  except (OSError, ValueError):
-    return None
+  except (OSError, ValueError): return None
 
 #---------------------------------------------------------------------------------- Picture offsets
 

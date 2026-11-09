@@ -22,14 +22,16 @@ from .structure import Metadata
 from .inline import RichSegment, _apply_run_format
 from .svg import svg_to_png_buffer, is_svg
 from .fields import page_fields
+from .images import pin_offsets
 from .tables import (
   apply_table_borders, apply_cell_shading, set_cell_align, repeat_header_row,
   set_cell_margins, set_cell_vertical_align, content_widths, set_table_widths,
+  TablePicture, CELL_LINE_SPACING,
 )
 
 # Language tags Word names a language by, for the codes of the presets.
 _LANG_TAGS = {"en": "en-US", "pl": "pl-PL", "de": "de-DE", "fr": "fr-FR", "es": "es-ES",
-  "it": "it-IT", "cs": "cs-CZ", "sk": "sk-SK"}
+  "it": "it-IT", "cs": "cs-CZ", "sk": "sk-SK", "pt": "pt-PT"}
 
 #------------------------------------------------------------------------------------------- Target
 
@@ -37,13 +39,14 @@ _LANG_TAGS = {"en": "en-US", "pl": "pl-PL", "de": "de-DE", "fr": "fr-FR", "es": 
 class _Target:
   """Where blocks go: the document body, or a table cell."""
   box: object # `Document` or `_Cell`, both with `add_paragraph` and `add_table`
-  width: float|None = None # mm, a cell's; `None` follows the page and its columns
+  width: float|None = None # mm, a cell's, or `None` to follow the page and its columns
   spare: object = None # empty paragraph the next block fills, as a fresh cell's first
 
 #--------------------------------------------------------------------------------------------- DOCX
 
 class DOCX:
-  """Main DOCX generator with fluent API.
+  """
+  Main DOCX generator with fluent API.
 
   A block of one's own, as the markdown engine and the document packages write theirs,
   starts with `enter()` and takes `new_para()` or `new_table()` at the end of the write target.
@@ -86,9 +89,9 @@ class DOCX:
     self._style.font_family = font_body
     self._style.font_size = body_size
     self._metadata = Metadata()
-    self._current_para = None # open paragraph; runs append here
+    self._current_para = None # open paragraph, where runs append
     self._num_ids: dict[int, int|None] = {} # list level → numbering instance
-    self._para_default_color = None # per-paragraph color override; reset on flush
+    self._para_default_color = None # per-paragraph color override, reset on flush
     self._last_space_after = 0 # pt - previous block's `space_after` (margin collapse)
     self._extra_block_after = 0 # pt - one-shot `space_before` bonus (see `track_block_spacing`)
     self._bookmark_id = 0
@@ -163,7 +166,8 @@ class DOCX:
   #--------------------------------------------------------------------------- Section / page setup
 
   def _override_heading_styles(self, font_body:str, font_head:str):
-    """Recolor Word's built-in `Heading 1..6` to the GitHub-light palette:
+    """
+    Recolor Word's built-in `Heading 1..6` to the GitHub-light palette:
     near-black text, thin bottom rule on h1/h2.
     `font.color.rgb` pins the color so it holds regardless of the theme.
 
@@ -178,8 +182,7 @@ class DOCX:
     for i, size_pt in enumerate(Defaults.HEAD_SIZES, start=1):
       try:
         st = self._doc.styles[f"Heading {i}"]
-      except KeyError:
-        continue
+      except KeyError: continue
       st.font.color.rgb = near_black
       st.font.name = font_head
       # `st.font.name` sets only `ascii`/`hAnsi` and leaves the theme refs,
@@ -193,8 +196,7 @@ class DOCX:
     # Pin `Normal` body font too, across all script ranges.
     try:
       _force_font(self._doc.styles["Normal"], font_body)
-    except KeyError:
-      pass
+    except KeyError: pass
 
   def heading_style(
     self, level:int,
@@ -212,8 +214,7 @@ class DOCX:
     """
     try:
       st = self._doc.styles[f"Heading {level}"]
-    except KeyError:
-      return self
+    except KeyError: return self
     if size is not None:
       st.font.size = Pt(size)
       # Tighter leading for display sizes: 1.15 at body, → 1.0 at 24pt+.
@@ -266,7 +267,8 @@ class DOCX:
 
   def columns(self, count:int, gap:float=8) -> "DOCX":
     """
-    Set the blocks that follow in `count` columns `gap` apart; `columns(1)` returns to one.
+    Set the blocks that follow in `count` columns `gap` apart.
+    `columns(1)` returns to one.
 
     Each change starts a continuous section, so the text runs on down the same page.
     Word balances the columns of a section that such a break ends, so they finish level.
@@ -345,7 +347,8 @@ class DOCX:
     self, family:str|None = None, size:float|None = None,
     mode:str|None = None,
   ) -> "DOCX":
-    """Set default font for subsequent runs.
+    """
+    Set default font for subsequent runs.
 
     `mode` takes the modes of `pdfmarq`: `Regular`, `Bold`, `Italic` or `BoldItalic`.
     It sets the `bold` and `italic` flags.
@@ -388,13 +391,12 @@ class DOCX:
     for i in range(1, 7):
       try:
         no_hyphens(self._doc.styles[f"Heading {i}"].element)
-      except KeyError:
-        continue
+      except KeyError: continue
     self._hyphenate = True
     return self
 
   def keep_words(self, p):
-    """Keep the words of paragraph `p` whole under `hyphenation()`; without it there is no need."""
+    """Keep the words of paragraph `p` whole while `hyphenation()` is on."""
     if self._hyphenate: no_hyphens(p._p)
 
   #----------------------------------------------------------------------------------- Write target
@@ -458,7 +460,8 @@ class DOCX:
     self, text:str|None = None, style:str|None = None,
     align:str|None = None,
   ) -> "DOCX":
-    """Start a new paragraph. Closes any previous active paragraph.
+    """
+    Start a new paragraph. Closes any previous active paragraph.
 
     Args:
       text: Optional initial text run.
@@ -476,7 +479,8 @@ class DOCX:
     return self
 
   def text(self, content:str, **seg_kwargs) -> "DOCX":
-    """Add a styled run to the current paragraph.
+    """
+    Add a styled run to the current paragraph.
     Auto-creates a paragraph if none active.
     Kwargs match `RichSegment` fields (`bold`, `italic`, `code`, `color`, `link_url`, etc.).
     """
@@ -487,8 +491,10 @@ class DOCX:
     return self
 
   def link(self, content:str, url:str|None=None, target:str|None=None) -> "DOCX":
-    """Add a hyperlink run.
-    Either `url` for external link or `target` for internal bookmark name."""
+    """
+    Add a hyperlink run.
+    Either `url` for external link or `target` for internal bookmark name.
+    """
     if self._current_para is None:
       self.para()
     self._add_hyperlink(self._current_para, content, url=url, target=target)
@@ -529,7 +535,8 @@ class DOCX:
     self._para_default_color = None
 
   def apply_para_spacing(self, p):
-    """Apply line-height and before/after spacing with CSS-style margin collapse.
+    """
+    Apply line-height and before/after spacing with CSS-style margin collapse.
     Word SUMS adjacent paragraph margins (CSS takes the max),
     so `space_before` is shrunk by the previous block's `space_after`
     to land a gap of `max(prev_after, declared_before)`.
@@ -555,7 +562,8 @@ class DOCX:
     return val
 
   def track_block_spacing(self, after_pt:float, extra_for_next:float=0):
-    """Record this block's `space_after` (for collapse against the next paragraph)
+    """
+    Record this block's `space_after` (for collapse against the next paragraph)
     plus an optional one-shot `space_before` bonus for it.
 
     Tables and lists set `extra_for_next`: their inner paragraphs use `space_after=0`,
@@ -567,15 +575,15 @@ class DOCX:
 
   @staticmethod
   def _style_owns_font(p) -> bool:
-    """True when the paragraph style carries its own font.
+    """
+    True when the paragraph style carries its own font.
 
     Runs appended to such a paragraph inherit family, size and color from the style;
     writing body values onto them would show a heading in body type.
     """
     try:
       name = p.style.name or ""
-    except Exception:
-      return False
+    except Exception: return False
     return name.startswith("Heading") or name in ("Title", "Subtitle")
 
   def _add_run(self, p, seg:RichSegment):
@@ -633,7 +641,8 @@ class DOCX:
     space_before:float|None = None,
     space_after:float|None = None,
   ) -> "DOCX":
-    """Add a heading using Word's built-in `Heading 1..9` styles (TOC-aware).
+    """
+    Add a heading using Word's built-in `Heading 1..9` styles (TOC-aware).
     Leaves `_current_para` set so `text()` can append rich inline runs.
     `space_before` and `space_after` in pt replace the gaps of the level.
     `space_before` is recomputed for margin collapse against the previous block.
@@ -654,7 +663,8 @@ class DOCX:
   #------------------------------------------------------------------------------------------ Lists
 
   def bullet(self, text:str|None=None, level:int=0) -> "DOCX":
-    """Bullet list item. Uses built-in `List Bullet` / `List Bullet 2..3` styles.
+    """
+    Bullet list item. Uses built-in `List Bullet` / `List Bullet 2..3` styles.
 
     For multi-level numbering with custom formats,
     define a numbering style via `doc.doc.styles` directly - this method covers the 99% case.
@@ -663,7 +673,8 @@ class DOCX:
     style_name = "List Bullet" if level == 0 else f"List Bullet {level + 1}"
     p = self.new_para(text or "", style=self._known_style(style_name, "List Bullet"))
     self._tighten_list_spacing(p)
-    # Items pack tight (0/0); the last one needs air before the next block.
+    # Items pack tight (0/0).
+    # The last one needs air before the next block.
     # Which item is last isn't known yet, so every item parks the bonus -
     # only a following non-list paragraph consumes it (list items bypass it).
     self.track_block_spacing(0, extra_for_next=4)
@@ -675,7 +686,8 @@ class DOCX:
     start:int|None = None,
     delim:str = ".",
   ) -> "DOCX":
-    """Ordered list item. Uses built-in `List Number` / `List Number 2..3`.
+    """
+    Ordered list item. Uses built-in `List Number` / `List Number 2..3`.
 
     `start` opens a new list counted from that number;
     items that follow without it continue the same list.
@@ -700,7 +712,8 @@ class DOCX:
     return self
 
   def _style_abstract_num(self, style_name:str):
-    """`(numbering_element, abstractNumId)` behind a list style, or `None`.
+    """
+    `(numbering_element, abstractNumId)` behind a list style, or `None`.
 
     `None` covers every way the lookup can come up empty:
     a document with no numbering part, a style without `numPr`,
@@ -710,18 +723,16 @@ class DOCX:
       numbering = self._doc.part.numbering_part.element
       pPr = self._doc.styles[style_name].element.find(qn("w:pPr"))
       src_id = pPr.find(qn("w:numPr")).find(qn("w:numId")).get(qn("w:val"))
-    except Exception:
-      return None
+    except Exception: return None
     for num in numbering.findall(qn("w:num")):
-      if num.get(qn("w:numId")) != src_id:
-        continue
+      if num.get(qn("w:numId")) != src_id: continue
       abstract = num.find(qn("w:abstractNumId"))
-      if abstract is not None:
-        return numbering, abstract.get(qn("w:val"))
+      if abstract is not None: return numbering, abstract.get(qn("w:val"))
     return None
 
   def _fresh_num_id(self, style_name:str, start:int, delim:str=".") -> int|None:
-    """New numbering instance cloned from `style_name`, counting from `start`.
+    """
+    New numbering instance cloned from `style_name`, counting from `start`.
 
     `w:numId` is what Word counts by, so lists sharing one instance run as a single sequence.
     A new instance pointing at the same abstract definition keeps the look
@@ -731,8 +742,7 @@ class DOCX:
     A `delim` other than `.` overrides the level with a copy that prints it.
     """
     found = self._style_abstract_num(style_name)
-    if found is None:
-      return None
+    if found is None: return None
     numbering, abstract_id = found
     taken = [int(n.get(qn("w:numId"))) for n in numbering.findall(qn("w:num"))]
     new_id = max(taken, default=0) + 1
@@ -769,7 +779,8 @@ class DOCX:
     num_el.set(qn("w:val"), str(num_id))
 
   def _known_style(self, wanted:str, fallback:str) -> str:
-    """`wanted` when the document defines that style, else `fallback`.
+    """
+    `wanted` when the document defines that style, else `fallback`.
 
     Word ships `List Bullet 2..3` but not deeper levels, and the built-in set varies by template,
     so the level a caller asks for is checked rather than assumed.
@@ -777,8 +788,7 @@ class DOCX:
     try:
       self._doc.styles[wanted]
       return wanted
-    except KeyError:
-      return fallback
+    except KeyError: return fallback
 
   def _tighten_list_spacing(self, p):
     """Override Word's loose default list spacing - keep items packed."""
@@ -795,7 +805,8 @@ class DOCX:
     border_color:tuple|str = (0.82, 0.84, 0.87),
     font_family:str = "Consolas", font_size:float = 9,
   ) -> "DOCX":
-    """Insert a fenced code block - monospace font, light grey background, thin border.
+    """
+    Insert a fenced code block - monospace font, light grey background, thin border.
     `language` is accepted but not used (no syntax highlight).
     """
     self._flush_para()
@@ -824,7 +835,8 @@ class DOCX:
     indent:float = 4,
     space_before:float = 3, space_after:float = 3,
   ) -> "DOCX":
-    """Insert a blockquote paragraph - thick left border, muted text, indent.
+    """
+    Insert a blockquote paragraph - thick left border, muted text, indent.
 
     For multi-paragraph blockquotes / callouts pass `space_before=0` on middle/last paragraphs
     and `space_after=0` on first/middle ones
@@ -862,17 +874,18 @@ class DOCX:
 
   def table(
     self,
-    body:list[list[str]],
-    header:list[str]|None = None,
+    body:list[list[str|TablePicture]],
+    header:list[str|TablePicture]|None = None,
     aligns:list[str]|None = None,
     widths:list[float]|None = None, # mm per column
     style:TableStyle|None = None,
     word_style:str|None = None, # built-in Word table style name
   ) -> "DOCX":
-    """Add a table.
+    """
+    Add a table.
 
     Args:
-      body: List of rows (each row a list of cell strings).
+      body: List of rows, each a list of cell strings, or of a `TablePicture` for a picture.
       header: Optional header row.
       aligns: Per-column alignment - `L`/`R`/`C`/`J`.
       widths: Per-column widths in mm.
@@ -883,8 +896,7 @@ class DOCX:
     """
     self._flush_para()
     rows = ([header] if header else []) + (body or [])
-    if not rows:
-      return self
+    if not rows: return self
     ncols = max(len(r) for r in rows)
     tbl = self.new_table(len(rows), ncols)
     if word_style:
@@ -930,14 +942,14 @@ class DOCX:
     if style.table_align:
       tbl.alignment = {"L": WD_TABLE_ALIGNMENT.LEFT, "C": WD_TABLE_ALIGNMENT.CENTER,
         "R": WD_TABLE_ALIGNMENT.RIGHT}.get(style.table_align, WD_TABLE_ALIGNMENT.LEFT)
+    def room(j:int) -> float:
+      """mm of content in column `j`, which a picture scales down to fit."""
+      return (col_w_mm[j] if col_w_mm else self.content_width / ncols) - 2 * style.cell_pad_h
     if header:
       head_row = tbl.rows[0]
       for j, txt in enumerate(header):
         cell = head_row.cells[j]
-        cell.text = "" # clear placeholder
-        p = cell.paragraphs[0]
-        run = p.add_run(txt)
-        run.font.size = Pt(eff_size_pt)
+        run = self._cell_run(cell, txt, eff_size_pt, room(j))
         if style.header_bold:
           run.bold = True
         if style.header_color is not None:
@@ -956,12 +968,9 @@ class DOCX:
       tr = tbl.rows[body_start + i]
       bg = style.row_bg_odd if i % 2 else style.row_bg_even
       for j, txt in enumerate(row):
-        if j >= len(tr.cells):
-          break
+        if j >= len(tr.cells): break
         cell = tr.cells[j]
-        cell.text = "" # clear placeholder
-        body_run = cell.paragraphs[0].add_run(str(txt))
-        body_run.font.size = Pt(eff_size_pt)
+        self._cell_run(cell, txt, eff_size_pt, room(j))
         if bg is not None:
           apply_cell_shading(cell, bg)
         set_cell_margins(cell, top=style.cell_pad_top, right=style.cell_pad_h,
@@ -974,15 +983,32 @@ class DOCX:
     self.track_block_spacing(0, extra_for_next=6)
     return self
 
+  def _cell_run(self, cell, value, size_pt:float, room:float):
+    """
+    The run holding `value` in `cell`, emptied of its placeholder first:
+    text at `size_pt`, or a `TablePicture` scaled down to fit `room` mm.
+    """
+    cell.text = ""
+    run = cell.paragraphs[0].add_run()
+    if isinstance(value, TablePicture):
+      scale = min(1.0, room / value.width) if value.width > 0 else 1.0
+      run.add_picture(value.source, width=Mm(value.width * scale), height=Mm(value.height * scale))
+      pin_offsets(run)
+    else:
+      run.text = str(value)
+      run.font.size = Pt(size_pt)
+    return run
+
   def _tighten_cell_paras(self, cell):
-    """Strip the `Normal` style's `space_after` from cell paragraphs -
+    """
+    Strip the `Normal` style's `space_after` from cell paragraphs -
     else every cell carries phantom padding and rows look bottom-heavy.
     """
     for p in cell.paragraphs:
       pf = p.paragraph_format
       pf.space_before = Pt(0)
       pf.space_after = Pt(0)
-      pf.line_spacing = 1.15
+      pf.line_spacing = CELL_LINE_SPACING
       self.keep_words(p)
 
   #----------------------------------------------------------------------------------------- Images
@@ -991,7 +1017,8 @@ class DOCX:
     self, path:str, width:float|None = None, height:float|None = None,
     align:str|None = None,
   ) -> "DOCX":
-    """Insert an image. Width/height in current unit (mm by default).
+    """
+    Insert an image. Width/height in current unit (mm by default).
     Provide only `width` for proportional scaling.
 
     SVG sources are rasterized first - `python-docx` reads raster formats only.
@@ -1027,7 +1054,8 @@ class DOCX:
   #-------------------------------------------------------------------------------------- Bookmarks
 
   def bookmark(self, name:str) -> "DOCX":
-    """Mark a bookmark anchor at the current point (zero-width range).
+    """
+    Mark a bookmark anchor at the current point (zero-width range).
     Use `link(..., target=name)` to jump here from another spot.
     """
     if self._current_para is None:
@@ -1074,7 +1102,8 @@ class DOCX:
   #-------------------------------------------------------------------------------- Headers/footers
 
   def header(self, text:str|None=None, align:str|None=None) -> "DOCX":
-    """Set the header text of the last section, which the sections `columns()` opens share.
+    """
+    Set the header text of the last section, which the sections `columns()` opens share.
     For richer headers use `doc.doc.sections[0].header` directly.
     """
     sec = self._doc.sections[-1]
@@ -1087,7 +1116,8 @@ class DOCX:
     self, text:str|None = None, align:str|None = None,
     page_number:bool = False,
   ) -> "DOCX":
-    """Set the footer text of the last section, which the sections `columns()` opens share.
+    """
+    Set the footer text of the last section, which the sections `columns()` opens share.
 
     Args:
       text: Static footer content. Use `{page}` / `{pages}` for field codes.
@@ -1180,7 +1210,8 @@ _SETTINGS_ORDER = (
   "doNotEmbedSmartTags", "decimalSymbol", "listSeparator",
 )
 
-# CT_Compat child sequence, up to `doNotExpandShiftReturn`; the options after it rank last.
+# CT_Compat child sequence, up to `doNotExpandShiftReturn`.
+# The options after it rank last.
 _COMPAT_ORDER = (
   "useSingleBorderforContiguousCells", "wpJustification", "noTabHangInd", "noLeading",
   "spaceForUL", "noColumnBalance", "balanceSingleByteDoubleByteWidth", "noExtraLineSpacing",
@@ -1233,7 +1264,10 @@ def _child(parent, tag:str, first:bool=False, after:tuple=()):
   return el
 
 def _lang_tag(lang:str) -> str:
-  """Language tag Word names `lang` by: `pl` → `pl-PL`; a tag with a region passes through."""
+  """
+  Language tag Word names `lang` by: `pl` → `pl-PL`.
+  A tag with a region passes through.
+  """
   return _LANG_TAGS.get(lang.lower(), lang.replace("_", "-"))
 
 def mark_language(element, lang:str):
@@ -1289,7 +1323,8 @@ def _set_pbdr(
   element, hex_color:str, sides:tuple = _BORDER_SIDES_ALL,
   size_eighths:int = 4, space:int = 1, val:str = "single",
 ):
-  """Set paragraph borders on a paragraph or style element via `<w:pBdr>`.
+  """
+  Set paragraph borders on a paragraph or style element via `<w:pBdr>`.
   Works on both `<w:p>` and `<w:style>` since both expose `get_or_add_pPr()`.
 
   Args:
@@ -1325,7 +1360,8 @@ def _clear_border(element, side:str):
   if len(pBdr) == 0: pPr.remove(pBdr)
 
 def _force_font(style, font_name:str):
-  """Strip theme font references on a style and pin `font_name` for every script range.
+  """
+  Strip theme font references on a style and pin `font_name` for every script range.
   Office's `majorHAnsi` theme font resolves to Calibri Light,
   and some renderers prefer the theme ref over the direct `ascii` font.
   """

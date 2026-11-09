@@ -8,7 +8,8 @@ from .constants import Defaults, Align
 
 @dataclass
 class Style:
-  """Run/paragraph style. `None` values inherit from parent when merged.
+  """
+  Run/paragraph style. `None` values inherit from parent when merged.
 
   `font_mode` covers Bold/Italic/BoldItalic via separate flags below,
   for cleaner toggling in inline runs.
@@ -26,10 +27,10 @@ class Style:
   space_before: float|None = None # pt
   space_after: float|None = None # pt
   highlight: str|None = None # named highlight color: yellow/green/cyan/...
-  # Inline `code` runs; `None` falls back to `Defaults.CODE_*`.
+  # Inline `code` runs, `None` falling back to `Defaults.CODE_*`.
   # The markdown renderer feeds these from `MarkdownStyle`.
   code_family: str|None = None
-  code_size: float|None = None # pt; `None` → `CODE_SIZE_RATIO` of body size
+  code_size: float|None = None # pt, `None` → `CODE_SIZE_RATIO` of body size
   code_color: tuple|str|None = None
   code_bg: tuple|str|None = None
 
@@ -71,7 +72,8 @@ class Style:
 
 @dataclass
 class TableStyle:
-  """Table-specific styling.
+  """
+  Table-specific styling.
   Defaults are the GitHub-light palette:
   light grey header, near-imperceptible zebra, light grey borders.
 

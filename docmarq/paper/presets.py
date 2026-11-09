@@ -14,7 +14,8 @@ from .style import PaperStyle
 
 #------------------------------------------------------------------------------------------ Presets
 
-# Banner labels per language; English is the `PaperStyle` default.
+# Banner labels per language.
+# English is the `PaperStyle` default.
 _LABELS: dict[str, dict] = {
   "pl": {
     "banner_label_author": "Autor",
@@ -50,6 +51,11 @@ _LABELS: dict[str, dict] = {
     "banner_label_author": "Autor",
     "banner_label_created": "Vytvorené",
     "banner_label_updated": "Aktualizované",
+  },
+  "pt": {
+    "banner_label_author": "Autor",
+    "banner_label_created": "Criado",
+    "banner_label_updated": "Atualizado",
   },
 }
 

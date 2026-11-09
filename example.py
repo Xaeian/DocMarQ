@@ -9,7 +9,7 @@ Showcases:
   - Word-native fonts (no font registration needed)
   - `link_root` for cross-document references in the rendered DOCX
   - `base_dir` so relative image paths in the markdown resolve correctly
-  - YAML frontmatter → page-1 banner (content only; chrome comes from `style`)
+  - YAML frontmatter → page-1 banner (content only: chrome comes from `style`)
 """
 import sys
 from docmarq.paper import md_to_docx, lang_style

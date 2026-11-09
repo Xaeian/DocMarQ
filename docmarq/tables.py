@@ -7,11 +7,13 @@ Column widths come from content, HTML-style, and go out as a fixed layout:
 Word's own autofit lays a table out differently in every renderer.
 The rest is what Word doesn't hand us: zebra striping, header shading, borders, cell padding.
 """
+from dataclasses import dataclass
+from typing import NamedTuple
 from docx.shared import Mm
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from docx.enum.table import WD_ALIGN_VERTICAL
-from .constants import DXA_PER_MM
+from .constants import DXA_PER_MM, MM_TO_PT
 from .utils import color_hex, align_to_docx
 from .metrics import text_width_mm
 
@@ -21,8 +23,27 @@ from .metrics import text_width_mm
 # Without this room, a word given exactly its measured width could still break.
 _FIT_SLACK_MM = 0.3
 
+CELL_LINE_SPACING = 1.15 # line spacing of the text in a cell, in lines
+
+# How much smaller than the text beside it a column of pictures stays, as pdfmarq's default.
+_IMAGE_BALANCE_BIAS = 0.7
+
+@dataclass
+class TablePicture:
+  """
+  A picture a table cell holds instead of text, for `DOCX.table`.
+  `source` is a path or a buffer of PNG bytes, and `width` by `height` mm its size,
+  scaled down to fit a narrower column.
+  `low` and `high` are the narrowest and widest it lets its column be, padding aside.
+  """
+  source: object
+  width: float
+  height: float
+  low: float
+  high: float
+
 def content_widths(
-  rows:list[list[str]], total:float, pad:float,
+  rows:list[list], total:float, pad:float,
   family:str, size_pt:float,
   bold_rows:int = 0,
 ) -> list[float]:
@@ -31,22 +52,31 @@ def content_widths(
 
   A column's min is its widest word, its max its longest line, both with `pad` a side.
   The first `bold_rows` rows measure bold, as a header does.
+  A `TablePicture` asks for the range it carries,
+  and a column of pictures alone trades width with the text beside it, as in pdfmarq.
   """
   ncols = max(len(row) for row in rows)
-  col_min, col_max = [0.0] * ncols, [0.0] * ncols
-  for r, row in enumerate(rows):
-    bold = r < bold_rows
-    for c, cell in enumerate(row):
-      for line in str(cell).split("\n"):
-        col_max[c] = max(col_max[c], text_width_mm(line, family, size_pt, bold))
-        for word in line.split():
-          col_min[c] = max(col_min[c], text_width_mm(word, family, size_pt, bold))
-  edge = 2 * pad + _FIT_SLACK_MM
-  col_min = [w + edge for w in col_min]
-  col_max = [w + edge for w in col_max]
-  return _fit_columns(col_min, col_max, total, list(range(ncols)))
+  asks = [[_ask(cell, family, size_pt, r < bold_rows) for cell in row]
+    for r, row in enumerate(rows)]
+  line_h = size_pt * CELL_LINE_SPACING / MM_TO_PT
+  # the slack splits between the two sides of a column
+  widths, _ = _layout_columns(asks, ncols, total, pad + _FIT_SLACK_MM / 2, line_h,
+    _IMAGE_BALANCE_BIAS)
+  return widths
 
-# `_fit_columns` and `_cap_widths` are vendored from `pdfmarq.md.md_table` on purpose:
+def _ask(cell, family:str, size_pt:float, bold:bool) -> "_Cell":
+  """What `cell` asks of its column: a picture its range, text its widest word and longest line."""
+  if isinstance(cell, TablePicture):
+    return _Cell(cell.low, cell.high, True, cell.height / cell.width if cell.width > 0 else None)
+  low = high = 0.0
+  for line in str(cell).split("\n"):
+    high = max(high, text_width_mm(line, family, size_pt, bold))
+    for word in line.split():
+      low = max(low, text_width_mm(word, family, size_pt, bold))
+  return _Cell(low, high)
+
+# `_fit_columns`, `_cap_widths` and the column layout under them
+# are vendored from `pdfmarq.md.md_table` on purpose:
 # both packages lay the same markdown out alike, and a cross-lib test keeps the copies equal.
 
 def _fit_columns(
@@ -82,11 +112,144 @@ def _cap_widths(widths:list[float], total:float) -> list[float]:
   left = len(widths)
   for w in sorted(widths):
     cap = remaining / left
-    if w >= cap:
-      return [min(x, cap) for x in widths]
+    if w >= cap: return [min(x, cap) for x in widths]
     remaining -= w
     left -= 1
   return list(widths)
+
+class _Cell(NamedTuple):
+  """
+  What one cell asks of its column, in mm of content:
+  `low` the narrowest it fits in, `high` the widest it would use.
+  An image cell sets `image`, and `aspect`, its height over width, where it is known.
+  """
+  low: float
+  high: float
+  image: bool = False
+  aspect: float|None = None
+
+def _layout_columns(
+  rows:list[list[_Cell]], ncols:int, total:float, pad:float,
+  line_h:float, bias:float,
+) -> tuple[list[float], list[float]]:
+  """
+  HTML-style auto layout of the cells of `rows`, `pad` a side: `(col_widths, text_widths)` in mm.
+
+  Text and image contributions are tracked separately per column,
+  so an image-only row cannot pin the column max below what the text rows need.
+  Spare room goes to text columns only: growing an image column inflates its images.
+  A squeeze shrinks image columns too, and their `low` floors them at icon scale.
+  `_balance_image_cols` then trades width between a pure image column and a text one,
+  `line_h` being a text line's height and `bias` how much smaller than the text an image stays.
+  """
+  col_min_text = [0.0] * ncols
+  col_max_text = [0.0] * ncols
+  col_min_img = [0.0] * ncols
+  col_max_img = [0.0] * ncols
+  has_text = [False] * ncols
+  has_image = [False] * ncols
+  for cells in rows:
+    for i, cell in enumerate(cells[:ncols]):
+      if cell.image:
+        if cell.low > col_min_img[i]: col_min_img[i] = cell.low
+        if cell.high > col_max_img[i]: col_max_img[i] = cell.high
+        has_image[i] = True
+      else:
+        if cell.low > col_min_text[i]: col_min_text[i] = cell.low
+        if cell.high > col_max_text[i]: col_max_text[i] = cell.high
+        has_text[i] = True
+  col_min: list[float] = []
+  col_max: list[float] = []
+  for i in range(ncols):
+    cmin = max(col_min_img[i], col_min_text[i])
+    if has_text[i]:
+      cmax = max(col_max_text[i], col_min_img[i]) # text width, floored at image min
+    else:
+      cmax = col_max_img[i]
+    col_min.append(cmin)
+    col_max.append(cmax)
+  col_min = [m + 2 * pad for m in col_min]
+  col_max = [m + 2 * pad for m in col_max]
+  text_cols = [i for i in range(ncols) if not has_image[i]]
+  col_widths = _fit_columns(col_min, col_max, total, text_cols)
+  text_widths = [max(1.0, cw - 2 * pad) for cw in col_widths]
+  return _balance_image_cols(col_widths, text_widths, rows, has_image, has_text,
+    ncols, pad, col_min, line_h, bias)
+
+def _balance_image_cols(
+  col_widths:list[float],
+  text_width_mm:list[float],
+  rows:list[list[_Cell]],
+  is_image_col:list[bool],
+  has_text:list[bool],
+  ncols:int,
+  h_pad:float,
+  col_min:list[float],
+  line_h_mm:float,
+  bias:float,
+) -> tuple[list[float], list[float]]:
+  """
+  Reflow widths so a pure-image col's height matches its widest text-col partner.
+  Mixed cols (both image and text rows) are skipped -
+  they need full text width and balancing would truncate text.
+
+  Per image col `i` paired with text col `j`:
+    image_h(w_i) = w_text_i × aspect_mean
+    text_h(w_j)  ≈ K / w_text_j  (K = total_text_w × line_h)
+  Budget constraint: w_i + w_j = const.
+  Equating heights yields a quadratic in w_i.
+  """
+  if not any(is_image_col) or ncols < 2: return col_widths, text_width_mm
+  for ic in range(ncols):
+    if not is_image_col[ic]: continue
+    if has_text[ic]: continue # mixed col: text rows need full width
+    aspects = [row[ic].aspect for row in rows
+      if ic < len(row) and row[ic].image and row[ic].aspect is not None]
+    if not aspects: continue
+    aspect = sum(aspects) / len(aspects)
+    # Partner: widest non-image col (donor for width redistribution)
+    partners = [j for j in range(ncols) if j != ic and not is_image_col[j]]
+    if not partners: continue
+    tc = max(partners, key=lambda j: col_widths[j])
+    # K = text char-area of the widest row (total_text_w × line_h)
+    K = 0.0
+    for row in rows:
+      if tc >= len(row) or row[tc].image: continue
+      k = row[tc].high * line_h_mm
+      if k > K: K = k
+    if K <= 0: continue
+    # bias < 1 targets image_h = text_h × bias (smaller image for short text);
+    # equivalent to inflating K by 1/bias².
+    K = K / (bias ** 2)
+    budget = col_widths[ic] + col_widths[tc]
+    pad2 = 2 * h_pad
+    # Work in text widths directly: budget_text = (w_i + w_j) − 4·h_pad
+    budget_text = budget - 2 * pad2
+    if budget_text <= 0: continue
+    # quadratic: aspect·w_i² − aspect·budget_text·w_i + K = 0
+    a = aspect
+    b = -aspect * budget_text
+    c = K
+    disc = b*b - 4*a*c
+    if disc < 0:
+      # Text dominates, so the image takes its minimum width.
+      w_i_text = max(col_min[ic] - pad2, 1.0)
+    else:
+      w_i_text = (-b - disc**0.5) / (2 * a) # smaller root keeps image narrower
+    img_min_text = col_min[ic] - pad2
+    img_max_text = col_widths[ic] - pad2 # don't exceed linear-solver result
+    img_max_text = max(img_max_text, budget_text * 0.45) # allow growth for heavy text
+    w_i_text = max(img_min_text, min(w_i_text, img_max_text))
+    w_j_text = budget_text - w_i_text
+    partner_min_text = col_min[tc] - pad2 # partner must not shrink below its min
+    if w_j_text < partner_min_text:
+      w_j_text = partner_min_text
+      w_i_text = budget_text - w_j_text
+    col_widths[ic] = w_i_text + pad2
+    col_widths[tc] = w_j_text + pad2
+    text_width_mm[ic] = max(1.0, w_i_text)
+    text_width_mm[tc] = max(1.0, w_j_text)
+  return col_widths, text_width_mm
 
 #----------------------------------------------------------------------------------- Border helpers
 
@@ -97,7 +260,8 @@ _AFTER_BORDERS = ("w:shd", "w:tblLayout", "w:tblCellMar", "w:tblLook", "w:tblCap
   "w:tblDescription", "w:tblPrChange")
 
 def apply_table_borders(table, color:tuple|str, size_pt:float, sides:tuple=_BORDER_SIDES):
-  """Apply uniform borders to a table.
+  """
+  Apply uniform borders to a table.
 
   Args:
     table: `python-docx` `Table`.
@@ -126,7 +290,8 @@ def apply_table_borders(table, color:tuple|str, size_pt:float, sides:tuple=_BORD
     b.set(qn("w:color"), hex_color)
 
 def remove_table_borders(table):
-  """Strip all borders from a table (set every side to `val='none'`).
+  """
+  Strip all borders from a table (set every side to `val='none'`).
   Useful for layout tables - 1xN borderless grids
   used to position content side-by-side (banner logo + text) without visible structure.
   """
@@ -175,7 +340,8 @@ def repeat_header_row(row):
 #----------------------------------------------------------------------------- Cell margins / align
 
 def set_cell_margins(cell, top:float=0, right:float=0, bot:float=0, left:float=0):
-  """Set internal cell padding in mm via raw `<w:tcMar>`.
+  """
+  Set internal cell padding in mm via raw `<w:tcMar>`.
   Uses canonical `left` / `right` rather than bidi `start` / `end` for renderer compatibility
   (OnlyOffice in particular only honors the former).
   """
@@ -204,7 +370,8 @@ def set_cell_vertical_align(cell, align:str="center"):
 #-------------------------------------------------------------------------------------- Table width
 
 def set_table_widths(tbl, col_widths_mm:list[float], left_pad_mm:float=0):
-  """Anchor a table's total/per-column widths and left edge via raw XML.
+  """
+  Anchor a table's total/per-column widths and left edge via raw XML.
 
   `<w:tblPr>` children must be in canonical schema order
   (`tblW → jc → tblInd → tblBorders → tblLayout → tblCellMar → tblLook`);

@@ -131,7 +131,8 @@ def hyphenation_sets_the_language_and_spares_headings(doc):
   assert not root.xpath("//w:p[.//w:t='tekst']/w:pPr/w:suppressAutoHyphens", namespaces=NS)
 
 def justified_line_ending_in_a_break_stays_flush_left(doc):
-  # Word stretches it unless its compatibility option says otherwise; pdfmarq leaves it ragged
+  # Word stretches it unless its compatibility option says otherwise.
+  # pdfmarq leaves it ragged.
   doc.para("one").save()
   compat = docx_xml(doc.path, "word/settings.xml").xpath("w:compat", namespaces=NS)[0]
   assert [el.tag.split("}")[1] for el in compat][:2] == ["doNotExpandShiftReturn", "useFELayout"]

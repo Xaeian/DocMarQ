@@ -48,7 +48,8 @@ def _text_loader():
   return TextLoader
 
 def peek_frontmatter(md_text:str) -> dict|None:
-  """Lightweight YAML frontmatter parse without markdown rendering.
+  """
+  Lightweight YAML frontmatter parse without markdown rendering.
   Returns the parsed dict or `None` if no frontmatter / parse failure.
   Public so a caller can read a document's content keys and decide how to render it.
   The library itself never derives form from them.
@@ -58,8 +59,7 @@ def peek_frontmatter(md_text:str) -> dict|None:
   try:
     data = read_yaml(m.group(1))
     return data if isinstance(data, dict) else None
-  except Exception:
-    return None
+  except Exception: return None
 
 def split_frontmatter(md_text:str, warn:bool=True, strict:bool=False) -> tuple[dict, str]:
   """
@@ -69,7 +69,8 @@ def split_frontmatter(md_text:str, warn:bool=True, strict:bool=False) -> tuple[d
   A block that parses to a scalar or a list is a document opening with a horizontal rule,
   so the text is handed back whole - everything down to the next `---` is ordinary content.
   A block that looks like frontmatter but does not parse is dropped with a warning,
-  since it was meant as metadata; `warn=False` drops it quietly, for text read a second time.
+  since it was meant as metadata.
+  `warn=False` drops it quietly, for text read a second time.
   `strict=True` raises instead, for a template that must not lose its header:
   `ValueError` for a block that does not parse, `ModuleNotFoundError` without PyYAML.
   """

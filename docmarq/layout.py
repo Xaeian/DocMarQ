@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 @dataclass
 class PageGeometry:
-  """Page dimensions and margins in mm. Maps 1:1 to a Word section.
+  """
+  Page dimensions and margins in mm. Maps 1:1 to a Word section.
 
   Word stores margins per-section (top/right/bot/left),
   plus header/footer distances from page edge.
@@ -34,11 +35,15 @@ class PageGeometry:
     return self.height - self.margin_top - self.margin_bot
 
   def effective_header_dist(self) -> float:
-    """Distance from page top to header content in mm.
-    Defaults to half the top margin when `header_dist` is unset (chrome midline convention)."""
+    """
+    Distance from page top to header content in mm.
+    Defaults to half the top margin when `header_dist` is unset (chrome midline convention).
+    """
     return self.header_dist if self.header_dist is not None else self.margin_top / 2
 
   def effective_footer_dist(self) -> float:
-    """Distance from page bottom to footer content in mm.
-    Defaults to half the bottom margin when `footer_dist` is unset."""
+    """
+    Distance from page bottom to footer content in mm.
+    Defaults to half the bottom margin when `footer_dist` is unset.
+    """
     return self.footer_dist if self.footer_dist is not None else self.margin_bot / 2

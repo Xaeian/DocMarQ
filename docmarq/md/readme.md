@@ -101,12 +101,18 @@ MarkdownStyle(
   h1_underline=True, h2_underline=True,
   head_color=(0.09, 0.11, 0.13), # Word's heading styles
   hr_thick=0.5,           # pt, rules and signing lines
-  footnote_label=None,    # "References" puts an H2 above the footnotes
+  footnote_label=None,    # a rule above the footnotes, True a title in the style's language
 )
 ```
 
-`lang_style("pl"|"de"|...)` builds a `MarkdownStyle` with the callout labels of a built-in preset _(`en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`)_.
+`lang_style("pl"|"de"|...)` builds a `MarkdownStyle` with the callout labels and the bibliography word of a built-in preset _(`en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`, `pt`)_.
 The document packages layer their own labels on top.
+
+Above the footnotes `footnote_label=None` draws a thin rule, which suits notes and short acts.
+`footnote_label=True` titles them instead, as a level-2 heading, with the word of the style's language: `Literatura` in `pl`, `References` in `en`.
+A string titles them with its own word, as `footnote_label="Bibliografia"`.
+`docmarq.paper` titles them unasked, while the engine and `docmarq.legal` keep the rule.
+A document that ends with a heading has titled them itself: the entries follow that heading, with no second title and no rule.
 
 ### Intentional divergences from pdfmarq
 
@@ -122,9 +128,9 @@ Same field names, deliberately different values - do not "fix" these:
 | `syntax_theme` | Pygments style name | _absent_ | docmarq has no syntax highlighting, so it has no dead field for it |
 | `head_gap_top` / `head_gap_bot` | `3` / `1.5` mm | `None` | each Word heading level keeps its own gaps, as docmarq always set them |
 | `hr_thick` | `0.3` pt | `0.5` pt | the rules docmarq always drew; Word keeps eighths of a point |
-| `mark_bg`, `inline_image_max_h` | read | inert | DOCX keeps `==mark==` as text and an image in running text as its alt; the fields let a pdfmarq style carry over |
+| `mark_bg` | read | inert | DOCX keeps `==mark==` as text, and the field lets a pdfmarq style carry over |
 
-pdfmarq's style also holds fields for drawing details Word decides itself: `table_*`, `code_block_*`, `quote_*`, `list_indent`, `mono_size`, the `*_mode` faces and more.
+pdfmarq's style also holds fields for drawing details Word decides itself: `table_*` but `table_h_pad`, `code_block_*`, `quote_*`, `list_indent`, `mono_size`, the `*_mode` faces and more.
 docmarq has none of them, so a style that sets them stays with pdfmarq.
 `MarkdownRenderer` takes `font_dir` in docmarq, for mermaid and SVG text; pdfmarq's `PDF` holds its own.
 
@@ -167,7 +173,8 @@ Footnotes[^1] collect at the end of the document.
 Word handles pagination on open, so there's no analytical page-break pass.
 Paragraphs and tables reflow naturally.
 
-A table cell holds plain text: formatting flattens, and an image leaves its alt text.
+A table cell holds plain text, formatting flattened, unless it is one picture alone, which is drawn as pdfmarq draws it.
+A picture among the text of a cell leaves `[alt]`.
 Inline HTML tags are dropped and their text kept, and other raw HTML is dropped, so prefer `---` over `<hr>`.
 
 An image over a `---` line is what CommonMark reads as a setext heading holding the picture.

@@ -54,6 +54,12 @@ def hyphenate_turns_word_hyphenation_on(tmp_path):
   styles = docx_xml(doc.path, "word/styles.xml")
   assert styles.xpath("string(w:docDefaults//w:lang/@w:val)", namespaces=NS) == "de-DE"
 
+def every_preset_language_has_a_word_tag():
+  # Word spell-checks and hyphenates by a tag with its region, as `pt-PT`
+  from docmarq.core import _lang_tag
+  from docmarq.md import LANG_PRESETS
+  assert all("-" in _lang_tag(lang) for lang in LANG_PRESETS)
+
 #----------------------------------------------------------------------------------------- Headings
 
 def heading_options_restyle_the_levels(tmp_path):
@@ -73,13 +79,14 @@ def head_gaps_add_to_the_paragraph_gap(render):
   root = render("Text.\n\n## Section\n\nMore.", para_gap=2, head_gap_top=2, head_gap_bot=1)
   spacing = root.xpath("//w:p[w:pPr/w:pStyle/@w:val='Heading2']/w:pPr/w:spacing", namespaces=NS)[0]
   before, after = (int(spacing.get(f"{{{NS['w']}}}{k}")) for k in ("before", "after"))
-  # 4mm declared above, less the 2mm the paragraph leaves under it; 1mm below
+  # 4mm declared above, less the 2mm the paragraph leaves under it, and 1mm below
   assert before == pytest.approx(2 / 25.4 * 1440, abs=2)
   assert after == pytest.approx(1 / 25.4 * 1440, abs=2)
 
 @pytest.mark.parametrize("line, rules", [("---", 1), ("===", 0)])
 def image_over_a_line_stays_a_figure(tmp_path, line, rules):
-  # CommonMark reads it as a setext heading holding the picture; only `---` is a rule
+  # CommonMark reads it as a setext heading holding the picture.
+  # Only `---` is a rule.
   from PIL import Image
   Image.new("RGB", (40, 20)).save(tmp_path / "pic.png")
   doc = DOCX(str(tmp_path / "s.docx"))

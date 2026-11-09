@@ -14,7 +14,8 @@ from .style import LegalStyle
 
 #------------------------------------------------------------------------------------------ Presets
 
-# Labels of the end of a letter per language; English is the `LegalStyle` default.
+# Labels of the end of a letter per language.
+# English is the `LegalStyle` default.
 _LABELS: dict[str, dict] = {
   "pl": {"attachments_label": "Załączniki", "ref_label": "Sygn. akt",
     "date_format": "%d.%m.%Y r."},
@@ -24,6 +25,7 @@ _LABELS: dict[str, dict] = {
   "it": {"attachments_label": "Allegati", "ref_label": "Rif."},
   "cs": {"attachments_label": "Přílohy", "ref_label": "Sp. zn."},
   "sk": {"attachments_label": "Prílohy", "ref_label": "Sp. zn."},
+  "pt": {"attachments_label": "Anexos", "ref_label": "Ref."},
 }
 
 # Full preset per language: the engine's callout labels, the parts' labels, then the letter's,

@@ -12,8 +12,7 @@ def to_mm(value:float, unit:str="mm") -> float:
   unit = unit.lower()
   factors = {"mm": Unit.MM, "cm": Unit.CM, "in": Unit.INCH, "inch": Unit.INCH,
     "pt": Unit.PT, "px": Unit.PX}
-  if unit not in factors:
-    raise ValueError(f"Unknown unit: {unit}. Use: mm, cm, in, pt, px")
+  if unit not in factors: raise ValueError(f"Unknown unit: {unit}. Use: mm, cm, in, pt, px")
   return value * factors[unit]
 
 def mm_to_pt(*values:float) -> list[float]|float:
@@ -45,19 +44,20 @@ def to_emu(value:float, unit:str="mm") -> int:
 _SIZE_LADDER = (6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72)
 
 def smaller_size(body_pt:float, min_pt:float=7) -> float:
-  """Next-smaller standard typographic size below `body_pt`.
+  """
+  Next-smaller standard typographic size below `body_pt`.
   Used by tables and bibliography to derive a "one step smaller" reading size
   that hits expected Word ladder values (11→10, 12→11, 14→12, 16→14, 18→16)
   instead of arbitrary `body - 1` deltas that produce non-standard sizes like 13.
   Clamps at `min_pt` so small body sizes don't underflow.
   """
   for i, size in enumerate(_SIZE_LADDER):
-    if size >= body_pt:
-      return min_pt if i == 0 else max(min_pt, _SIZE_LADDER[i - 1])
+    if size >= body_pt: return min_pt if i == 0 else max(min_pt, _SIZE_LADDER[i - 1])
   return max(min_pt, _SIZE_LADDER[-2])
 
 def tight_line_height(size_pt:float) -> float:
-  """Line-height multiplier appropriate for `size_pt`.
+  """
+  Line-height multiplier appropriate for `size_pt`.
   Mirrors classical typographic rule: display text needs tighter leading than body text
   because the extra vertical air between lines reads as wasteful at large sizes.
   Linear interpolation between (11pt, 1.15) and (24pt, 1.00).
@@ -75,14 +75,13 @@ def tight_line_height(size_pt:float) -> float:
   For really tight display, use `tight_line_height_pt`,
   which returns an absolute pt value for `lineRule="exact"`.
   """
-  if size_pt <= 11:
-    return 1.15
-  if size_pt >= 24:
-    return 1.0
+  if size_pt <= 11: return 1.15
+  if size_pt >= 24: return 1.0
   return round(1.15 - (size_pt - 11) / (24 - 11) * 0.15, 3)
 
 def tight_line_height_pt(size_pt:float) -> float:
-  """Absolute line-height in points for `lineRule="exact"`.
+  """
+  Absolute line-height in points for `lineRule="exact"`.
   Same taper as `tight_line_height`
   but bypasses Calibri's internal leading (~1.2× font size in "single" mode),
   so the value is used verbatim by Word.
@@ -96,10 +95,8 @@ def tight_line_height_pt(size_pt:float) -> float:
     22pt h1    → 23.5pt (`1.07×`)
     24pt+      → 24.0pt (`1.00×` for very large)
   """
-  if size_pt <= 11:
-    return size_pt * 1.15
-  if size_pt >= 24:
-    return size_pt
+  if size_pt <= 11: return size_pt * 1.15
+  if size_pt >= 24: return size_pt
   factor = 1.15 - (size_pt - 11) / (24 - 11) * 0.15
   return round(size_pt * factor, 2)
 
@@ -108,15 +105,14 @@ def tight_line_height_pt(size_pt:float) -> float:
 _HEX_DIGITS = set("0123456789abcdefABCDEF")
 
 def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
-  """Parse `(r,g,b)` tuple or hex string to 0-1 floats.
+  """
+  Parse `(r,g,b)` tuple or hex string to 0-1 floats.
   0-255 conversion to OOXML happens at the boundary in `rgb255()`,
   keeping user-facing values consistently 0-1.
   """
-  if color is None:
-    return (0.0, 0.0, 0.0)
+  if color is None: return (0.0, 0.0, 0.0)
   if isinstance(color, tuple):
-    if len(color) < 3:
-      raise ValueError("Color tuple must have at least 3 values (r, g, b)")
+    if len(color) < 3: raise ValueError("Color tuple must have at least 3 values (r, g, b)")
     return (float(color[0]), float(color[1]), float(color[2]))
   if isinstance(color, str):
     raw = color
@@ -133,8 +129,10 @@ def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
   raise ValueError(f"Invalid color type: {type(color)}")
 
 def rgb255(color:tuple|str|None) -> tuple[int, int, int]:
-  """Parse color and return `(r,g,b)` 0-255 ints - the form `python-docx` `RGBColor` wants.
-  Internal boundary helper for OOXML emission."""
+  """
+  Parse color and return `(r,g,b)` 0-255 ints - the form `python-docx` `RGBColor` wants.
+  Internal boundary helper for OOXML emission.
+  """
   r, g, b = parse_color(color)
   return (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
 
@@ -157,14 +155,14 @@ def format_date(value:date|str|None, fmt:str) -> str:
   if isinstance(value, str):
     try:
       return datetime.strptime(value, "%Y-%m-%d").date().strftime(fmt)
-    except ValueError:
-      return value
+    except ValueError: return value
   return str(value)
 
 #------------------------------------------------------------------------------------------- Margin
 
 def parse_margin(margin:float|tuple) -> tuple[float, float, float, float]:
-  """Parse margin to `(top, right, bot, left)` tuple. CSS-style.
+  """
+  Parse margin to `(top, right, bot, left)` tuple. CSS-style.
 
   Accepts:
     `n`                     → all sides `n`
@@ -173,8 +171,7 @@ def parse_margin(margin:float|tuple) -> tuple[float, float, float, float]:
     `(t, h, b)`             → top, horizontal, bottom
     `(t, r, b, l)`          → top, right, bottom, left
   """
-  if isinstance(margin, (int, float)):
-    return (margin, margin, margin, margin)
+  if isinstance(margin, (int, float)): return (margin, margin, margin, margin)
   if isinstance(margin, (tuple, list)):
     n = len(margin)
     if n == 1: return (margin[0], margin[0], margin[0], margin[0])
