@@ -89,7 +89,6 @@ SYMBOLS: dict[str, str] = {
   "{": "{", "}": "}", " ": " ",
   # dots
   "ldots": "…", "dots": "…", "cdots": "⋯", "vdots": "⋮", "ddots": "⋱",
-  # named numbers / constants often used
 }
 
 # Spacing commands, as Unicode spaces (the dots are glyphs, in the table above):

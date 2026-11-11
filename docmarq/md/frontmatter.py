@@ -9,7 +9,7 @@ Values stay text as written: YAML 1.1 types would print `id: 0012` as `10` and `
 """
 import re, warnings
 from functools import cache
-from .._warn import caller_level
+from ..warn import caller_level
 
 #---------------------------------------------------------------------------------------- Constants
 
@@ -99,10 +99,9 @@ def docx_metadata(fm:dict, overrides:dict|None=None) -> dict:
 def metadata_from_frontmatter(fm:dict) -> dict:
   """Map YAML keys to `DOCX.metadata()` kwargs. Keys absent in `fm` are skipped."""
   out: dict = {}
-  for yaml_key, meta_key in (("title", "title"), ("author", "author"), ("subject", "subject")):
-    val = fm.get(yaml_key)
-    if val is not None:
-      out[meta_key] = _plain(val)
+  if fm.get("title") is not None: out["title"] = _plain(fm["title"])
+  if fm.get("author") is not None: out["author"] = _plain(byline(fm["author"]))
+  if fm.get("subject") is not None: out["subject"] = _plain(fm["subject"])
   kw = fm.get("keywords")
   if kw is not None:
     if isinstance(kw, (list, tuple)):
@@ -115,3 +114,87 @@ def _plain(value) -> str:
   """A frontmatter value on one line: the entries of a list, or the lines of a block, by spaces."""
   items = value if isinstance(value, (list, tuple)) else [value]
   return " ".join(" ".join(str(item).split()) for item in items)
+
+#------------------------------------------------------------------------------------------- People
+
+# An ORCID and an e-mail, each known by its shape, its value the first group.
+# A phone number has no shape of its own: dates and ranges of years would read as one.
+_DETAILS = (
+  ("orcid", re.compile(r"(?:(?:https?://)?orcid\.org/)?(\d{4}-\d{4}-\d{4}-\d{3}[\dX])")),
+  ("email", re.compile(r"([\w.%+'-]+@[\w-]+(?:\.[\w-]+)+)")),
+)
+# a word that only names the detail beside it, as `ORCID:` or `e-mail`
+_LABEL = re.compile(r"\b(?:orcid(?:\s+id)?|(?:e-?)?mail)\b[.:]*", re.IGNORECASE)
+
+def people(value) -> list[dict]:
+  """
+  Persons an `author`-like frontmatter value names, each a mapping with its `name` first.
+
+  The value is one mapping, a list of names and mappings, or names in a comma-separated string.
+  In a string an ORCID or an e-mail, known by its shape, joins the name it follows:
+  `Anna Nowak, 0000-0002-1825-0097, a.nowak@example.com`.
+  A mapping keeps its other keys as written, as `orcid` or `aff` for a package that sets them,
+  its empty ones dropped. A person with no name is left out with a warning.
+  """
+  if not value: return []
+  out = []
+  for item in value if isinstance(value, (list, tuple)) else [value]:
+    if not isinstance(item, dict):
+      if item is not None: out += _named(str(item))
+      continue
+    person = dict(item)
+    name = str(person.pop("name", None) or "").strip()
+    if name:
+      out.append({"name": name, **{k: v for k, v in person.items() if v not in (None, "")}})
+    else:
+      warnings.warn(f"an author with no name, left out: {item}", RuntimeWarning,
+        stacklevel=caller_level())
+  return out
+
+def _named(text:str) -> list[dict]:
+  """
+  People of a comma-separated string.
+  A detail joins the name beside it, or the name before it when it stands alone,
+  so a comma left out between a name and its detail loses no one.
+  A label beside a detail, as `ORCID:`, or a stray letter is no name.
+  A person keeps the first detail of a kind, and a second one warns.
+  """
+  out = []
+  for part in (piece.strip() for piece in text.split(",")):
+    details, rest = _details(part)
+    if not details:
+      if part: out.append({"name": part})
+      continue
+    name = " ".join(_LABEL.sub(" ", rest).split()).strip("()[]<>:; ")
+    if re.search(r"[^\W\d_]{2}", name): out.append({"name": name})
+    elif not out:
+      warnings.warn(f"`{part}` follows no name, left out", RuntimeWarning,
+        stacklevel=caller_level())
+      continue
+    for key, value in details:
+      if key in out[-1]:
+        warnings.warn(f"a second {key} of {out[-1]['name']}, `{value}`, left out", RuntimeWarning,
+          stacklevel=caller_level())
+        continue
+      out[-1][key] = value
+  return out
+
+def _details(part:str) -> tuple[list[tuple[str, str]], str]:
+  """`(key, value)` of each ORCID and e-mail in `part`, and the rest of it."""
+  found = []
+  for key, shape in _DETAILS:
+    found += [(key, match[1]) for match in shape.finditer(part)]
+    part = shape.sub(" ", part)
+  return found, part
+
+def byline(value, bind:bool=False) -> str:
+  """
+  The names of `people(value)` on one line, comma-separated, as banners and metadata show them.
+  A string of names alone stays as written, so a name holding a comma keeps it.
+  `bind` ties the words of each name by no-break spaces where there are several,
+  so a line breaks only between names, while a single name breaks as any text does.
+  """
+  if isinstance(value, str) and not _details(value)[0]: line = value
+  else: line = ", ".join(person["name"] for person in people(value))
+  if not bind or ", " not in line: return line
+  return re.sub(r"(?<!,) ", "\u00a0", " ".join(line.split()))

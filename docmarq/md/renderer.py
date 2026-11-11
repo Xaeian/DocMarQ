@@ -20,6 +20,7 @@ Example:
   >>> doc.save()
 """
 import os, re, warnings
+from importlib.util import find_spec
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from mdit_py_plugins.footnote import footnote_plugin
@@ -36,11 +37,11 @@ from ..styles import TableStyle
 from ..utils import mm_to_pt, eighths, color_hex, align_to_docx, smaller_size
 from ..svg import register_fonts, is_svg
 from ..images import preprocess_to_buffer, pin_offsets
-from ..tables import TablePicture
+from ..tables import TablePicture, check_table_rules
 from .style import MarkdownStyle
 from .frontmatter import split_frontmatter
-from .._warn import caller_level
-from .tokens import (get_attr, find_close, CALLOUT_RE,
+from ..warn import caller_level
+from .tokens import (get_attr, find_close, CALLOUT_RE, bind_children,
   is_pagebreak_directive, is_group_open_directive, is_group_close_directive)
 from . import slug, image_utils, mermaid
 from .math import latex_to_omath, MathConversionError, build_omath_para, pop_tag, render_math_png
@@ -127,6 +128,7 @@ class MarkdownRenderer:
   ):
     """
     Create a renderer bound to `doc`.
+    It sets emoji in `style.emoji_font` through `doc.emoji()`, as pdfmarq draws them.
 
     Args:
       doc: Target `DOCX` instance.
@@ -145,6 +147,7 @@ class MarkdownRenderer:
         f"not {doc.unit!r}")
     self.doc = doc
     self.style = style or MarkdownStyle()
+    _check_style(self.style)
     self.base_dir = base_dir or os.getcwd()
     self.font_dir = font_dir
     if font_dir:
@@ -165,6 +168,8 @@ class MarkdownRenderer:
     self._anchors = "" # prefix of this document's bookmark names, set by `index()`
     if self.style.hyphenate:
       doc.hyphenation(self.style.hyphenate)
+    if self.style.emoji_font:
+      doc.emoji(self.style.emoji_font)
     if doc.neutral_style:
       self._head_styles()
     self._typeset()
@@ -190,7 +195,8 @@ class MarkdownRenderer:
       space_after=mm_to_pt(s.para_gap),
       code_family=s.font_mono,
       code_color=s.code_inline_color,
-      code_bg=s.code_inline_bg,
+      # `False` leaves code unshaded, since the core reads `None` as its own grey
+      code_bg=False if s.code_inline_bg is None else s.code_inline_bg,
     )
 
   #------------------------------------------------------------------------------------------ Entry
@@ -232,6 +238,7 @@ class MarkdownRenderer:
     The document's state is kept: heading slugs run on across parts.
     """
     if style is None: return self._render_tokens(tokens)
+    _check_style(style)
     own, self.style = self.style, style
     body = self.doc.text_style.copy()
     try:
@@ -327,6 +334,7 @@ class MarkdownRenderer:
             bg_color=self.style.code_block_bg,
             border_color=self.style.code_block_border,
             font_family=self.style.font_mono,
+            font_size=self.style.code_block_size,
           )
         i += 1
       elif tt == "math_block":
@@ -399,7 +407,7 @@ class MarkdownRenderer:
     """
     state = {"bold": False, "italic": False, "strike": False}
     font_head = self.style.font_head
-    for c in (inline_token.children or []):
+    for c in self._children(inline_token):
       ct = c.type
       if ct == "text":
         run = p.add_run(c.content)
@@ -424,16 +432,21 @@ class MarkdownRenderer:
         # so it scales with the heading rather than rendering at body size.
         _, color_hex = self._math_run_props()
         self._append_inline_math(p, c.content, None, color_hex)
-      elif ct == "softbreak": p.add_run(" ")
+      elif ct == "softbreak": p.add_run(c.content or " ")
       elif ct == "hardbreak": p.add_run("\n")
 
   #-------------------------------------------------------------------------------------- Paragraph
 
-  def _render_paragraph(self, inline_token:Token):
-    """Emit a regular body paragraph and stream styled runs into it."""
+  def _render_paragraph(self, inline_token:Token, indent:bool=True):
+    """
+    Emit a regular body paragraph and stream styled runs into it.
+    Its first line starts `first_indent` in, unless it belongs to a list or a footnote.
+    """
     self.doc.para()
     self._body_look()
-    self._add_runs_to_current_para(inline_token)
+    if indent and not self._list_depth and self.style.first_indent:
+      self.doc.paragraph.paragraph_format.first_line_indent = Mm(self.style.first_indent)
+    self.write_inline(inline_token)
 
   def _body_look(self):
     """Justify the body paragraph just opened, and keep it on one page, as `style` says."""
@@ -441,10 +454,20 @@ class MarkdownRenderer:
     if self.style.justify: p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     if self.style.keep_together: p.paragraph_format.keep_together = True
 
-  def _add_runs_to_current_para(self, inline_token:Token):
+  def _children(self, inline_token:Token) -> list[Token]:
+    """The inline children of `inline_token`, its words kept together as the style binds them."""
+    children = inline_token.children or []
+    letters = self.style.bind_single_letters
+    return bind_children(children, letters) if letters else children
+
+  def write_inline(self, inline_token:Token):
     """
-    State-machine walk of inline children.
-    Translates each child into one or more `doc.text()` / `doc.link()` / `doc.line_break()` calls.
+    Write the runs of an inline token into the open paragraph, as the engine writes a paragraph:
+    emphasis, code, links and formulas included.
+    Public for a package that sets text of its own, as a caption.
+
+    A state-machine walk of the inline children,
+    each one or more `doc.text()` / `doc.link()` / `doc.line_break()` calls.
     """
     state = {"bold": False, "italic": False, "strike": False,
       "link_url": None, "link_target": None}
@@ -456,7 +479,7 @@ class MarkdownRenderer:
       if state["strike"]: k["strike"] = True
       return k
 
-    for c in (inline_token.children or []):
+    for c in self._children(inline_token):
       ct = c.type
       if ct == "text":
         if state["link_target"]:
@@ -487,7 +510,7 @@ class MarkdownRenderer:
         state["link_target"] = None
       elif ct == "math_inline":
         self._render_inline_math(c.content)
-      elif ct == "softbreak": self.doc.text(" ")
+      elif ct == "softbreak": self.doc.text(c.content or " ") # a no-break space after a bound word
       elif ct == "hardbreak": self.doc.line_break()
       elif ct == "image": self._render_inline_image(c)
       elif ct == "footnote_ref":
@@ -581,7 +604,7 @@ class MarkdownRenderer:
           else:
             self.doc.bullet(level=depth)
           self._body_look()
-          self._add_runs_to_current_para(inline)
+          self.write_inline(inline)
           first_block = False
         else:
           # Continuation paragraph inside a list item - plain para
@@ -651,7 +674,7 @@ class MarkdownRenderer:
         text_color=self.style.muted_color,
         space_before=sb, space_after=sa)
       self._body_look()
-      self._add_runs_to_current_para(inline)
+      self.write_inline(inline)
     return end + 1
 
   def _detect_callout(self, tokens:list[Token], start:int, end:int) -> str|None:
@@ -703,7 +726,7 @@ class MarkdownRenderer:
         text_color=self.style.muted_color,
         space_before=sb, space_after=sa)
       self._body_look()
-      self._add_runs_to_current_para(inline)
+      self.write_inline(inline)
     return end + 1
 
   @staticmethod
@@ -892,13 +915,12 @@ class MarkdownRenderer:
     Warn on total render failure.
     Message varies: matplotlib missing vs. present but unable to parse this LaTeX.
     """
-    try:
-      import matplotlib # noqa: F401
-      msg = ("math formula is outside both the OMML subset and matplotlib "
-        "mathtext; rendering LaTeX source as code text")
-    except ImportError:
+    if find_spec("matplotlib") is None:
       msg = ("math formula could not be rendered (install matplotlib for the "
         "image fallback: pip install docmarq[math]); rendering LaTeX as text")
+    else:
+      msg = ("math formula is outside both the OMML subset and matplotlib "
+        "mathtext; rendering LaTeX source as code text")
     warnings.warn(msg, RuntimeWarning, stacklevel=2)
 
   #----------------------------------------------------------------------------------------- Images
@@ -1075,6 +1097,7 @@ class MarkdownRenderer:
       bg_color=self.style.code_block_bg,
       border_color=self.style.code_block_border,
       font_family=self.style.font_mono,
+      font_size=self.style.code_block_size,
     )
 
   def _insert_picture(self, src, width_mm:float|None, height_mm:float|None):
@@ -1171,10 +1194,10 @@ class MarkdownRenderer:
           self.doc.para()
           self._body_look()
           self.doc.text(f"[{label}] ", bold=True)
-          self._add_runs_to_current_para(inline)
+          self.write_inline(inline)
           first = False
         else:
-          self._render_paragraph(inline)
+          self._render_paragraph(inline, indent=False)
         k += 3
       elif t.type == "footnote_anchor":
         k += 1 # back-reference decoration, with no DOCX equivalent
@@ -1215,11 +1238,15 @@ class MarkdownRenderer:
         current_row.append(cell)
         j = k
       j += 1
+    s = self.style
     self.doc.table(
       header=header_cells if header_cells else None,
       body=body_rows,
       aligns=aligns if aligns else None,
-      style=TableStyle(cell_pad_h=self.style.table_h_pad),
+      style=TableStyle(cell_pad_h=s.table_h_pad, font_size=s.table_size,
+        header_bg=s.table_header_bg, border_color=s.table_border,
+        row_bg_odd=s.table_zebra_bg if s.table_zebra else None,
+        rules=s.table_rules, double=s.table_double),
     )
     return end + 1
 
@@ -1229,15 +1256,19 @@ class MarkdownRenderer:
     sized as pdfmarq sizes it, else its text flattened by `_inline_to_plain`.
     """
     children = [c for c in inline.children or [] if c.type not in ("softbreak", "hardbreak")]
-    if len(children) != 1 or children[0].type != "image": return self._inline_to_plain(inline)
+    if len(children) != 1 or children[0].type != "image": return self._cell_text(inline)
     info, picture = self._load_picture(children[0])
-    if picture is None: return self._inline_to_plain(inline)
+    if picture is None: return self._cell_text(inline)
     s = self.style
     low, high = image_utils.cell_intrinsic_w_mm(info, s.inline_image_max_h, s.cell_image_max_w,
       cell_image_scale=s.cell_image_scale)
     width, height = image_utils.size_cell(info, high, s.image_max_h, s.inline_image_max_h,
       s.cell_image_max_w, s.cell_image_scale)
     return TablePicture(picture, width, height, low, high)
+
+  def _cell_text(self, inline:Token) -> str:
+    """The text of a table cell, flattened, its words kept together as the style binds them."""
+    return self._inline_to_plain(inline.copy(children=self._children(inline)))
 
   #---------------------------------------------------------------------------------------- Helpers
 
@@ -1269,6 +1300,13 @@ class MarkdownRenderer:
     return "".join(parts)
 
 #------------------------------------------------------------------------------------------ Helpers
+
+def _check_style(style:MarkdownStyle):
+  """Fail on a value of `style` the engine cannot write, before anything is written."""
+  check_table_rules(style.table_rules)
+  if not isinstance(style.bind_single_letters, str):
+    raise TypeError(f"bind_single_letters names the letters that bind, as `aiouwz`, "
+      f"got {style.bind_single_letters!r}")
 
 def _list_start(token:Token) -> int:
   """

@@ -184,9 +184,13 @@ def page_number_hides_on_a_single_page(render):
   instr = "".join(footer.xpath("//w:instrText/text()", namespaces=NS))
   assert instr.startswith(" IF  NUMPAGES  > 1 \"Strona ")
 
+def the_polish_title_binds_its_one_letter_words(render):
+  root, _ = render("---\ntitle: A plan of a house\n---\n\nBody.\n", lang_style("pl"))
+  assert "A\u00a0plan of a\u00a0house" in "".join(root.xpath("//w:t/text()", namespaces=NS))
+
 def legal_text_takes_the_body_colour_and_widow_control(render, para_of):
   root, path = render(LETTER, lang_style("pl", body_color=(0.2, 0.0, 0.0)))
-  rpr = para_of(root, "I hereby").xpath("w:r/w:rPr", namespaces=NS)[0]
+  rpr = para_of(root, "hereby terminate").xpath("w:r/w:rPr", namespaces=NS)[0]
   assert rpr.xpath("string(w:color/@w:val)", namespaces=NS) == "330000"
   styles = docx_xml(path, "word/styles.xml")
   assert styles.xpath("w:style[@w:styleId='Normal']/w:pPr/w:widowControl", namespaces=NS)

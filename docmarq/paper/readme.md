@@ -57,7 +57,11 @@ logo: ./ranger-badge.svg
 - `id`: document code, after the status and version
 - `title`: main title, large
 - `version`: version as written (no `v` prefix added)
-- `author`: author name, shown as `{banner_label_author}: ...`
+- `author`: names shown as `{banner_label_author}: ...` and written to the metadata.
+  `banner_label_authors` labels more than one person.
+  A string or a list item names people between commas, an ORCID or an e-mail after a name belonging to it: `Anna Nowak, 0000-0002-1825-0097, a.nowak@example.com`.
+  Each is known by its shape, so a label as `ORCID:` or a stray letter beside it goes, and a comma left out between a name and its detail loses no one.
+  A list may also hold mappings with `name` and the details a package uses, as `orcid`, `email` or `aff`.
 - `status`: badge: `draft` / `review` / `approved` / `deprecated` / `archived`
 - `entity`: organization, bold, with `address` after it on one line
 - `address`: address, muted
@@ -128,7 +132,8 @@ Defaults are English.
 Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
 
 Built-in presets cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`, `pt`.
-Each configures `page_number_label`, `date_format`, banner labels _(author / created / updated)_, signing scenarios _(`sign_labels`)_, and the engine's callout labels.
+Each configures `page_number_label`, `date_format`, banner labels _(author / authors / created / updated)_, signing scenarios _(`sign_labels`)_, and the engine's callout labels.
+`pl`, `cs` and `sk` also set `bind_single_letters`.
 
 ```py
 PaperStyle(

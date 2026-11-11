@@ -156,6 +156,8 @@ doc.table(rows, header=header, style=style)
 doc.table(rows, word_style="Light Grid")
 ```
 
+`keep_rows(table, 2)` from `docmarq.tables` keeps each row of a python-docx table on one page, and two rows at either end together, as journals split a table between columns.
+
 ## Colors
 
 ```py
@@ -195,6 +197,38 @@ doc.footer(align="R", page_number=True)
 ```
 
 `docmarq.fields` writes the fields themselves: `page_fields(p, "{page} / {pages}")` into any paragraph, and `page_fields_if_many(p, template)` as the field `IF NUMPAGES > 1`, which shows the numbers only in a document of more than one page.
+
+## Footnotes
+
+```py
+doc.para("A sentence with a note")
+with doc.footnote():     # numbered by Word, mark="*" marks it, mark="" leaves it unmarked
+  doc.font(size=8).para("The note, in Word's footnote text style.")
+doc.text(" goes on.")    # the paragraph the note belongs to
+doc.footnote_rule(False) # no short rule above the footnotes
+```
+
+A note holds plain paragraphs: a list, a heading or a table there refuses.
+
+## Drop caps
+
+```py
+doc.para("Opening words of a chapter").drop_cap(30, 12, sink=2.5, caps=True) # pt
+```
+
+The first letter of the paragraph just written drops two lines in the frame Word itself makes for a drop cap: 30pt tall, sunk 2.5pt, beside lines 12pt apart, the rest of the first word in capitals.
+A paragraph opening with no letter, or with a link or a formula, stays as it is.
+
+## Emoji
+
+```py
+doc.emoji() # emoji set in Segoe UI Emoji when the document is saved, or in a face named here
+```
+
+A text face holds no emoji, so Word prints a box in their place.
+`doc.emoji()` gives each stretch of them a run of its own in an emoji face.
+A tick or a star alone stays in the text face, which Word fills in from a symbol face.
+The markdown engine turns it on with its style's `emoji_font`, as pdfmarq draws emoji.
 
 ## Signing lines and page number
 

@@ -212,3 +212,17 @@ def repeated_title_drops_only_when_nothing_else_goes_with_it(tmp_path, heading, 
   from docmarq.paper.render import _skip_matching_h1
   tokens = MarkdownRenderer(DOCX(str(tmp_path / "t.docx"))).parse(heading + "\n\nBody.\n")
   assert (len(_skip_matching_h1(tokens, title)) < len(tokens)) == dropped
+
+def the_banner_title_binds_its_one_letter_words(tmp_path):
+  path = str(tmp_path / "t.docx")
+  md_to_docx("---\ntitle: A plan of a house\n---\n\nBody.\n", path,
+    style=PaperStyle(bind_single_letters="a"))
+  assert "A\u00a0plan of a\u00a0house" in docx_text(path)
+
+def people_show_by_name_in_the_banner_and_the_metadata(tmp_path):
+  path = str(tmp_path / "p.docx")
+  md_to_docx("---\ntitle: T\nauthor:\n  - name: Anna Nowak\n    orcid: 0000-0001\n"
+    "  - Jan Kowalski\n---\n\nBody.\n", path)
+  text = docx_text(path)
+  assert "Authors: Anna\u00a0Nowak, Jan\u00a0Kowalski" in text and "orcid" not in text
+  assert docx.Document(path).core_properties.author == "Anna Nowak, Jan Kowalski"

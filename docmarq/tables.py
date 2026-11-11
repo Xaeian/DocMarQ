@@ -14,7 +14,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from docx.enum.table import WD_ALIGN_VERTICAL
 from .constants import DXA_PER_MM, MM_TO_PT
-from .utils import color_hex, align_to_docx
+from .utils import color_hex, align_to_docx, eighths
 from .metrics import text_width_mm
 
 #------------------------------------------------------------------------------------ Column widths
@@ -258,6 +258,12 @@ _BORDER_SIDES = ("top", "left", "bottom", "right", "insideH", "insideV")
 # strict renderers drop a child out of sequence.
 _AFTER_BORDERS = ("w:shd", "w:tblLayout", "w:tblCellMar", "w:tblLook", "w:tblCaption",
   "w:tblDescription", "w:tblPrChange")
+# `w:tcPr` children that follow `w:tcBorders`
+_AFTER_TC_BORDERS = ("w:shd", "w:noWrap", "w:tcMar", "w:textDirection", "w:tcFitText",
+  "w:vAlign", "w:hideMark")
+# sides of `w:tcBorders` in schema order, `left` and `right` the transitional names of the ends
+_CELL_SIDES = ("top", "left", "start", "bottom", "right", "end", "insideH", "insideV", "tl2br",
+  "tr2bl")
 
 def apply_table_borders(table, color:tuple|str, size_pt:float, sides:tuple=_BORDER_SIDES):
   """
@@ -278,7 +284,7 @@ def apply_table_borders(table, color:tuple|str, size_pt:float, sides:tuple=_BORD
     borders = OxmlElement("w:tblBorders")
     tbl_pr.insert_element_before(borders, *_AFTER_BORDERS)
   hex_color = color_hex(color)
-  sz_eighths = max(1, int(round(size_pt * 8)))
+  sz_eighths = eighths(size_pt)
   for side in sides:
     b = borders.find(qn(f"w:{side}"))
     if b is None:
@@ -288,6 +294,52 @@ def apply_table_borders(table, color:tuple|str, size_pt:float, sides:tuple=_BORD
     b.set(qn("w:sz"), str(sz_eighths))
     b.set(qn("w:space"), "0")
     b.set(qn("w:color"), hex_color)
+
+_RULED_SIDES = {
+  "grid": _BORDER_SIDES,
+  "rows": ("top", "bottom", "insideH"),
+  "head": ("top", "bottom"),
+}
+
+def check_table_rules(rules:str):
+  """Refuse a `rules` value no table is ruled by, before any table is written."""
+  if rules not in _RULED_SIDES:
+    raise ValueError(f"table rules must be one of {', '.join(_RULED_SIDES)}, got {rules!r}")
+
+def apply_table_rules(table, color:tuple|str, size_pt:float, rules:str, double:bool):
+  """
+  Rule `table` as `rules` names it: `grid`, `rows` or `head`, see `TableStyle`.
+  Every other side is set to none, so a table style of the template adds no rule of its own.
+  Under `head` the caller rules the header row with `rule_cell`.
+  `double` draws the rules above and below the table double.
+  """
+  check_table_rules(rules)
+  remove_table_borders(table)
+  apply_table_borders(table, color, size_pt, _RULED_SIDES[rules])
+  if not double: return
+  borders = table._element.tblPr.find(qn("w:tblBorders"))
+  for side in ("top", "bottom"):
+    borders.find(qn(f"w:{side}")).set(qn("w:val"), "double")
+
+def rule_cell(cell, color:tuple|str, size_pt:float, side:str="bottom"):
+  """
+  Single rule on one `side` of `cell`, as under a table's header row.
+  A rule already on that side gives way, and the sides keep the order of the schema.
+  """
+  tc_pr = cell._tc.get_or_add_tcPr()
+  borders = tc_pr.find(qn("w:tcBorders"))
+  if borders is None:
+    borders = OxmlElement("w:tcBorders")
+    tc_pr.insert_element_before(borders, *_AFTER_TC_BORDERS)
+  old = borders.find(qn(f"w:{side}"))
+  if old is not None: borders.remove(old)
+  size = str(eighths(size_pt))
+  rule = OxmlElement(f"w:{side}", {qn("w:val"): "single", qn("w:sz"): size,
+    qn("w:space"): "0", qn("w:color"): color_hex(color)})
+  later = {qn(f"w:{name}") for name in _CELL_SIDES[_CELL_SIDES.index(side) + 1:]}
+  following = next((child for child in borders if child.tag in later), None)
+  if following is None: borders.append(rule)
+  else: following.addprevious(rule)
 
 def remove_table_borders(table):
   """
@@ -336,6 +388,25 @@ def repeat_header_row(row):
   hdr = OxmlElement("w:tblHeader")
   hdr.set(qn("w:val"), "true")
   tr_pr.append(hdr)
+
+# `w:trPr` children that follow `w:cantSplit`
+_AFTER_CANT_SPLIT = ("w:trHeight", "w:tblHeader", "w:tblCellSpacing", "w:jc", "w:hidden")
+
+def keep_rows(table, ends:int=0):
+  """
+  Each row of `table` on one page, and a break between pages or columns kept from its ends:
+  the first `ends + 1` rows go together, as a header and `ends` rows of the body,
+  and so do the last `ends`.
+  """
+  rows = table.rows
+  last = len(rows) - 1
+  for k, row in enumerate(rows):
+    tr_pr = row._tr.get_or_add_trPr()
+    if tr_pr.find(qn("w:cantSplit")) is None:
+      tr_pr.insert_element_before(OxmlElement("w:cantSplit"), *_AFTER_CANT_SPLIT)
+    if k < ends or last - ends < k < last:
+      for cell in row.cells:
+        for p in cell.paragraphs: p.paragraph_format.keep_with_next = True
 
 #----------------------------------------------------------------------------- Cell margins / align
 

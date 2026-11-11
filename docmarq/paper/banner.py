@@ -17,6 +17,7 @@ from ..tables import (remove_table_borders, set_cell_margins, set_cell_vertical_
   set_table_widths)
 from ..images import preprocess_to_buffer, pin_offsets
 from ..utils import color_hex, rgb255, tight_line_height_pt, format_date, eighths
+from ..md import byline, bind_letters
 from .style import PaperStyle, UNKNOWN_STATUS
 
 _SEP = "  •  " # U+2022 BULLET between the parts of a line, more visible than a middle dot
@@ -130,7 +131,7 @@ class Banner:
       # `EXACTLY` bypasses Calibri's ~1.2× internal leading,
       # so a title that wraps keeps its lines tight.
       new_para(exact_pt=tight_line_height_pt(s.banner_title_size))
-      add_run(str(title), bold=True, size=s.banner_title_size)
+      add_run(bind_letters(str(title), s.bind_single_letters), bold=True, size=s.banner_title_size)
     status = str(fm.get("status") or "").strip().lower()
     version = fm.get("version")
     id_ = fm.get("id")
@@ -147,10 +148,11 @@ class Banner:
           add_run(_SEP, color=s.muted_color)
       if id_:
         add_run(str(id_), color=s.muted_color)
-    author = fm.get("author")
+    author = byline(fm.get("author"), bind=True)
     if author:
       new_para()
-      add_run(f"{s.banner_label_author}: {author}", size=s.banner_meta_size, color=s.muted_color)
+      label = s.author_label(fm.get("author"))
+      add_run(f"{label}: {author}", size=s.banner_meta_size, color=s.muted_color)
     created = fm.get("created")
     updated = fm.get("updated")
     if created or updated:

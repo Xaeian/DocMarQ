@@ -5,7 +5,8 @@
 import pytest
 from lxml import etree
 from docmarq import DOCX
-from docmarq.md import MarkdownRenderer, MarkdownStyle, top_blocks
+from docmarq.md import MarkdownRenderer, MarkdownStyle, top_blocks, bind_letters
+from docmarq.emoji import EMOJI_FONT
 from conftest import NS, docx_xml
 
 TEXT = "# Title\n\n## Section\n\nA paragraph.\n\n- one\n- two\n\n> quoted\n\n1) first\n2) second\n"
@@ -178,3 +179,81 @@ def repeated_headings_get_numbered_bookmarks(render):
 def engine_refuses_a_docx_in_another_unit(tmp_path):
   with pytest.raises(ValueError, match="unit"):
     MarkdownRenderer(DOCX(str(tmp_path / "u.docx"), unit="cm"))
+
+def table_rules_fail_before_anything_is_written(tmp_path):
+  with pytest.raises(ValueError, match="table rules"):
+    MarkdownRenderer(DOCX(str(tmp_path / "t.docx")), MarkdownStyle(table_rules="box"))
+
+#------------------------------------------------------------------------------ Journal typesetting
+
+def first_indent_sets_body_paragraphs_in_but_not_list_items(render, para_of):
+  root = render(TEXT, first_indent=3.6)
+  assert para_of(root, "A paragraph.").xpath("string(w:ind/@w:firstLine)", namespaces=NS) == "204"
+  assert not para_of(root, "one").xpath("w:ind/@w:firstLine", namespaces=NS)
+
+def head_rules_rule_the_ends_and_the_header_only(render):
+  root = render("| a | b |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |\n", table_rules="head",
+    table_double=True, table_header_bg=None, table_zebra=False)
+  borders = root.xpath("//w:tblBorders/*", namespaces=NS)
+  # the other sides none, so a template's table style draws no rule of its own
+  assert {etree.QName(b).localname: b.get(f"{{{NS['w']}}}val") for b in borders} == {
+    "top": "double", "bottom": "double", "left": "none", "right": "none", "insideH": "none",
+    "insideV": "none"}
+  assert root.xpath("count(//w:tr[1]/w:tc/w:tcPr/w:tcBorders/w:bottom)", namespaces=NS) == 2
+  assert root.xpath("count(//w:tbl//w:shd)", namespaces=NS) == 0
+
+def code_block_size_sets_the_listing(render):
+  root = render("```\nlisting\n```\n", code_block_size=7)
+  assert root.xpath("//w:r[w:t='listing']/w:rPr/w:sz/@w:val", namespaces=NS) == ["14"]
+
+def one_letter_words_keep_to_the_next_by_a_no_break_space(render):
+  nbsp = "\u00a0"
+  # a letter of the language binds, a capital only where a sentence starts, a unit to its number
+  bound = bind_letters("Power 5 V z port, 50 W at a table I shows. W home", "aiouwz")
+  assert bound == f"Power 5{nbsp}V z{nbsp}port, 50{nbsp}W at a{nbsp}table I shows. W{nbsp}home"
+  assert bind_letters("a cat, 5 V", "") == "a cat, 5 V"
+  opened = bind_letters("in (w case) and „w time”", "aiouwz")
+  assert opened == f"in (w{nbsp}case) and „w{nbsp}time”"
+  def text(md:str, **style) -> str:
+    return "".join(render(md, **style).xpath("//w:t/text()", namespaces=NS))
+  # across a soft break and emphasis, with the code left as written
+  paragraph = "I saw a\ncat, **a** bird and `a b` code.\n"
+  assert text(paragraph, bind_single_letters="a") == f"I saw a{nbsp}cat, a{nbsp}bird and a b code."
+  assert nbsp not in text(paragraph)
+  assert text("# A plan of a house\n", bind_single_letters="a") == f"A{nbsp}plan of a{nbsp}house"
+  cells = render("| A |\n|---|\n| a cat and `a b` |\n", bind_single_letters="a")
+  assert cells.xpath("string(//w:tr[2]/w:tc)", namespaces=NS) == f"a{nbsp}cat and a b"
+
+def a_bound_heading_keeps_its_anchor(render):
+  body = render("# Plan of a house\n\nSee [it](#plan-of-a-house).\n", bind_single_letters="a")
+  anchors = body.xpath("//w:hyperlink/@w:anchor", namespaces=NS)
+  assert anchors and set(anchors) <= set(body.xpath("//w:bookmarkStart/@w:name", namespaces=NS))
+
+def binding_takes_letters_not_a_switch(render):
+  with pytest.raises(TypeError, match="aiouwz"):
+    render("Text.\n", bind_single_letters=True)
+
+def line_height_none_leaves_the_leading_to_the_style(render, para_of):
+  line = "w:spacing/@w:line"
+  assert para_of(render(TEXT), "A paragraph.").xpath(line, namespaces=NS)
+  body = render(TEXT, line_height=None)
+  assert not para_of(body, "A paragraph.").xpath(line, namespaces=NS)
+  assert not para_of(body, "one").xpath(line, namespaces=NS) # a list item as well
+
+def code_inline_bg_none_leaves_inline_code_unshaded(render):
+  shaded = "//w:r[w:t='x']/w:rPr/w:shd"
+  assert render("Use `x` here.\n").xpath(shaded, namespaces=NS)
+  assert not render("Use `x` here.\n", code_inline_bg=None).xpath(shaded, namespaces=NS)
+
+def the_engine_sets_emoji_in_an_emoji_face(render):
+  root = render("Status 🟢 done\n")
+  assert root.xpath("//w:r[w:t='🟢']/w:rPr/w:rFonts/@w:ascii", namespaces=NS) == [EMOJI_FONT]
+
+def emoji_font_none_leaves_emoji_as_written(render):
+  root = render("Status 🟢 done\n", emoji_font=None)
+  assert not root.xpath("//w:rFonts[@w:ascii='Segoe UI Emoji']", namespaces=NS)
+
+def a_group_with_options_is_one_block(tmp_path):
+  renderer = MarkdownRenderer(DOCX(str(tmp_path / "g.docx")))
+  tokens = renderer.parse("<!-- group wide -->\n\nOne.\n\nTwo.\n\n<!-- /group -->\n\nThree.\n")
+  assert len(top_blocks(tokens)) == 2

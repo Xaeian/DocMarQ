@@ -1,11 +1,16 @@
 # Changes `docmarq`
 
-## `0.5.0` Slides
+## `0.5.0` Slides & articles
 
-- `SLIDE` page size, pictures in table cells
-- Bibliography title in papers, `pt` preset
+- Slides: 16:9 pages, pictures in table cells
+- Articles: indented paragraphs, ruled and double-ruled tables, rows kept whole, drop caps
+- Word footnotes, numbered, marked or unmarked
+- Emoji in an emoji face, so Word no longer prints them as boxes
+- No line ends with a lone `w` or `i`, and no unit leaves its number
+- Authors with ORCID and e-mail, a titled bibliography, a Portuguese preset
+- Text a package sets itself, written as the engine writes a paragraph
 - Fix: images in text and table cells printed as `[image]`
-- Fixes across SVG arrowheads and table padding
+- Fixes across SVG arrowheads, table padding and metadata
 
 ## `0.4.1` Mail merge
 

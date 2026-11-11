@@ -2,6 +2,7 @@
 
 """
 Built-in language presets for `MarkdownStyle`: the labels the engine writes itself.
+`pl`, `cs` and `sk` also name their one-letter words that bind: `bind_single_letters`.
 
 Each preset is a dict of fields applied to a fresh `MarkdownStyle`
 via `lang_style(lang, **overrides)`.
@@ -27,6 +28,7 @@ LANG_PRESETS: dict[str, dict] = {
     "callout_label_warning": "Ostrzeżenie",
     "callout_label_caution": "Uwaga",
     "footnote_word": "Literatura",
+    "bind_single_letters": "aiouwz",
   },
   "de": {
     "callout_label_note": "Hinweis",
@@ -67,6 +69,7 @@ LANG_PRESETS: dict[str, dict] = {
     "callout_label_warning": "Varování",
     "callout_label_caution": "Pozor",
     "footnote_word": "Literatura",
+    "bind_single_letters": "aikosuvz",
   },
   "sk": {
     "callout_label_note": "Poznámka",
@@ -75,6 +78,7 @@ LANG_PRESETS: dict[str, dict] = {
     "callout_label_warning": "Upozornenie",
     "callout_label_caution": "Pozor",
     "footnote_word": "Literatúra",
+    "bind_single_letters": "aikosuvz",
   },
   "pt": {
     "callout_label_note": "Nota",

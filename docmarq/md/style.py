@@ -6,6 +6,7 @@ Markdown-rendering style: fonts, sizes, colors, spacing and the switches of the 
 Word lays the pages out itself, so there are no measuring or page-break fields.
 """
 from dataclasses import dataclass, field
+from ..emoji import EMOJI_FONT
 
 #-------------------------------------------------------------------------- Callout palette default
 
@@ -33,6 +34,8 @@ class MarkdownStyle:
   font_body: str = "Calibri"
   font_head: str = "Calibri"
   font_mono: str = "Consolas"
+  # Emoji go in a face of their own, since a text face holds none, `None` leaving them as written.
+  emoji_font: str|None = EMOJI_FONT
 
   # Body size in pt.
   body_size: float = 11
@@ -40,10 +43,14 @@ class MarkdownStyle:
   # Body line-height multiplier.
   # 1.0 = Word's "Single" rule, which renders ~1.2x font size due to Calibri's internal leading,
   # tight without being cramped.
-  line_height: float = 1.0
+  # `None` writes none, leaving the leading to Word's paragraph style, as a template sets it.
+  line_height: float|None = 1.0
 
   # Paragraph gap in mm. Converted to Word's pt-based `space_after` at apply time.
   para_gap: float = 3
+  # mm the first line of a body paragraph starts in, as books and journals set text.
+  # A paragraph of a list, a quote or a footnote keeps flush.
+  first_indent: float = 0
 
   #--------------------------------------------------------------------------------------- Headings
 
@@ -71,6 +78,11 @@ class MarkdownStyle:
   # Language whose hyphenation rules split words at line ends, as `pl`. `None` keeps words whole.
   # Word hyphenates by the language of the text, so this sets the language of the document.
   hyphenate: str|None = None
+  # One-letter words that keep to the word after them, so no line ends with `w` or `i`,
+  # as Polish typesetting asks: `aiouwz` for Polish, in capitals only where a sentence starts.
+  # A number keeps to its unit then too, `5 V`: in a paragraph, a heading, a table cell, a title.
+  # A no-break space ties them, as Word keeps it. `lang_style` sets it for `pl`, `cs` and `sk`.
+  bind_single_letters: str = ""
   # `True` keeps each paragraph on one page, and a list on one page with its items.
   # `False` leaves page breaks to Word.
   keep_together: bool = False
@@ -113,9 +125,10 @@ class MarkdownStyle:
   muted_color: tuple = (0.40, 0.44, 0.50) # for blockquote text
   link_color: tuple = (0.03, 0.41, 0.85) # #0969da
   code_inline_color: tuple = (0.09, 0.11, 0.13)
-  code_inline_bg: tuple = (0.96, 0.97, 0.98) # subtle grey
+  code_inline_bg: tuple|None = (0.96, 0.97, 0.98) # subtle grey, `None` unshaded
   code_block_bg: tuple = (0.96, 0.97, 0.98)
   code_block_border: tuple = (0.82, 0.84, 0.87) # #d0d7de
+  code_block_size: float = 9 # pt
   quote_border: tuple = (0.82, 0.84, 0.87)
   hr_color: tuple = (0.82, 0.84, 0.87)
   # Inert: `==mark==` stays literal text.
@@ -130,6 +143,20 @@ class MarkdownStyle:
   cell_image_max_w: float = 60 # absolute cap on the width of an image cell's column
   cell_image_scale: float = 0.5 # an image cell renders at this share of its natural size
   table_h_pad: float = 2 # mm horizontal padding of a table cell, as pdfmarq gives it
+
+  #----------------------------------------------------------------------------------------- Tables
+
+  # Cell size in pt, `None` one step below the body on the typographic ladder.
+  table_size: float|None = None
+  table_header_bg: tuple|None = (0.96, 0.97, 0.98) # `None` leaves the header row unshaded
+  table_border: tuple = (0.82, 0.84, 0.87)
+  table_zebra: bool = True
+  table_zebra_bg: tuple = (0.985, 0.99, 0.995)
+  # Rules of a table: `grid` around every cell, `rows` the same without vertical rules,
+  # `head` above and below the table and under its header, as journals rule them.
+  table_rules: str = "grid"
+  # The rules above and below a table drawn double, as IEEE journals draw them.
+  table_double: bool = False
 
   # Local-link handling.
   # `[x](file.md)` with no schema gets resolved to `{link_root}/{link_base}/file.md`

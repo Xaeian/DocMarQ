@@ -30,13 +30,17 @@ A package that lays out the page itself works in steps:
 - `renderer.render_tokens(tokens[a:b])` writes any slice after the last block
 - `renderer.render_tokens(part, style)` sets that part in a style of its own: font, size, leading, paragraph gap; heading slugs run on across parts
 - `renderer.frontmatter_file(fm, key)` gives the file a frontmatter key names, warning when it is missing
+- `renderer.write_inline(inline)` writes the runs of an inline token into the open paragraph, for text a package sets itself, as a caption
 
 Functions of `docmarq.md` go with them:
 
 - `top_blocks(tokens)` gives `(start, end)` of each top-level block, a `<!-- group -->` counting as one
+- `group_options(content)` gives `["wide"]` for `<!-- group wide -->`, the one option a group takes, which the engine sets as any group and a package spans across columns
 - `split_frontmatter(text)`, `metadata_from_frontmatter(fm)` and `docx_metadata(fm, overrides)` read frontmatter, which the engine itself never writes
+- `people(value)` reads an `author`-like value as persons, each a mapping with `name` first, an ORCID or e-mail written after a name joining it, and `byline(value)` gives their names on one line
 
 The renderer sets up the document as its style asks: Word's heading styles, the body typography, hyphenation.
+`emoji_font` sets emoji in a face that has them, as pdfmarq draws them, and `None` leaves them as written.
 Content goes wherever the core writes: in `doc.columns(2)` it flows through the columns, inside `with doc.into(cell, width)` it fills a table cell, and tables and images fit that width.
 
 ## Flowing text
@@ -51,8 +55,19 @@ MarkdownStyle(justify=True, hyphenate="pl", keep_together=True, h2_size=None)
   Word splits words by the language of the text, so `pl` makes the document Polish.
   Headings, table cells and code keep their words whole.
   The `DOCX` the engine writes into uses mm, as the engine does, or the renderer refuses it.
+- `bind_single_letters="aiouwz"` names the one-letter words a no-break space ties to the word after them, so no line ends with `w` or `i`, as Polish typesetting asks.
+  A capital binds only where a sentence or a clause opens, after a stop, a colon or a bracket, or among capitals, as in a title, so `Table I` and a Roman `V` stay free.
+  A letter opening a bracket or a quote binds too, as `(w` or `„w`.
+  A number keeps to its unit, `5 V`, and a unit after a number pulls no word along.
+  It holds in paragraphs, lists, quotes, headings, table cells and the titles of `paper` and `legal`, while code stays as written.
+  `lang_style` sets it for `pl`, `cs` and `sk`.
 - `keep_together=True` keeps each paragraph on one page, and a top-level list on one page with its items.
   `False`, the default, leaves page breaks to Word.
+- `first_indent` sets the first line of a body paragraph in by that many mm, as books and journals do.
+  A paragraph of a list, a quote or a footnote keeps flush.
+- `line_height=None` writes no leading on the paragraphs or list items, so Word's paragraph style sets it, as a template does.
+  It is docmarq's alone: pdfmarq has no paragraph style to leave the leading to.
+- `table_rules` rules a table `grid`, `rows` or `head` (above, below and under its header), `table_double` doubles the outer rules, `table_header_bg=None` leaves the header unshaded.
 - A heading size of `None` follows `body_size`.
   The sizes, `head_mode` and the rules under `#` and `##` restyle Word's `Heading 1…6`, so the whole document follows.
   A `head_mode` without `Italic` leaves the slant Word gives a level, as to `Heading 4`.
@@ -125,12 +140,13 @@ Same field names, deliberately different values - do not "fix" these:
 | `keep_together` | `True` | `False` | pdfmarq measures each block; Word breaks pages itself, as docmarq always let it |
 | `math_fontset` | `stixsans` | `stix` | fallback formulas blend with Word's serif Cambria Math |
 | `mermaid_remote` | - | `True` | allow the mermaid.ink fallback; `False` keeps diagram source on the machine |
+| `emoji_font` | inert | read | pdfmarq draws emoji as pictures, and the field lets a docmarq style carry over |
 | `syntax_theme` | Pygments style name | _absent_ | docmarq has no syntax highlighting, so it has no dead field for it |
 | `head_gap_top` / `head_gap_bot` | `3` / `1.5` mm | `None` | each Word heading level keeps its own gaps, as docmarq always set them |
 | `hr_thick` | `0.3` pt | `0.5` pt | the rules docmarq always drew; Word keeps eighths of a point |
 | `mark_bg` | read | inert | DOCX keeps `==mark==` as text, and the field lets a pdfmarq style carry over |
 
-pdfmarq's style also holds fields for drawing details Word decides itself: `table_*` but `table_h_pad`, `code_block_*`, `quote_*`, `list_indent`, `mono_size`, the `*_mode` faces and more.
+pdfmarq's style also holds fields for drawing details Word decides itself: `table_pad` and the `table_*_thick` widths, `code_block_gap`, `code_block_pad` and `code_block_radius`, `quote_*`, `list_indent`, `mono_size`, the `*_mode` faces and more.
 docmarq has none of them, so a style that sets them stays with pdfmarq.
 `MarkdownRenderer` takes `font_dir` in docmarq, for mermaid and SVG text; pdfmarq's `PDF` holds its own.
 

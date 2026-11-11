@@ -2,7 +2,7 @@
 
 """Style of a documentation DOCX: the markdown style plus banner, footer and signing lines."""
 from dataclasses import dataclass, field
-from ..md import MarkdownStyle
+from ..md import MarkdownStyle, people
 from ..parts import sign_labels, default_sign_labels
 
 #----------------------------------------------------------------------------------- Status palette
@@ -46,6 +46,7 @@ class PaperStyle(MarkdownStyle):
   banner_status_colors: dict = field(default_factory=_default_status_colors)
   date_format: str = "%Y-%m-%d"
   banner_label_author: str = "Author"
+  banner_label_authors: str = "Authors" # when `author` names more than one person
   banner_label_created: str = "Created"
   banner_label_updated: str = "Updated"
 
@@ -61,3 +62,7 @@ class PaperStyle(MarkdownStyle):
   def sign_lines(self) -> list[str]:
     """Labels to draw: a scenario from `sign_labels`, or a list verbatim."""
     return sign_labels(self.sign, self.sign_labels)
+
+  def author_label(self, author) -> str:
+    """The label of an `author` frontmatter value, plural when it names more than one person."""
+    return self.banner_label_authors if len(people(author)) > 1 else self.banner_label_author

@@ -19,41 +19,49 @@ from .style import PaperStyle
 _LABELS: dict[str, dict] = {
   "pl": {
     "banner_label_author": "Autor",
+    "banner_label_authors": "Autorzy",
     "banner_label_created": "Utworzono",
     "banner_label_updated": "Zaktualizowano",
   },
   "de": {
     "banner_label_author": "Autor",
+    "banner_label_authors": "Autoren",
     "banner_label_created": "Erstellt",
     "banner_label_updated": "Aktualisiert",
   },
   "fr": {
     "banner_label_author": "Auteur",
+    "banner_label_authors": "Auteurs",
     "banner_label_created": "Créé",
     "banner_label_updated": "Mis à jour",
   },
   "es": {
     "banner_label_author": "Autor",
+    "banner_label_authors": "Autores",
     "banner_label_created": "Creado",
     "banner_label_updated": "Actualizado",
   },
   "it": {
     "banner_label_author": "Autore",
+    "banner_label_authors": "Autori",
     "banner_label_created": "Creato",
     "banner_label_updated": "Aggiornato",
   },
   "cs": {
     "banner_label_author": "Autor",
+    "banner_label_authors": "Autoři",
     "banner_label_created": "Vytvořeno",
     "banner_label_updated": "Aktualizováno",
   },
   "sk": {
     "banner_label_author": "Autor",
+    "banner_label_authors": "Autori",
     "banner_label_created": "Vytvorené",
     "banner_label_updated": "Aktualizované",
   },
   "pt": {
     "banner_label_author": "Autor",
+    "banner_label_authors": "Autores",
     "banner_label_created": "Criado",
     "banner_label_updated": "Atualizado",
   },

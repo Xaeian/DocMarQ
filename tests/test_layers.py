@@ -100,6 +100,8 @@ def private_crossings(layer_of):
           base = node.module or ""
           if node.level: base = importlib.util.resolve_name("." * node.level + base, package)
           if base.split(".")[0] != "docmarq" or layer_of(base) == layer: continue
+          if any(part.startswith("_") and not part.startswith("__") for part in base.split(".")):
+            bad.append(f"{module} imports {base}")
           bad += [f"{module} imports {base}.{a.name}" for a in node.names
             if a.name.startswith("_") and not a.name.startswith("__")]
         elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
@@ -129,11 +131,12 @@ def scanner_resolves_relative_imports(imported):
   assert "core" in imported(PACKAGE / "md" / "renderer.py")
 
 def no_underscored_name_crosses_a_layer(trees, private_crossings):
-  # a layer reaches the ones below through their public names, never an underscored one
+  # a layer reaches the ones below through public names and modules, never underscored ones
   bad = private_crossings(trees)
   assert not bad, "\n".join(bad)
 
 def scanner_sees_an_underscored_name_crossing(trees, private_crossings):
-  trees["docmarq.paper.probe"] = ast.parse("from ..core import _secret\ntop = pdf._page.height\n")
+  trees["docmarq.paper.probe"] = ast.parse(
+    "from ..core import _secret\nfrom .._hidden import name\ntop = pdf._page.height\n")
   assert private_crossings(trees) == ["docmarq.paper.probe imports docmarq.core._secret",
-    "docmarq.paper.probe:2 reads ._page"]
+    "docmarq.paper.probe imports docmarq._hidden", "docmarq.paper.probe:3 reads ._page"]

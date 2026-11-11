@@ -3,6 +3,8 @@
 """Utility functions - unit conversion, color parsing, helpers."""
 from datetime import date, datetime
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from .constants import Unit, EMU_PER_MM, EMU_PER_PT
 
 #-------------------------------------------------------------------------------------------- Units
@@ -191,3 +193,12 @@ def align_to_docx(align:str|None):
     "J": WD_ALIGN_PARAGRAPH.JUSTIFY,
   }
   return table.get(align, WD_ALIGN_PARAGRAPH.LEFT) if align else None
+
+#-------------------------------------------------------------------------------------------- OOXML
+
+def text_element(value:str):
+  """`w:t` holding `value`, the spaces at its ends kept, which Word drops otherwise."""
+  t = OxmlElement("w:t")
+  t.text = value
+  t.set(qn("xml:space"), "preserve")
+  return t

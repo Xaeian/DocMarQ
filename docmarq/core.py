@@ -15,16 +15,19 @@ from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
 from .constants import Defaults, DXA_PER_MM
 from .utils import (to_mm, parse_margin, align_to_docx, color_hex,
-  rgb255, smaller_size, tight_line_height)
+  rgb255, smaller_size, tight_line_height, text_element, eighths)
 from .styles import Style, TableStyle
 from .layout import PageGeometry
-from .structure import Metadata
+from .structure import Metadata, new_properties
 from .inline import RichSegment, _apply_run_format
 from .svg import svg_to_png_buffer, is_svg
 from .fields import page_fields
 from .images import pin_offsets
+from .emoji import font_emoji, EMOJI_FONT
+from . import dropcap, notes
 from .tables import (
-  apply_table_borders, apply_cell_shading, set_cell_align, repeat_header_row,
+  apply_table_rules, check_table_rules, rule_cell, apply_cell_shading, set_cell_align,
+  repeat_header_row,
   set_cell_margins, set_cell_vertical_align, content_widths, set_table_widths,
   TablePicture, CELL_LINE_SPACING,
 )
@@ -37,8 +40,8 @@ _LANG_TAGS = {"en": "en-US", "pl": "pl-PL", "de": "de-DE", "fr": "fr-FR", "es": 
 
 @dataclass
 class _Target:
-  """Where blocks go: the document body, or a table cell."""
-  box: object # `Document` or `_Cell`, both with `add_paragraph` and `add_table`
+  """Where blocks go: the document body, a table cell or a footnote."""
+  box: object # `Document`, `_Cell` or `notes.Note`, each with `add_paragraph` and `add_table`
   width: float|None = None # mm, a cell's, or `None` to follow the page and its columns
   spare: object = None # empty paragraph the next block fills, as a fresh cell's first
 
@@ -82,6 +85,7 @@ class DOCX:
       gutter=to_mm(gutter, unit),
     )
     self._doc = Document(template) if template else Document()
+    new_properties(self._doc, blank=not template)
     # a justified line a manual break ends stays flush left, as in pdfmarq
     _compat_option(self._doc.settings.element, "doNotExpandShiftReturn")
     self._apply_section_geometry()
@@ -98,6 +102,7 @@ class DOCX:
     self._at = _Target(self._doc)
     self._cols = (1, 0.0) # columns of the current section: count, gap (mm)
     self._hyphenate = False # set by `hyphenation()`: headings, cells and code keep words whole
+    self._emoji_font = None # set by `emoji()`: the face emoji take when the document is saved
     # `False` keeps the template's own styles: the markdown engine leaves its headings alone
     self.neutral_style = neutral_style
     if neutral_style:
@@ -327,9 +332,12 @@ class DOCX:
     with keep-with-next, all but the last, so Word keeps them on one page.
     """
     self._flush_para()
-    body = self._at.box is self._doc
-    box = self._doc.element.body if body else self._at.box._tc
-    # blocks go before the body's closing `w:sectPr`, or after a cell's last block
+    target = self._at.box
+    body = target is self._doc
+    if body: box = self._doc.element.body
+    elif isinstance(target, notes.Note): box = target.element
+    else: box = target._tc
+    # blocks go before the body's closing `w:sectPr`, or after the last block of a cell or a note
     tail = 1 if body else 0
     children = list(box)
     spare = self._at.spare
@@ -395,9 +403,36 @@ class DOCX:
     self._hyphenate = True
     return self
 
+  def emoji(self, font:str|None=EMOJI_FONT) -> "DOCX":
+    """
+    Set emoji in `font` when the document is saved, each stretch of them a run of its own,
+    since a text face holds none and Word would print a box.
+    `None` leaves them as written.
+    """
+    self._emoji_font = font
+    return self
+
   def keep_words(self, p):
     """Keep the words of paragraph `p` whole while `hyphenation()` is on."""
     if self._hyphenate: no_hyphens(p._p)
+
+  def drop_cap(
+    self,
+    size:float,
+    line:float,
+    lines:int = 2,
+    sink:float = 0,
+    caps:bool = False,
+  ) -> "DOCX":
+    """
+    Drop the first letter of the paragraph just written `lines` lines, as Word's own drop cap:
+    `size` pt tall, sunk `sink` pt, in a frame of lines `line` pt apart.
+    `caps` sets the rest of its first word in capitals, as IEEE journals do.
+    A paragraph opening with no letter stays as it is.
+    """
+    if self._current_para is not None:
+      dropcap.drop_cap(self._current_para, size, line, lines, sink, caps)
+    return self
 
   #----------------------------------------------------------------------------------- Write target
 
@@ -422,6 +457,53 @@ class DOCX:
       # the empty paragraph a cell keeps, as Word wants after a table, adds no height
       if self._at.spare is not None: _hairline_format(self._at.spare)
       self._at, self._last_space_after, self._extra_block_after = outer
+
+  @contextmanager
+  def footnote(self, mark:str|None=None):
+    """
+    Write the paragraphs of the `with` body as a footnote of the open paragraph,
+    then go on writing that paragraph.
+
+    `mark=None` numbers the note as Word does, a string marks it with itself,
+    and `""` leaves it unmarked, as a note of the authors' affiliations.
+    The note's paragraphs take Word's `footnote text` style and no gaps,
+    their runs the face `font()` sets, inside the `with` body as anywhere.
+    A note holds paragraphs only, so one inside another refuses, as a table there does.
+    A note whose body fails leaves neither the note nor its mark behind.
+    """
+    if isinstance(self._at.box, notes.Note): raise ValueError("a footnote holds no footnote")
+    if self._current_para is None: self.para()
+    # the paragraph goes on after the note, in its colour too, as a quote's
+    host, color = self._current_para, self._para_default_color
+    self._footnote_settings()
+    note = notes.add_note(self._doc, host, mark)
+    outer = (self._at, self._style, self._last_space_after, self._extra_block_after)
+    self._at = _Target(note, self.content_width)
+    self._style = self._style.copy(space_before=0, space_after=0)
+    self._flush_para()
+    self._last_space_after = self._extra_block_after = 0
+    try:
+      yield self
+      self._flush_para()
+      notes.mark_note(self._doc, note, mark)
+    except Exception:
+      notes.drop_note(host, note)
+      raise
+    finally:
+      self._at, self._style, self._last_space_after, self._extra_block_after = outer
+      self._current_para, self._para_default_color = host, color
+
+  def footnote_rule(self, show:bool) -> "DOCX":
+    """Draw the short rule Word sets above the footnotes, or leave it out."""
+    self._footnote_settings()
+    notes.rule(self._doc, show)
+    return self
+
+  def _footnote_settings(self):
+    """Word's footnote settings, naming the separators of the footnotes part, added once."""
+    settings = self._doc.settings.element
+    if settings.find(qn("w:footnotePr")) is None:
+      _insert_ordered(settings, notes.settings_entry(), _SETTINGS_ORDER)
 
   def new_para(self, text:str="", style:str|None=None):
     """
@@ -526,7 +608,7 @@ class DOCX:
     if self._current_para is None:
       self.para()
     _set_pbdr(self._current_para._p, color_hex(color), sides=sides,
-      size_eighths=max(1, round(size * 8)), space=round(space))
+      size_eighths=eighths(size), space=round(space))
     return self
 
   def _flush_para(self):
@@ -791,11 +873,14 @@ class DOCX:
     except KeyError: return fallback
 
   def _tighten_list_spacing(self, p):
-    """Override Word's loose default list spacing - keep items packed."""
+    """
+    Override Word's loose default list spacing - keep items packed.
+    With `line_height=None` the leading stays Word's paragraph style's, as for the text.
+    """
     pf = p.paragraph_format
     pf.space_before = Pt(0)
     pf.space_after = Pt(0)
-    pf.line_spacing = 1.1
+    if self._style.line_height is not None: pf.line_spacing = 1.1
 
   #--------------------------------------------------------------------------------- Block elements
 
@@ -895,6 +980,7 @@ class DOCX:
       word_style: Built-in Word style name (e.g. `Light Grid`).
     """
     self._flush_para()
+    if style is not None: check_table_rules(style.rules) # before a table is left half made
     rows = ([header] if header else []) + (body or [])
     if not rows: return self
     ncols = max(len(r) for r in rows)
@@ -934,7 +1020,7 @@ class DOCX:
       col_w_mm = None
     # Borders first: `set_table_widths` reorders `tblPr` into canonical schema order
     # and slots these borders correctly (strict renderers need the order).
-    apply_table_borders(tbl, style.border_color, style.border_size)
+    apply_table_rules(tbl, style.border_color, style.border_size, style.rules, style.double)
     if col_w_mm:
       tbl.autofit = False
       tbl.allow_autofit = False
@@ -954,7 +1040,8 @@ class DOCX:
           run.bold = True
         if style.header_color is not None:
           run.font.color.rgb = RGBColor(*rgb255(style.header_color))
-        apply_cell_shading(cell, style.header_bg)
+        if style.header_bg is not None: apply_cell_shading(cell, style.header_bg)
+        if style.rules == "head" and body: rule_cell(cell, style.border_color, style.border_size)
         set_cell_margins(cell, top=style.cell_pad_top, right=style.cell_pad_h,
           bot=style.cell_pad_bot, left=style.cell_pad_h)
         set_cell_vertical_align(cell, style.vertical_align)
@@ -1092,10 +1179,7 @@ class DOCX:
     underline.set(qn("w:val"), "single")
     rpr.append(underline)
     run.append(rpr)
-    t = OxmlElement("w:t")
-    t.text = text
-    t.set(qn("xml:space"), "preserve")
-    run.append(t)
+    run.append(text_element(text))
     hl.append(run)
     p._element.append(hl)
 
@@ -1162,6 +1246,10 @@ class DOCX:
     # a document ends with a paragraph: Word adds a full-size one after a final table itself
     if _last_block(self._doc).tag == qn("w:tbl"): self.hairline()
     self._metadata.apply(self._doc)
+    if self._emoji_font:
+      for part in self._doc.part.package.iter_parts(): # body, headers, footers and footnotes
+        element = getattr(part, "element", None)
+        if element is not None: font_emoji(element, self._emoji_font)
     self._doc.save(self.path)
     return self
 

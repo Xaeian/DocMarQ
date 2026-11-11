@@ -51,11 +51,12 @@ def _apply_run_format(
   code_family:str|None = None,
   code_size:float|None = None,
   code_color:tuple|str|None = None,
-  code_bg:tuple|str|None = None,
+  code_bg:tuple|str|bool|None = None,
 ):
   """
   Apply `RichSegment` styling to a `python-docx` `Run`.
   Unset `code_*` arguments fall back to `Defaults.CODE_*`.
+  `code_bg=False` leaves code unshaded, since `None` there is the grey of the defaults.
   """
   f = run.font
   if seg.code:
@@ -78,7 +79,7 @@ def _apply_run_format(
   # `bg_color` (status badges, callout titles) and code shading are mutually exclusive;
   # code always wins with its own background.
   if seg.code:
-    apply_run_shading(run, color_hex(code_bg or Defaults.CODE_BG))
+    if code_bg is not False: apply_run_shading(run, color_hex(code_bg or Defaults.CODE_BG))
   elif seg.bg_color is not None:
     apply_run_shading(run, color_hex(seg.bg_color))
   if seg.superscript:

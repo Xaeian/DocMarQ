@@ -20,6 +20,7 @@ Example:
   >>> # buf is a BytesIO of PNG bytes, or None when rasterizing is impossible
 """
 import io, threading, warnings
+from importlib import import_module
 from . import svgmarkers
 from .fonts import resolve_ttf
 
@@ -55,7 +56,7 @@ def svg_to_png_buffer(path:str):
   svglib drops `<marker>` without a word, so arrowheads are expanded into plain shapes first.
   """
   try:
-    import rlPyCairo # renderPM loads its backend lazily - check here, fail fast
+    import_module("rlPyCairo") # renderPM loads its backend lazily - check here, fail fast
     from svglib.svglib import load_svg_file, SvgRenderer
     from reportlab.graphics import renderPM
   except ImportError as e:

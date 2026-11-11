@@ -20,7 +20,7 @@ try:
   from jinja2.sandbox import ImmutableSandboxedEnvironment, SecurityError
   from markupsafe import Markup
 except ModuleNotFoundError as e: raise ImportError("Install with: pip install docmarq[md]") from e
-from .._warn import caller_level
+from ..warn import caller_level
 from ..utils import format_date
 from ..md import split_frontmatter
 

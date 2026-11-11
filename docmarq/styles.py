@@ -32,7 +32,7 @@ class Style:
   code_family: str|None = None
   code_size: float|None = None # pt, `None` → `CODE_SIZE_RATIO` of body size
   code_color: tuple|str|None = None
-  code_bg: tuple|str|None = None
+  code_bg: tuple|str|bool|None = None # `False` unshaded
 
   def merge(self, parent:"Style") -> "Style":
     """Create new style inheriting `None` values from parent."""
@@ -80,14 +80,20 @@ class TableStyle:
   Cell padding is split into `top`/`bot`/`h` (horizontal).
   Defaults are asymmetric vertical: more top than bottom - optical correction
   so text sits in the visual center, not the geometric one (font ascent > descent).
+
+  `rules` and `double` have no `pdfmarq` equivalent: its markdown engine rules its tables itself.
   """
-  header_bg: tuple|str = (0.96, 0.97, 0.98) # #f6f8fa
+  header_bg: tuple|str|None = (0.96, 0.97, 0.98) # #f6f8fa, `None` unshaded
   header_color: tuple|str|None = None
   header_bold: bool = True
   row_bg_even: tuple|str|None = None
   row_bg_odd: tuple|str|None = (0.985, 0.99, 0.995)
   border_color: tuple|str = (0.82, 0.84, 0.87) # #d0d7de
   border_size: float = 0.5 # pt
+  # `grid` around every cell, `rows` the same without vertical rules,
+  # `head` above and below the table and under its header.
+  rules: str = "grid"
+  double: bool = False # the rules above and below the table drawn double
   cell_pad_top: float = 1.6 # mm - more, optical pushdown
   cell_pad_bot: float = 0.6 # mm - less
   cell_pad_h: float = 2.5 # mm horizontal

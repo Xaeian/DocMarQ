@@ -375,7 +375,7 @@ def fields_read_anywhere_count_as_used(tmp_path):
   with warnings.catch_warnings():
     warnings.simplefilter("error")
     merge(template, [row], name="{{ file }}", base_dir=tmp_path)
-    merge('{% include f %}', [{"f": "a.md", "address": "x", "other": "y"}], base_dir=tmp_path)
+    merge("{% include f %}", [{"f": "a.md", "address": "x", "other": "y"}], base_dir=tmp_path)
 
 #------------------------------------------------------------------------------------------- Render
 
@@ -386,5 +386,5 @@ def filled_contract_prints_its_record_literally(tmp_path):
   path = str(tmp_path / "c.docx")
   record = {"company": "Alpha (Sp. z o.o.)", "tasks": [{"name": "A | B", "hours": 4}]}
   md_to_docx(fill(template, record), path, style=lang_style("pl"))
-  text = docx_text(path)
+  text = docx_text(path).replace(chr(0xa0), " ") # a bound word prints as a space
   assert "Alpha (Sp. z o.o.)" in text and "A | B" in text

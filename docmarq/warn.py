@@ -1,4 +1,4 @@
-# docmarq/_warn.py
+# docmarq/warn.py
 
 """Where a warning points: at the user's line, past every frame of the library."""
 import sys

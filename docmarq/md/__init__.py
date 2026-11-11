@@ -25,9 +25,9 @@ __extras__ = ("md", ["markdown-it-py", "mdit-py-plugins", "PyYAML"])
 from .style import MarkdownStyle
 from .renderer import MarkdownRenderer, top_blocks
 from .frontmatter import (split_frontmatter, peek_frontmatter, metadata_from_frontmatter,
-  docx_metadata, read_yaml)
+  docx_metadata, read_yaml, people, byline)
 from .presets import lang_style, LANG_PRESETS
-from .tokens import is_pagebreak_directive, is_group_open_directive
+from .tokens import is_pagebreak_directive, is_group_open_directive, group_options, bind_letters
 
 __all__ = [
   "MarkdownStyle",
@@ -38,8 +38,12 @@ __all__ = [
   "read_yaml",
   "metadata_from_frontmatter",
   "docx_metadata",
+  "people",
+  "byline",
   "lang_style",
   "LANG_PRESETS",
   "is_pagebreak_directive",
   "is_group_open_directive",
+  "group_options",
+  "bind_letters",
 ]

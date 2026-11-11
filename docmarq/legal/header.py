@@ -28,7 +28,8 @@ from ..metrics import text_width_mm
 from ..svg import svg_to_png_buffer, is_svg
 from ..tables import remove_table_borders, set_cell_margins, set_table_widths
 from ..utils import format_date, mm_to_pt, align_to_docx
-from .._warn import caller_level
+from ..warn import caller_level
+from ..md import bind_letters
 from .style import LegalStyle
 
 _ROW_GAP_MM = 6 # below every header row
@@ -188,7 +189,7 @@ def _title(
     "small_caps": style.title_caps}
   for i, line in enumerate(lines):
     if i: doc.line_break()
-    doc.text(line, **face)
+    doc.text(bind_letters(line, style.bind_single_letters), **face)
   doc.track_block_spacing(mm_to_pt(style.title_gap))
 
 def _widest_word(style:LegalStyle, lines:list[str]) -> float:

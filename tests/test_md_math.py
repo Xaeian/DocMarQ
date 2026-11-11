@@ -10,8 +10,7 @@ Integration tests confirm `$...$` / `$$...$$` produce native `<m:oMath>` in `wor
 never leak raw LaTeX, and keep the file valid OOXML.
 """
 
-import re
-import zipfile
+import re, zipfile
 import pytest
 from docx.oxml.ns import qn
 from conftest import assert_valid_docx
