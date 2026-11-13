@@ -94,8 +94,10 @@ style = lang_style("pl", # banner/footer labels
   mermaid_theme="default",
 )
 md_to_docx(md, "out.docx", style=style,
-  page=A4, margin=25, gutter=0, base_dir=".", font_dir="./fonts")
+  page=A4, margin=25, gutter=0, two_sided=False, base_dir=".", font_dir="./fonts")
 ```
+
+`gutter` widens the left margin for binding, and `two_sided=True` prints on both sides of the sheet: Word mirrors the margins of even pages, the gutter at the bound edge.
 
 `sign` takes `True` for one line, a `sign_labels` scenario or a list of custom labels.
 Scenarios: `signature`, `approval` and `contract`, localized by the language preset.
@@ -119,7 +121,7 @@ PaperStyle(
 )
 ```
 
-The engine's fields - fonts, sizes, `justify`, `keep_together` - are there too, since `PaperStyle` extends `MarkdownStyle`.
+The engine's fields (fonts, sizes, `justify`, `keep_together`) are there too, since `PaperStyle` extends `MarkdownStyle`.
 
 A paper titles its bibliography unasked: the footnotes collected at the end go under a level-2 heading in the style's language, `Literatura` in `pl`, `References` in `en`.
 A document that ends with a heading of its own has titled them already, as `### Literatura` at the very end, and gets no second title.

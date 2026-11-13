@@ -42,13 +42,14 @@ from .style import MarkdownStyle
 from .frontmatter import split_frontmatter
 from ..warn import caller_level
 from .tokens import (get_attr, find_close, CALLOUT_RE, bind_children,
-  is_pagebreak_directive, is_group_open_directive, is_group_close_directive)
+  is_pagebreak_directive, is_group_open_directive, is_group_close_directive, group_options)
 from . import slug, image_utils, mermaid
 from .math import latex_to_omath, MathConversionError, build_omath_para, pop_tag, render_math_png
 
 #------------------------------------------------------------------------------------ Image helpers
 
 _ROW_MIN_SLOT_MM = 20 # figures narrower than this wrap to another row
+_SQUEEZE_SLACK_MM = 0.5 # a table this much narrower than its longest words still holds them
 
 def _image_row(inline_token:Token) -> list[Token]|None:
   """
@@ -65,6 +66,10 @@ def _image_row(inline_token:Token) -> list[Token]|None:
     elif c.type == "text" and not c.content.strip(): continue
     else: return None
   return imgs or None
+
+def _goes_on(inline:Token) -> bool:
+  """Whether a paragraph goes on with the sentence of a formula above it: it opens in lowercase."""
+  return inline.content.lstrip()[:1].islower()
 
 def _row_columns(avail_mm:float, gap_mm:float) -> int:
   """How many figures fit across before each falls below `_ROW_MIN_SLOT_MM`."""
@@ -161,6 +166,7 @@ class MarkdownRenderer:
     if self.style.math_enable: md.use(dollarmath_plugin)
     self._md = md
     self._list_depth = 0
+    self._after_math = False # the block written last was a formula, a sentence maybe going on
     # Pre-scanned slugs for `[text](#slug)` internal links - built before the first token
     # so broken anchors render as plain text, never as dangling Word hyperlinks.
     self._known_slugs: set[str] = set() # populated by `index()`
@@ -205,7 +211,7 @@ class MarkdownRenderer:
     """Parse, index and write a whole markdown document after the last block."""
     tokens = self.parse(md_text)
     self.index(tokens)
-    self._render_tokens(tokens)
+    self._render_top(tokens)
 
   def parse(self, md_text:str) -> list[Token]:
     """
@@ -230,24 +236,67 @@ class MarkdownRenderer:
     self._slug_uses = {}
     self._anchors = prefix
 
-  def render_tokens(self, tokens:list[Token], style:MarkdownStyle|None=None):
+  def render_tokens(self, tokens:list[Token], style:MarkdownStyle|None=None, below:float=0):
     """
     Write `tokens`, the whole parsed document or any slice of it, after the last block.
 
     `style` sets this part in a look of its own: its font, size, leading and paragraph gap.
     The document's state is kept: heading slugs run on across parts.
+    A look with `columns > 1` sets the part in columns.
+    Each call opens and closes sections of its own,
+    so a package writing block by block opens them itself, with `doc.columns()`.
+    `below` matches `pdfmarq`, where it keeps room under the columns: Word places what follows.
     """
-    if style is None: return self._render_tokens(tokens)
+    if style is None: return self._render_top(tokens)
     _check_style(style)
     own, self.style = self.style, style
     body = self.doc.text_style.copy()
     try:
       self.doc.font(family=style.font_body, size=style.body_size)
       self._typeset()
-      self._render_tokens(tokens)
+      self._render_top(tokens)
     finally:
       self.style = own
       self.doc.text_style = body
+
+  def _render_top(self, tokens:list[Token]):
+    """`tokens` as the look sets them: in columns when it asks for more than one."""
+    if self.style.columns > 1: self._render_columns(tokens)
+    else: self._render_tokens(tokens)
+
+  def _render_columns(self, tokens:list[Token]):
+    """
+    The text before the first `##` across the page, the rest in sections of columns.
+    A block across the page (`_spans`) gets a section of one column between them,
+    and a continuous break ends each run, so Word balances its last page, the document's too.
+    """
+    doc, s = self.doc, self.style
+    if doc.in_columns:
+      raise ValueError("columns cannot open in columns or an inset: give this part `columns=1`")
+    first = first_section(tokens)
+    self._render_tokens(tokens[:first])
+    for run, wide in _runs(tokens[first:], self._spans):
+      if _sets_anything(run): doc.columns(s.columns, gap=s.column_gap)
+      self._render_tokens(run) # comments alone open no columns
+      doc.columns(1)
+      self._render_tokens(wide)
+
+  def _spans(self, block:list[Token]) -> bool:
+    """
+    Whether `block` goes across the page between sections of columns: a group opened `wide`,
+    and with `floats`, as a journal sets it, a table, alone or in a group,
+    whose words a column cannot hold.
+    """
+    if _wide_group(block): return True
+    head = block[0]
+    group = head.type == "html_block" and is_group_open_directive(head.content or "")
+    if not self.style.floats or (not group and head.type != "table_open"): return False
+    s, doc = self.style, self.doc
+    column = (doc.content_width - s.column_gap * (s.columns - 1)) / s.columns
+    def squeezed(i:int) -> bool:
+      header, body, _, _ = self._table_rows(block, i)
+      return doc.table_words(header, body, self._table_look()) > column + _SQUEEZE_SLACK_MM
+    return any(squeezed(i) for i, t in enumerate(block) if t.type == "table_open")
 
   def frontmatter_file(self, fm:dict, key:str, warn:bool=True) -> str|None:
     """
@@ -301,6 +350,7 @@ class MarkdownRenderer:
     while i < n:
       t = tokens[i]
       tt = t.type
+      after_math, self._after_math = self._after_math, False
       if tt == "heading_open":
         # `![alt](src)` over a `---` or `===` line parses as a setext heading holding the picture:
         # it stays a figure, and `---` a rule
@@ -319,14 +369,16 @@ class MarkdownRenderer:
         if imgs:
           self._render_images(imgs)
         else:
-          self._render_paragraph(inline)
+          self._render_paragraph(inline, not (after_math and _goes_on(inline)))
         i += 3
       elif tt == "fence" or tt == "code_block":
         info_parts = (t.info or "").strip().split(maxsplit=1) # [lang, rest_dsl]
         lang = info_parts[0] if info_parts else None
         info_rest = info_parts[1] if len(info_parts) > 1 else ""
         if lang == "mermaid": self._render_mermaid(t.content, info_rest)
-        elif lang == "math": self._render_math_block(t.content)
+        elif lang == "math":
+          self._render_math_block(t.content)
+          self._after_math = True
         else:
           self.doc.code_block(
             t.content,
@@ -339,6 +391,7 @@ class MarkdownRenderer:
         i += 1
       elif tt == "math_block":
         self._render_math_block(t.content)
+        self._after_math = True
         i += 1
       elif tt == "bullet_list_open": i = self._render_list(tokens, i, ordered=False)
       elif tt == "ordered_list_open": i = self._render_list(tokens, i, ordered=True)
@@ -440,7 +493,8 @@ class MarkdownRenderer:
   def _render_paragraph(self, inline_token:Token, indent:bool=True):
     """
     Emit a regular body paragraph and stream styled runs into it.
-    Its first line starts `first_indent` in, unless it belongs to a list or a footnote.
+    Its first line starts `first_indent` in, unless it belongs to a list or a footnote,
+    or goes on with the sentence of a formula right above it, `indent` false then.
     """
     self.doc.para()
     self._body_look()
@@ -828,13 +882,18 @@ class MarkdownRenderer:
     Paragraph carrying the classic Word equation layout:
     a center tab in the middle of the text width, a right tab at its edge,
     the label after the second tab.
-    The equation itself goes between the tabs.
+    With `math_number_left` the label opens the line instead, and one tab centres the equation.
+    The equation itself goes after the first run's tab, before the last run.
     """
     content_w = self.doc.content_width
     p = self.doc.new_para()
     self.doc.apply_para_spacing(p)
     pf = p.paragraph_format
     pf.tab_stops.add_tab_stop(Mm(content_w / 2), WD_TAB_ALIGNMENT.CENTER)
+    if self.style.math_number_left:
+      p.add_run(tag + "\t")
+      p.add_run() # the end of the line, after the equation
+      return p
     pf.tab_stops.add_tab_stop(Mm(content_w), WD_TAB_ALIGNMENT.RIGHT)
     p.add_run("\t")
     p.add_run("\t" + tag)
@@ -1207,6 +1266,24 @@ class MarkdownRenderer:
   #------------------------------------------------------------------------------------------ Table
 
   def _render_table(self, tokens:list[Token], start:int) -> int:
+    """
+    The table opened at `start`, returning the index after it.
+    One whose longest words its frame cannot hold warns: words break inside its cells.
+    """
+    header, body, aligns, end = self._table_rows(tokens, start)
+    doc, look = self.doc, self._table_look()
+    words = doc.table_words(header, body, look)
+    if words > doc.content_width + _SQUEEZE_SLACK_MM:
+      room = doc.content_width
+      warnings.warn(f"a table {words:.0f}mm wide at its longest words gets {room:.0f}mm, "
+        "so words break inside its cells; "
+        "in columns `<!-- group wide -->` sets it across the page",
+        RuntimeWarning, stacklevel=caller_level())
+    doc.table(header=header, body=body, aligns=aligns or None, style=look)
+    return end + 1
+
+  def _table_rows(self, tokens:list[Token], start:int) -> tuple[list|None, list[list], list, int]:
+    """`(header, body, aligns, end)` of the table opened at `start`, `end` at its close."""
     end = find_close(tokens, start, "table_open", "table_close")
     header_cells: list[str|TablePicture] = []
     body_rows: list[list[str|TablePicture]] = []
@@ -1238,17 +1315,15 @@ class MarkdownRenderer:
         current_row.append(cell)
         j = k
       j += 1
+    return header_cells or None, body_rows, aligns, end
+
+  def _table_look(self) -> TableStyle:
+    """How the style sets a table."""
     s = self.style
-    self.doc.table(
-      header=header_cells if header_cells else None,
-      body=body_rows,
-      aligns=aligns if aligns else None,
-      style=TableStyle(cell_pad_h=s.table_h_pad, font_size=s.table_size,
-        header_bg=s.table_header_bg, border_color=s.table_border,
-        row_bg_odd=s.table_zebra_bg if s.table_zebra else None,
-        rules=s.table_rules, double=s.table_double),
-    )
-    return end + 1
+    return TableStyle(cell_pad_h=s.table_h_pad, font_size=s.table_size,
+      font_family=s.font_table, header_bg=s.table_header_bg, border_color=s.table_border,
+      row_bg_odd=s.table_zebra_bg if s.table_zebra else None,
+      rules=s.table_rules, double=s.table_double)
 
   def _table_cell(self, inline:Token) -> str|TablePicture:
     """
@@ -1304,6 +1379,8 @@ class MarkdownRenderer:
 def _check_style(style:MarkdownStyle):
   """Fail on a value of `style` the engine cannot write, before anything is written."""
   check_table_rules(style.table_rules)
+  if not isinstance(style.columns, int) or style.columns < 1:
+    raise ValueError(f"columns must be a whole number from 1 up, got {style.columns!r}")
   if not isinstance(style.bind_single_letters, str):
     raise TypeError(f"bind_single_letters names the letters that bind, as `aiouwz`, "
       f"got {style.bind_single_letters!r}")
@@ -1359,3 +1436,45 @@ def top_blocks(tokens:list[Token]) -> list[tuple[int, int]]:
     blocks.append((i, end))
     i = end
   return blocks
+
+def _wide_group(block:list[Token]) -> bool:
+  """Whether `block` is a group opened `wide`."""
+  head = block[0]
+  return head.type == "html_block" and "wide" in group_options(head.content or "")
+
+def _sets_anything(run:list[Token]) -> bool:
+  """Whether `run` holds more than comments and other HTML, which set nothing."""
+  def silent(t:Token) -> bool:
+    return t.type == "html_block" and not is_pagebreak_directive(t.content or "")
+  return not all(silent(t) for t in run)
+
+def first_section(tokens:list[Token]) -> int:
+  """
+  Start of the first top-level `##`, `0` without one:
+  where columns begin, and where a contract's preamble ends.
+  """
+  return next((start for start, _ in top_blocks(tokens)
+    if tokens[start].type == "heading_open" and tokens[start].tag == "h2"), 0)
+
+def closing_breaks(tokens:list[Token]) -> int:
+  """
+  Start of the page breaks that end `tokens`, the comments among them, `len(tokens)` without:
+  a file that ends there leaves them out, as a break with nothing after it opens an empty page.
+  """
+  def closing(t:Token) -> bool:
+    content = (t.content or "").strip()
+    group = is_group_open_directive(content) or is_group_close_directive(content)
+    return t.type == "html_block" and content.startswith("<!--") and not group
+  end = len(tokens)
+  while end and closing(tokens[end - 1]): end -= 1
+  return end
+
+def _runs(tokens:list[Token], spans) -> list[tuple[list[Token], list[Token]]]:
+  """`(run, wide)` pairs: the blocks set in columns, then the block after them that `spans`."""
+  runs, start = [], 0
+  for begin, end in top_blocks(tokens):
+    if spans(tokens[begin:end]):
+      runs.append((tokens[start:begin], tokens[begin:end]))
+      start = end
+  runs.append((tokens[start:], []))
+  return runs

@@ -315,3 +315,16 @@ def no_dollar_leak_when_matplotlib_present(tmp_path, document_xml):
   xml = document_xml(path)
   leaks = [t for t in re.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml) if "$" in t]
   assert leaks == [], f"raw $ leaked: {leaks}"
+
+@pytest.mark.parametrize("left", [False, True])
+def tagged_equation_sets_its_label_at_the_side_the_style_sets(tmp_path, left):
+  # Some journals number their formulas at the left edge: the label opens the line there
+  import docx
+  path = tmp_path / "tagged.docx"
+  md_to_docx(r"$$E = I R \tag{1}$$", str(path), style=PaperStyle(math_number_left=left))
+  para = next(p for p in docx.Document(str(path)).paragraphs if "(1)" in p.text)
+  label = next(k for k, c in enumerate(para._p.iterchildren()) if "(1)" in "".join(c.itertext()))
+  formula = next(k for k, c in enumerate(para._p.iterchildren()) if c.tag == qn("m:oMath"))
+  assert (label < formula) == left
+  stops = para.paragraph_format.tab_stops
+  assert len(stops) == (1 if left else 2) # the formula centred, the label at the right edge

@@ -153,7 +153,7 @@ def scan_package_data(pkg_dir:str) -> list[str]:
       top_dirs.add(parts[0])
     else:
       by_ext.setdefault(ext, set()).add(f)
-  # a lone file is named outright, a family of them collapses to one glob
+  # A lone file is named outright, a family of them collapses to one glob
   patterns = sorted(
     next(iter(names)) if len(names) == 1 or not ext else f"*{ext}"
     for ext, names in by_ext.items()
@@ -177,10 +177,13 @@ def build_extras(
       for name, pkgs in found.items():
         extras.setdefault(name, set()).update(pkgs)
   if extras:
-    all_deps = set()
+    wanted: dict[str, set[str]] = {} # each package once, with every extra a group asks of it
     for deps in extras.values():
-      all_deps.update(deps)
-    extras["all"] = all_deps
+      for dep in deps:
+        name, _, rest = dep.partition("[")
+        wanted.setdefault(name, set()).update(rest.rstrip("]").split(",") if rest else [])
+    extras["all"] = {f"{name}[{','.join(sorted(more))}]" if more else name
+      for name, more in wanted.items()}
   return {k: sorted(v) for k, v in extras.items()}
 
 def get_meta(pkg_dir:str) -> dict:

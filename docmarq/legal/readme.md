@@ -19,10 +19,10 @@ The arguments match `docmarq.paper.md_to_docx`: `style`, `page`, `margin`, `gutt
 The library lays out what the author wrote.
 It numbers no paragraphs, detects no language, translates nothing and writes no legal wording of its own.
 
-- **Markdown body**: the text - paragraphs, headings, lists, tables.
+- **Markdown body**: the text (paragraphs, headings, lists, tables).
   Paragraph signs are typed by the author.
-- **Frontmatter**: the facts of this document - `title`, `place`, `date`, `from`, `to`, `ref`, `logo`, `attachments`.
-- **`LegalStyle`**: the look - columns, justification, signing lines, fonts, sizes, labels.
+- **Frontmatter**: the facts of this document (`title`, `place`, `date`, `from`, `to`, `ref`, `logo`, `attachments`).
+- **`LegalStyle`**: the look (columns, justification, signing lines, fonts, sizes, labels).
 
 Word lays the pages out when the document opens: it breaks pages, balances columns and numbers pages.
 The same style and source give the same document as `pdfmarq.legal`, set by Word instead of measured in advance.

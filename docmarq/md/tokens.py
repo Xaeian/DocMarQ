@@ -1,3 +1,5 @@
+# docmarq/md/tokens.py
+
 """
 Helpers for walking markdown-it token lists.
 `*_open` / `*_close` pair structure requires attr lookup and depth-tracking close-finding;
@@ -45,7 +47,7 @@ CALLOUT_RE = re.compile(r"^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$",
 # HTML-comment directives for layout control. Whitespace-tolerant, case-insensitive.
 # Any extra content disqualifies the match (e.g. `<!-- pagebreak xxx -->` is not a directive).
 _PAGEBREAK_RE = re.compile(r"\s*<!--\s*pagebreak\s*-->\s*", re.IGNORECASE)
-# `wide`, the one option a group takes, spans it across columns where a package sets them
+# `wide`, the one option a group takes, spans it across the page where the style sets columns
 _GROUP_OPEN_RE = re.compile(r"\s*<!--\s*group(\s+wide)?\s*-->\s*", re.IGNORECASE)
 _GROUP_CLOSE_RE = re.compile(r"\s*<!--\s*/\s*group\s*-->\s*", re.IGNORECASE)
 
@@ -60,7 +62,8 @@ def is_group_open_directive(content:str) -> bool:
 def group_options(content:str) -> list[str]:
   """
   Options of a group opening: `["wide"]` of `<!-- group wide -->`, `[]` of a plain group.
-  The engine sets every group alike, and the options are for a package that lays groups out.
+  In columns the engine spans a `wide` group across the page.
+  In one column it is a plain group.
   """
   match = _GROUP_OPEN_RE.fullmatch(content)
   return (match[1] or "").lower().split() if match else []

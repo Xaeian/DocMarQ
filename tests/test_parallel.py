@@ -108,3 +108,8 @@ def version_naming_no_language_keeps_its_words_whole(render):
     and not first.xpath(".//w:suppressAutoHyphens", namespaces=NS)
   assert second.xpath(".//w:suppressAutoHyphens", namespaces=NS) \
     and not second.xpath(".//w:lang", namespaces=NS)
+
+def versions_refuse_columns_of_their_own(tmp_path):
+  with pytest.raises(ValueError, match="columns would split the column of a version"):
+    md_parallel_to_docx(["First.", "Second."], str(tmp_path / "p.docx"),
+      styles=[lang_style("pl", columns=2), lang_style("en")])

@@ -31,9 +31,9 @@ def style_carries_every_md2paper_field():
 def md_to_docx_signature_is_stable():
   params = inspect.signature(md_to_docx).parameters
   assert list(params) == ["md_text", "output_path", "style", "page", "margin", "gutter",
-    "base_dir", "font_dir", "metadata"]
-  assert (params["page"].default, params["margin"].default, params["gutter"].default) \
-    == (A4, 20, 0)
+    "two_sided", "base_dir", "font_dir", "metadata"]
+  assert (params["page"].default, params["margin"].default, params["gutter"].default,
+    params["two_sided"].default) == (A4, 20, 0, False)
 
 def lang_style_layers_engine_parts_and_banner_labels():
   style = lang_style("de")
@@ -226,3 +226,34 @@ def people_show_by_name_in_the_banner_and_the_metadata(tmp_path):
   text = docx_text(path)
   assert "Authors: Anna\u00a0Nowak, Jan\u00a0Kowalski" in text and "orcid" not in text
   assert docx.Document(path).core_properties.author == "Anna Nowak, Jan Kowalski"
+
+#------------------------------------------------------------------------------------ Closing break
+
+ENDING = "---\ntitle: Test\n---\n\nText of the paper.\n\n<!-- pagebreak -->\n"
+
+@pytest.fixture
+def page_breaks():
+  """Count of the page breaks a saved document holds."""
+  return lambda path: len(docx_xml(path).xpath("//w:br[@w:type='page']", namespaces=NS))
+
+def a_closing_page_break_opens_no_empty_page(tmp_path, page_breaks):
+  path = str(tmp_path / "end.docx")
+  md_to_docx(ENDING, path)
+  assert page_breaks(path) == 0 # an empty last page in Word
+
+def a_closing_page_break_goes_with_a_comment_after_it(tmp_path, page_breaks):
+  path = str(tmp_path / "end.docx")
+  md_to_docx(ENDING + "\n<!-- the end -->\n", path)
+  assert page_breaks(path) == 0
+
+def a_closing_page_break_moves_the_signing_lines_on(tmp_path, page_breaks):
+  path = str(tmp_path / "end.docx")
+  md_to_docx(ENDING, path, style=PaperStyle(sign=True))
+  assert page_breaks(path) == 1 # the break before them is the author's
+
+def a_closing_page_break_stays_for_what_the_caller_writes_after(tmp_path, page_breaks):
+  path = str(tmp_path / "end.docx")
+  doc = DOCX(path)
+  md_into(doc, ENDING)
+  doc.save()
+  assert page_breaks(path) == 1 # `md_into` leaves the file to the caller

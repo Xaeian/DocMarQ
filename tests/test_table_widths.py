@@ -42,7 +42,8 @@ def short_code_column_stays_narrow(grid):
   assert sum(cols) == pytest.approx(CONTENT, abs=0.1)
 
 def long_url_leaves_short_columns_whole(grid):
-  cols = grid(f"| A | B | C | D |\n|---|---|---|---|\n| PP-1 | {URL} | {URL} | OK |\n")
+  with pytest.warns(RuntimeWarning, match="words break inside its cells"):
+    cols = grid(f"| A | B | C | D |\n|---|---|---|---|\n| PP-1 | {URL} | {URL} | OK |\n")
   assert cols[0] >= text_width_mm("PP-1", "Calibri", SIZE) + 2 * PAD
   assert cols[3] >= text_width_mm("OK", "Calibri", SIZE) + 2 * PAD
   assert sum(cols) == pytest.approx(CONTENT, abs=0.1)

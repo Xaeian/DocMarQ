@@ -17,8 +17,8 @@ from ..inline import RichSegment
 from ..parts import signatures, page_number
 from ..tables import remove_table_borders, set_cell_margins, set_table_widths
 from ..utils import mm_to_pt
-from ..md import (MarkdownRenderer, split_frontmatter, docx_metadata, top_blocks,
-  is_pagebreak_directive, is_group_open_directive)
+from ..md import (MarkdownRenderer, split_frontmatter, docx_metadata, top_blocks, first_section,
+  is_pagebreak_directive, is_group_open_directive, closing_breaks)
 from .style import LegalStyle
 from .header import draw_header, draw_attachments, lines_of, has_header
 
@@ -32,6 +32,7 @@ def md_to_docx(
   page:PageSize = A4,
   margin:float|tuple = 20,
   gutter:float = 0,
+  two_sided:bool = False,
   base_dir:str|None = None,
   font_dir:str|None = None,
   metadata:dict|None = None,
@@ -44,19 +45,18 @@ def md_to_docx(
   """
   style = _checked(style or LegalStyle())
   fm, _ = split_frontmatter(md_text)
-  doc = _new_docx(output_path, page, margin, gutter, style, fm, metadata)
+  doc = _new_docx(output_path, page, margin, gutter, two_sided, style, fm, metadata)
   renderer = MarkdownRenderer(doc, style, base_dir=base_dir, font_dir=font_dir)
   _footer(doc, style)
   floats = draw_header(doc, style, fm, renderer.frontmatter_file(fm, "logo"))
   tokens = renderer.parse(md_text)
   renderer.index(tokens)
-  first = _clauses(tokens)
+  first = first_section(tokens) # the clauses begin at the first `##`
   _preamble(doc, renderer, style, tokens[:first], floats)
-  # a continuous break ends the columns, so Word balances them, on the last page too
-  doc.columns(style.columns, gap=style.column_gap)
-  renderer.render_tokens(tokens[first:])
-  doc.columns(1)
   labels, items = style.sign_lines(), lines_of(fm.get("attachments"))
+  clauses = tokens[first:]
+  if not labels and not items: clauses = clauses[:closing_breaks(clauses)] # nothing follows them
+  renderer.render_tokens(clauses)
   if labels or items:
     _tail(doc, style, lambda: _end(doc, style, labels, items))
   doc.save()
@@ -70,17 +70,15 @@ def _checked(style) -> LegalStyle:
     raise ValueError(f"logo_align must be L, C or R, got {style.logo_align!r}")
   if style.to_align not in ("L", "R"):
     raise ValueError(f"to_align must be L or R, got {style.to_align!r}")
-  if not isinstance(style.columns, int) or style.columns < 1:
-    raise ValueError(f"columns must be a whole number from 1 up, got {style.columns!r}")
   return style
 
 def _new_docx(
-  output_path:str, page:PageSize, margin:float|tuple, gutter:float,
+  output_path:str, page:PageSize, margin:float|tuple, gutter:float, two_sided:bool,
   style:LegalStyle, fm:dict, metadata:dict|None,
 ) -> DOCX:
   """The output `DOCX`, core properties from frontmatter, which `metadata=` overrides per key."""
   doc = DOCX(output_path, width=page.width, height=page.height,
-    margin=margin, gutter=gutter,
+    margin=margin, gutter=gutter, two_sided=two_sided,
     font_body=style.font_body, font_head=style.font_head, body_size=style.body_size)
   # two lines at least on each side of a page break
   doc.doc.styles["Normal"].paragraph_format.widow_control = True
@@ -99,11 +97,6 @@ def _footer(doc:DOCX, style:LegalStyle):
 
 #----------------------------------------------------------------------------------------- Preamble
 
-def _clauses(tokens:list[Token]) -> int:
-  """Start of the first top-level `##`, where the clauses begin. Without one it is `0`."""
-  return next((start for start, _ in top_blocks(tokens)
-    if tokens[start].type == "heading_open" and tokens[start].tag == "h2"), 0)
-
 def _preamble(
   doc:DOCX, renderer:MarkdownRenderer, style:LegalStyle,
   tokens:list[Token], floats:bool,
@@ -114,7 +107,7 @@ def _preamble(
   The clauses start `preamble_gap` below the preamble and the logo.
   """
   if not tokens and not floats: return
-  look = replace(style, font_body=style.page_font,
+  look = replace(style, font_body=style.page_font, columns=1, # the preamble spans the page
     body_size=style.preamble_size or style.body_size,
     para_gap=style.para_gap if style.preamble_para_gap is None else style.preamble_para_gap)
   renderer.render_tokens(tokens, look)
@@ -175,6 +168,7 @@ def md_parallel_to_docx(
   page:PageSize = A4,
   margin:float|tuple = 20,
   gutter:float = 0,
+  two_sided:bool = False,
   base_dir:str|None = None,
   font_dir:str|None = None,
   metadata:dict|None = None,
@@ -196,8 +190,11 @@ def md_parallel_to_docx(
   if len(styles) != len(md_texts):
     raise ValueError(f"{len(md_texts)} versions need as many styles, got {len(styles)}")
   styles = [_checked(s) for s in styles]
+  for i, style in enumerate(styles, 1):
+    if style.columns > 1:
+      raise ValueError(f"style {i}: columns would split the column of a version")
   fronts = [split_frontmatter(text)[0] for text in md_texts]
-  doc = _new_docx(output_path, page, margin, gutter, styles[0], fronts[0], metadata)
+  doc = _new_docx(output_path, page, margin, gutter, two_sided, styles[0], fronts[0], metadata)
   # built last to first: each sets the document up in its own style, and the first one's holds
   versions = [_version(doc, styles[i], md_texts[i], fronts[i], base_dir, font_dir, i)
     for i in reversed(range(len(styles)))][::-1]

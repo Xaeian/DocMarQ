@@ -1,3 +1,5 @@
+# docmarq/md/mermaid.py
+
 """
 Mermaid diagram rendering with hybrid backends.
 

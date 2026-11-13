@@ -25,6 +25,8 @@ UNKNOWN_STATUS = ((0.93, 0.93, 0.95), (0.40, 0.44, 0.50))
 @dataclass
 class PaperStyle(MarkdownStyle):
   """`MarkdownStyle` plus the frontmatter banner, compact banner, page number and signatures."""
+  # In columns tables, pictures and groups float to the top of a column, wide groups of a page.
+  floats: bool = True
   # Footer page numbering. `None` disables the footer entirely.
   page_number_label: str|None = "Page"
   page_number_total: bool = True # `Page X/Y` vs just `Page X`

@@ -97,3 +97,11 @@ def docx_xml(path:str, part:str="word/document.xml"):
   from lxml import etree
   with zipfile.ZipFile(path) as z:
     return etree.fromstring(z.read(part))
+
+def twips(mm:float) -> str:
+  """`mm` in Word's twentieths of a point, as its XML writes a length."""
+  return str(round(mm * 1440 / 25.4))
+
+def attrs(element, *names:str) -> list:
+  """The values of the `w:` attributes `names` of `element`, `None` where one is missing."""
+  return [element.get(f"{{{NS['w']}}}{name}") for name in names]

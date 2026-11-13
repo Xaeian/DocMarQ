@@ -13,6 +13,8 @@ with DOCX("out.docx") as doc:
 # Custom page size + margins (CSS-style: scalar / (v,h) / (t,h,b) / (t,r,b,l))
 with DOCX("out.docx", width=A4.width, height=A4.height, margin=20) as doc:
   doc.margin(top=20, right=25, bot=20, left=25) # named per side
+# Binding margin, printed on both sides: Word mirrors even pages, the gutter at the bound edge
+DOCX("out.docx", margin=25, gutter=10, two_sided=True)
 # Units (default mm)
 DOCX("out.docx", unit="pt") # or "cm", "in", "px"
 # Start from a Word template (.dotx / .docx) - keeps theme + styles
@@ -26,8 +28,15 @@ DOCX("out.docx", template="templates/corporate.docx")
 doc.font("Calibri", 11, "Bold") # `mode` accepts Regular/Bold/Italic/BoldItalic
 doc.color("#1f2328")           # default text color
 doc.style(line_height=1.4, space_before=4, space_after=4) # bulk update
+# Runs written next in small capitals, the markdown engine's too
+doc.style(small_caps=True)
 # Word's heading styles: size in pt, face, the rule under them; None keeps what is set
 doc.heading_style(2, size=13, bold=True, italic=False, rule=False)
+# Small or all capitals, place, a new page, 1.5 lines
+doc.heading_style(1, family="Arial", caps=True, upper=True, align="C", indent=5, page=True,
+  lines=1.5)
+# Lines of every paragraph without its own, or `lines=1.5`
+doc.body_style(at_least=13.2)
 # Automatic hyphenation in a language, which becomes the language of the document
 doc.hyphenation("pl")
 ```
@@ -52,7 +61,15 @@ doc.text("monospace", code=True)
 doc.text("super", superscript=True).text(" sub", subscript=True)
 doc.text("Umowa", small_caps=True)       # lowercase letters as small capitals
 doc.border("#1f2328", sides=("top", "bottom"), space=8) # rule the current paragraph
+# Lay out the open paragraph: indents in mm, a negative first line hanging, gaps in pt,
+# lines at least 13pt or `lines=1.5`, kept with the next one, tab stops, a Word style by name
+doc.para("[1]\tA reference").shape(indent=6, first=-6, before=0, after=3, at_least=13,
+  keep=True, tabs=[(6, "L")])
+# The runs written so far, over their style: False turns a face of the style off
+doc.restyle(bold=False, caps=True, size=10, family="Arial", color="#c00000", lang="en")
 ```
+
+Gaps `shape()` sets are the paragraph's own: the next paragraph's gap does not collapse into them.
 
 ## Headings, lists
 
@@ -72,7 +89,7 @@ doc.blockquote("Quoted text.", indent=4, border_color="#d0d7de")
 doc.hr(color="#d0d7de")
 doc.code_block(
   "def foo():\n  return 42",
-  language="python",        # accepted but not yet syntax-highlighted
+  language="python", # accepted but not yet syntax-highlighted
   bg_color="#f6f8fa",
   border_color="#d0d7de",
   font_family="Consolas",
@@ -85,7 +102,7 @@ doc.code_block(
 ```py
 doc.columns(2, gap=8) # what follows in two columns, gap in mm
 doc.para("Flows down the first column, then the second.")
-doc.columns(1)        # back to one, below the columns
+doc.columns(1) # back to one, below the columns
 ```
 
 Each change starts a continuous section, so the text runs on down the same page.
@@ -95,10 +112,13 @@ Word ends the columns of a section level when it closes this way, on its last pa
 ## Writing into a table cell
 
 ```py
-tbl = doc.new_table(1, 2)               # a bare table at the end of the write target
-with doc.into(tbl.rows[0].cells[0], 80): # cell width in mm
+# A table to lay out by: cells 30, 60 and 40mm wide, ruled black 0.5pt or bare without `rule`,
+# rows 8mm at least, their content in the middle
+rows = doc.grid([30, 60, 40], rows=2, rule=((0, 0, 0), 0.5), height=8, middle=True)
+across = doc.span(rows[1][1], rows[1][2])  # two cells of a row joined
+with doc.into(rows[0][0], 30):             # cell width in mm
   doc.para("Written in the cell.")
-  doc.table([["a", "b"]])               # sized to the cell
+  doc.table([["a", "b"]])                  # sized to the cell
 doc.para("Back after the table.")
 ```
 
@@ -156,7 +176,8 @@ doc.table(rows, header=header, style=style)
 doc.table(rows, word_style="Light Grid")
 ```
 
-`keep_rows(table, 2)` from `docmarq.tables` keeps each row of a python-docx table on one page, and two rows at either end together, as journals split a table between columns.
+`doc.keep_rows(2)` keeps each row of the table written last on one page, and two rows at either end together, as journals split a table between columns.
+`text_width_mm(text, face, size)` measures words as Word sets them, to count the lines they take.
 
 ## Colors
 
@@ -174,7 +195,7 @@ color_hex((0.03, 0.41, 0.85)) # → "0869D9" uppercase, no '#'
 
 ```py
 doc.image("photo.png", width=60, height=40)
-doc.image("logo.svg", width=30, align="C")  # proportional, centered
+doc.image("logo.svg", width=30, align="C") # proportional, centered
 ```
 
 ## Page breaks, bookmarks, links
@@ -184,7 +205,10 @@ doc.page_break()
 doc.bookmark("section-1")
 doc.link("see chapter 1", target="section-1")     # internal jump
 doc.link("github", url="https://github.com/...")  # external
+doc.toc(3, indent=6, after=6)                     # contents, Word fills it on opening
 ```
+
+The contents take Word's own `TOC 1` to `TOC 9` styles: each level `indent` mm in, `after` pt apart, dots to the page number at the right edge.
 
 ## Headers / footers
 
@@ -194,9 +218,17 @@ doc.header("Corporate Report", align="C")
 doc.footer(text="{page} / {pages}", align="C")
 # Or just enable numbering without a template
 doc.footer(align="R", page_number=True)
+# Any paragraphs in the header or footer of the last section: on `all` pages, the `first`
+# or `even` ones, which then differ from odd ones in the whole document
+with doc.in_header("first"):
+  doc.shape(align="C").text("Title page only")
+with doc.in_footer("even"):
+  doc.shape(align="L").fields("{page}")  # fields in the font set
+doc.section()                            # pages after this one with heads and feet of their own
+doc.from_edge(header=12, footer=10)      # mm from the page's edge, of the last section
 ```
 
-`docmarq.fields` writes the fields themselves: `page_fields(p, "{page} / {pages}")` into any paragraph, and `page_fields_if_many(p, template)` as the field `IF NUMPAGES > 1`, which shows the numbers only in a document of more than one page.
+`docmarq.fields` writes the fields into a python-docx paragraph for the document packages: `page_fields_if_many(p, template)` as the field `IF NUMPAGES > 1`, which shows the numbers only in a document of more than one page.
 
 ## Footnotes
 

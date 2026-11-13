@@ -125,3 +125,25 @@ def md_bibliography_title_is_a_heading_like_any_other(tmp_path):
     "//w:p[w:pPr/w:pStyle/@w:val='Heading2'][.//w:t='Literatura']", namespaces=NS)[0]
   assert title.xpath(".//w:rFonts/@w:ascii", namespaces=NS) == ["Georgia"]
   assert title.xpath(".//w:bookmarkStart/@w:name", namespaces=NS)
+
+def md_table_takes_a_face_of_its_own(tmp_path):
+  # A journal sets its tables in a narrower face than its text
+  path = str(tmp_path / "face.docx")
+  md_to_docx("Words before.\n\n| Name | Value |\n|---|---|\n| one | 1 |\n", path,
+    style=lang_style("en", font_table="Arial Narrow"))
+  body = docx_xml(path, "word/document.xml")
+  faces = body.xpath("//w:tc//w:r/w:rPr/w:rFonts/@w:ascii", namespaces=NS)
+  assert faces == ["Arial Narrow"] * 4 # the header's two cells and the row's
+  assert not body.xpath("//w:p[not(ancestor::w:tc)]//w:rFonts[@w:ascii='Arial Narrow']",
+    namespaces=NS)
+
+def md_paragraph_going_on_under_a_formula_keeps_flush(tmp_path):
+  # `where ...` goes on with the sentence the formula stands in, as books and journals set it
+  path = str(tmp_path / "flush.docx")
+  md_to_docx("Text above it.\n\n$$E = I R$$\n\nwhere I is the current.\n\nNew paragraph.\n",
+    path, style=lang_style("en", first_indent=5))
+  paras = docx_xml(path, "word/document.xml").xpath("//w:body/w:p", namespaces=NS)
+  def indent(start:str) -> str:
+    para = next(p for p in paras if "".join(p.itertext()).startswith(start))
+    return para.xpath("string(w:pPr/w:ind/@w:firstLine)", namespaces=NS)
+  assert indent("where") == "" and indent("New") == indent("Text") != ""

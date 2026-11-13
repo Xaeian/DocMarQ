@@ -4,6 +4,7 @@
 
 import pytest
 from docmarq import DOCX
+from docmarq.md import MarkdownRenderer, MarkdownStyle
 from docmarq.fields import page_fields_if_many
 from conftest import NS, docx_xml
 
@@ -185,6 +186,20 @@ def page_number_field_shows_only_on_many_pages(doc):
   last_separate = max(i for i, m in enumerate(marks) if m == "separate")
   assert marks[last_separate + 1:] == ["end"]
 
+def toc_is_a_field_word_fills_as_it_opens(doc):
+  doc.heading("First", level=1)
+  doc.toc(2, "Contents of the field")
+  doc.save()
+  body = docx_xml(doc.path)
+  instr = "".join(body.xpath("//w:instrText/text()", namespaces=NS))
+  assert instr == ' TOC \\o "1-2" \\h \\z \\u '
+  assert body.xpath("//w:fldChar/@w:fldCharType", namespaces=NS) == ["begin", "separate", "end"]
+  assert "Contents of the field" in "".join(body.xpath("//w:t/text()", namespaces=NS))
+  settings = docx_xml(doc.path, "word/settings.xml")
+  assert settings.xpath("w:updateFields/@w:val", namespaces=NS) == ["true"]
+  names = [el.tag.split("}")[1] for el in settings]
+  assert names.index("updateFields") < names.index("compat")
+
 #--------------------------------------------------------------------------------------------- Body
 
 def tables_in_a_row_stay_apart_and_the_body_ends_on_a_paragraph(doc):
@@ -215,3 +230,104 @@ def border_writes_its_sides_in_schema_order(doc):
 
 def gutter_narrows_the_content(tmp_path):
   assert DOCX(str(tmp_path / "g.docx"), gutter=10).content_width == pytest.approx(160)
+
+def two_sided_mirrors_the_margins(tmp_path):
+  one = DOCX(str(tmp_path / "one.docx"), gutter=10).save()
+  assert not docx_xml(one.path, "word/settings.xml").xpath("w:mirrorMargins", namespaces=NS)
+  doc = DOCX(str(tmp_path / "two.docx"), margin=25, gutter=10, two_sided=True)
+  assert doc.content_width == pytest.approx(150)
+  doc.save()
+  names = [el.tag.split("}")[1] for el in docx_xml(doc.path, "word/settings.xml")]
+  assert names.count("mirrorMargins") == 1
+  assert names.index("zoom") < names.index("mirrorMargins") < names.index("proofState")
+  margins = docx_xml(doc.path).xpath("//w:sectPr/w:pgMar", namespaces=NS)[0]
+  assert margins.get(f"{{{NS['w']}}}gutter") == str(round(10 * 1440 / 25.4))
+
+#------------------------------------------------------------------------------- Columns of a style
+
+@pytest.fixture
+def columned(doc):
+  """Write `md` in two columns through the engine, return the column count of each section."""
+  def run(md:str) -> list[str]:
+    MarkdownRenderer(doc, MarkdownStyle(columns=2)).render(md)
+    doc.save()
+    sections = docx_xml(doc.path).xpath("//w:sectPr", namespaces=NS)
+    return [s.xpath("string(w:cols/@w:num)", namespaces=NS) for s in sections]
+  return run
+
+def columns_of_a_style_leave_the_lead_across_the_page(columned):
+  # The lead in the first section, the text in two columns, ended so Word balances them
+  assert columned("Lead.\n\n## First\n\nText.\n") == ["", "2", "1"]
+
+def a_wide_group_gets_a_section_of_one_column(columned):
+  md = ("## First\n\nText.\n\n<!-- group wide -->\n\nWide.\n\n<!-- /group -->\n\n"
+    "## Second\n\nText.\n")
+  assert columned(md) == ["2", "1", "2", "1"] # the first section takes the columns
+
+def columns_of_a_style_refuse_to_open_in_columns(doc):
+  doc.columns(2)
+  with pytest.raises(ValueError, match="columns cannot open in columns"):
+    MarkdownRenderer(doc, MarkdownStyle(columns=2)).render("Text.\n")
+
+def columns_of_a_style_must_be_a_whole_number(doc):
+  with pytest.raises(ValueError, match="columns must be a whole number"):
+    MarkdownRenderer(doc, MarkdownStyle(columns=0))
+
+TABLE = ("| Name | Kind | Owner | Repository | Status |\n|---|---|---|---|---|\n"
+  "| Markdown | engine | someone | md2paper | maintained |\n")
+
+def a_table_a_column_cannot_hold_warns(doc):
+  with pytest.warns(RuntimeWarning, match="words break inside its cells"):
+    MarkdownRenderer(doc, MarkdownStyle(columns=3)).render("## Data\n\n" + TABLE)
+
+def a_table_a_column_cannot_hold_gets_the_page_with_floats(doc):
+  import warnings
+  with warnings.catch_warnings():
+    warnings.simplefilter("error", RuntimeWarning) # across the page it holds its words
+    MarkdownRenderer(doc, MarkdownStyle(columns=3, floats=True)).render("## Data\n\n" + TABLE)
+  doc.save()
+  sections = docx_xml(doc.path).xpath("//w:sectPr", namespaces=NS)
+  counts = [s.xpath("string(w:cols/@w:num)", namespaces=NS) for s in sections]
+  assert counts == ["3", "1"] # the table in a section of one column, none empty after it
+
+@pytest.fixture
+def sections():
+  """`(column count, text)` of each block of a saved document: the section it stands in."""
+  def read(path:str) -> list[tuple[str, str]]:
+    body = docx_xml(path).xpath("/w:document/w:body", namespaces=NS)[0]
+    found, waiting = [], []
+    for block in body:
+      ends = block.xpath("self::w:sectPr|w:pPr/w:sectPr", namespaces=NS)
+      if not block.tag.endswith("}sectPr"): waiting.append(block.xpath("string(.)", namespaces=NS))
+      if ends:
+        count = ends[0].xpath("string(w:cols/@w:num)", namespaces=NS) or "1"
+        found += [(count, text) for text in waiting]
+        waiting = []
+    return found
+  return read
+
+def a_table_in_a_group_goes_across_with_its_title(doc, sections):
+  import warnings
+  group = "<!-- group -->\n\nTitlemark of the table.\n\n" + TABLE + "\n<!-- /group -->\n"
+  with warnings.catch_warnings():
+    warnings.simplefilter("error", RuntimeWarning)
+    MarkdownRenderer(doc, MarkdownStyle(columns=3, floats=True)).render(
+      "## Data\n\nText.\n\n" + group + "\nTextmark after it.\n")
+  doc.save()
+  blocks = sections(doc.path)
+  title = next(n for n, text in blocks if "Titlemark" in text)
+  table = next(n for n, text in blocks if "Repository" in text)
+  after = next(n for n, text in blocks if "Textmark" in text)
+  assert (title, table, after) == ("1", "1", "3") # the title across with its table
+
+def a_comment_between_wide_groups_opens_no_columns(columned):
+  wide = "<!-- group wide -->\n\n{}.\n\n<!-- /group -->\n\n"
+  md = ("## First\n\nText.\n\n" + wide.format("One") + "<!-- a note -->\n\n" + wide.format("Two")
+    + "## Second\n\nText.\n")
+  assert columned(md) == ["2", "1", "2", "1"] # both wide groups in one section of one column
+
+def columns_from_the_start_add_no_empty_paragraph(doc):
+  MarkdownRenderer(doc, MarkdownStyle(columns=2)).render("## First\n\nText.\n")
+  doc.save()
+  first = docx_xml(doc.path).xpath("/w:document/w:body/w:p", namespaces=NS)[0]
+  assert first.xpath("string(.)", namespaces=NS) == "First" # the heading opens the document

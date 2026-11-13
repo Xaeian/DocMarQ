@@ -117,7 +117,7 @@ It fills text width as far as its resolution allows, stops at 120mm tall and sit
 PDF and DOCX land on the same box.
 
 Images alone in a paragraph share that width: two side by side become two half-width figures, eight become two rows of four.
-An image on the same line as text stays inline at line height, in both formats - so put caption in the next paragraph, never beside the picture.
+An image on the same line as text stays inline at line height, in both formats, so put caption in the next paragraph, never beside the picture.
 
 The title slot sizes a figure by hand when automatic size is wrong:
 

@@ -1,3 +1,5 @@
+# docmarq/md/slug.py
+
 """
 Heading slug generation and `#anchor` link resolution.
 

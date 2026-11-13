@@ -4,7 +4,7 @@ Markdown engine: markdown content written into a `DOCX`, after its last block.
 Requires `pip install docmarq[md]`.
 
 The engine writes content only.
-The page around it - banner, header, footer, signing lines - belongs to a document package:
+The page around it (banner, header, footer, signing lines) belongs to a document package:
 
 - [`docmarq.paper`](../paper/readme.md): documentation with a frontmatter banner, `md_to_docx` and `md_into`
 - [`docmarq.legal`](../legal/readme.md): letters, statements, contracts, parallel versions, `md_to_docx` and `md_parallel_to_docx`
@@ -29,18 +29,23 @@ A package that lays out the page itself works in steps:
   `index(tokens, prefix="v2-")` keeps the bookmarks of one of several documents in a file apart from those of the others
 - `renderer.render_tokens(tokens[a:b])` writes any slice after the last block
 - `renderer.render_tokens(part, style)` sets that part in a style of its own: font, size, leading, paragraph gap; heading slugs run on across parts
+- `renderer.render_tokens(part, below=mm)` matches pdfmarq, where it keeps room under columns; each call opens and closes sections of its own
 - `renderer.frontmatter_file(fm, key)` gives the file a frontmatter key names, warning when it is missing
 - `renderer.write_inline(inline)` writes the runs of an inline token into the open paragraph, for text a package sets itself, as a caption
 
 Functions of `docmarq.md` go with them:
 
 - `top_blocks(tokens)` gives `(start, end)` of each top-level block, a `<!-- group -->` counting as one
-- `group_options(content)` gives `["wide"]` for `<!-- group wide -->`, the one option a group takes, which the engine sets as any group and a package spans across columns
+- `first_section(tokens)` gives where the first `##` starts, and `closing_breaks(tokens)` where the page breaks that end them start, which a file ending there leaves out
+- `group_options(content)` gives `["wide"]` for `<!-- group wide -->`, the one option a group takes, which spans the page between runs of columns
 - `split_frontmatter(text)`, `metadata_from_frontmatter(fm)` and `docx_metadata(fm, overrides)` read frontmatter, which the engine itself never writes
 - `people(value)` reads an `author`-like value as persons, each a mapping with `name` first, an ORCID or e-mail written after a name joining it, and `byline(value)` gives their names on one line
 
 The renderer sets up the document as its style asks: Word's heading styles, the body typography, hyphenation.
 `emoji_font` sets emoji in a face that has them, as pdfmarq draws them, and `None` leaves them as written.
+`columns=2` in the style sets the text in two columns, which Word balances: the text before the first `##` spans the page, and `<!-- group wide -->` sets its blocks across the page between runs of columns.
+With `floats`, a table whose words a column cannot hold goes across the page there too, alone or with its group; Word keeps no blocks waiting for the top of a column, so the rest stands where it is written.
+
 Content goes wherever the core writes: in `doc.columns(2)` it flows through the columns, inside `with doc.into(cell, width)` it fills a table cell, and tables and images fit that width.
 
 ## Flowing text
@@ -64,10 +69,13 @@ MarkdownStyle(justify=True, hyphenate="pl", keep_together=True, h2_size=None)
 - `keep_together=True` keeps each paragraph on one page, and a top-level list on one page with its items.
   `False`, the default, leaves page breaks to Word.
 - `first_indent` sets the first line of a body paragraph in by that many mm, as books and journals do.
-  A paragraph of a list, a quote or a footnote keeps flush.
+  A paragraph of a list, a quote or a footnote keeps flush,
+  and so does one opening in lowercase right under a formula, going on with its sentence: `where x is ...`.
 - `line_height=None` writes no leading on the paragraphs or list items, so Word's paragraph style sets it, as a template does.
   It is docmarq's alone: pdfmarq has no paragraph style to leave the leading to.
 - `table_rules` rules a table `grid`, `rows` or `head` (above, below and under its header), `table_double` doubles the outer rules, `table_header_bg=None` leaves the header unshaded.
+  `font_table` names a face of its own for the cells, as a journal's narrower one.
+- `math_number_left` sets the `\tag` of a formula at the left edge of its line, as some journals number them.
 - A heading size of `None` follows `body_size`.
   The sizes, `head_mode` and the rules under `#` and `##` restyle Word's `Heading 1…6`, so the whole document follows.
   A `head_mode` without `Italic` leaves the slant Word gives a level, as to `Heading 4`.
@@ -75,7 +83,7 @@ MarkdownStyle(justify=True, hyphenate="pl", keep_together=True, h2_size=None)
   Left at `None`, each level keeps its own gaps.
 - An ordered list keeps its delimiter, `1.` or `1)`, and Word counts on from its first number.
 
-The defaults - `justify=False`, `hyphenate=None`, `keep_together=False`, sizes 20/16/13/11 - give the classic documentation look.
+The defaults (`justify=False`, `hyphenate=None`, `keep_together=False`, sizes 20/16/13/11) give the classic documentation look.
 
 ## Internal links
 
@@ -131,13 +139,13 @@ A document that ends with a heading has titled them itself: the entries follow t
 
 ### Intentional divergences from pdfmarq
 
-Same field names, deliberately different values - do not "fix" these:
+Same field names with deliberately different values, so do not "fix" these:
 
 | Field | pdfmarq | docmarq | Why |
 | --- | --- | --- | --- |
 | `line_height` | `1.4` | `1.0` | Word's "Single" already adds ~1.2× leading; pdfmarq has none |
 | `font_body` / `font_mono` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on reader's machine |
-| `keep_together` | `True` | `False` | pdfmarq measures each block; Word breaks pages itself, as docmarq always let it |
+| `keep_together` | `None`: whole in one column, flowing in columns | `False` | pdfmarq measures each block; Word breaks pages itself, as docmarq always let it |
 | `math_fontset` | `stixsans` | `stix` | fallback formulas blend with Word's serif Cambria Math |
 | `mermaid_remote` | - | `True` | allow the mermaid.ink fallback; `False` keeps diagram source on the machine |
 | `emoji_font` | inert | read | pdfmarq draws emoji as pictures, and the field lets a docmarq style carry over |

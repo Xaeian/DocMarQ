@@ -25,9 +25,6 @@ class LegalStyle(MarkdownStyle):
   head_gap_bot: float|None = 1 # mm
   para_gap: float = 2 # mm
 
-  # `2` sets the text in two columns from the first `##` on, the preamble above stays full width.
-  columns: int = 1
-  column_gap: float = 8 # mm
   # The preamble is the text before the first `##`, naming the parties of a contract.
   preamble_size: float|None = None # pt, `None` follows `body_size`
   preamble_para_gap: float|None = None # mm between its paragraphs, `None` follows `para_gap`

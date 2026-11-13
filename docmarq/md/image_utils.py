@@ -1,3 +1,5 @@
+# docmarq/md/image_utils.py
+
 """
 Sizing of markdown figures: the image title DSL, scaled dimensions, DPI and paths,
 and the rules for an image in a line of text or in a table cell.

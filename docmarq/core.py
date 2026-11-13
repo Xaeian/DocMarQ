@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from docx import Document
 from docx.shared import Mm, Pt, RGBColor
 from docx.enum.section import WD_SECTION
-from docx.enum.text import WD_BREAK, WD_LINE_SPACING
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.text import WD_BREAK, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ROW_HEIGHT_RULE
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from docx.text.run import Run
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
 from .constants import Defaults, DXA_PER_MM
@@ -21,20 +23,21 @@ from .layout import PageGeometry
 from .structure import Metadata, new_properties
 from .inline import RichSegment, _apply_run_format
 from .svg import svg_to_png_buffer, is_svg
-from .fields import page_fields
+from .fields import complex_field, page_fields
 from .images import pin_offsets
 from .emoji import font_emoji, EMOJI_FONT
 from . import dropcap, notes
 from .tables import (
   apply_table_rules, check_table_rules, rule_cell, apply_cell_shading, set_cell_align,
-  repeat_header_row,
+  repeat_header_row, apply_table_borders, remove_table_borders, keep_rows,
   set_cell_margins, set_cell_vertical_align, content_widths, set_table_widths,
-  TablePicture, CELL_LINE_SPACING,
+  TablePicture, CELL_LINE_SPACING, words_width,
 )
 
 # Language tags Word names a language by, for the codes of the presets.
 _LANG_TAGS = {"en": "en-US", "pl": "pl-PL", "de": "de-DE", "fr": "fr-FR", "es": "es-ES",
   "it": "it-IT", "cs": "cs-CZ", "sk": "sk-SK", "pt": "pt-PT"}
+_TABS = {"L": WD_TAB_ALIGNMENT.LEFT, "C": WD_TAB_ALIGNMENT.CENTER, "R": WD_TAB_ALIGNMENT.RIGHT}
 
 #------------------------------------------------------------------------------------------- Target
 
@@ -74,7 +77,13 @@ class DOCX:
     font_body:str = Defaults.FONT_FAMILY,
     font_head:str|None = None,
     body_size:float = Defaults.FONT_SIZE,
+    two_sided:bool = False,
   ):
+    """
+    `gutter` is Word's binding margin, added to the left one.
+    `two_sided` prints on both sides of the sheet: Word mirrors the margins of even pages,
+    so the left one and the gutter stay at the bound edge, as in pdfmarq.
+    """
     self.path = path
     self.unit = unit
     top, right, bot, left = parse_margin(margin)
@@ -86,8 +95,11 @@ class DOCX:
     )
     self._doc = Document(template) if template else Document()
     new_properties(self._doc, blank=not template)
+    settings = self._doc.settings.element
     # a justified line a manual break ends stays flush left, as in pdfmarq
-    _compat_option(self._doc.settings.element, "doNotExpandShiftReturn")
+    _compat_option(settings, "doNotExpandShiftReturn")
+    if two_sided and settings.find(qn("w:mirrorMargins")) is None:
+      _insert_ordered(settings, OxmlElement("w:mirrorMargins"), _SETTINGS_ORDER)
     self._apply_section_geometry()
     self._style = Style().with_defaults()
     self._style.font_family = font_body
@@ -99,6 +111,7 @@ class DOCX:
     self._last_space_after = 0 # pt - previous block's `space_after` (margin collapse)
     self._extra_block_after = 0 # pt - one-shot `space_before` bonus (see `track_block_spacing`)
     self._bookmark_id = 0
+    self._table = None # the table written last, which `keep_rows()` holds
     self._at = _Target(self._doc)
     self._cols = (1, 0.0) # columns of the current section: count, gap (mm)
     self._hyphenate = False # set by `hyphenation()`: headings, cells and code keep words whole
@@ -128,6 +141,11 @@ class DOCX:
   def page_height(self) -> float:
     """Current section's page height in mm."""
     return self._page.height
+
+  @property
+  def in_columns(self) -> bool:
+    """Whether the current section sets its text in more than one column."""
+    return self._cols[0] > 1
 
   @property
   def content_width(self) -> float:
@@ -210,25 +228,52 @@ class DOCX:
     italic:bool|None = None,
     color:tuple|str|None = None,
     rule:bool|None = None,
+    family:str|None = None,
+    caps:bool|None = None,
+    upper:bool|None = None,
+    align:str|None = None,
+    indent:float|None = None,
+    page:bool|None = None,
+    lines:float|None = None,
+    at_least:float|None = None,
   ) -> "DOCX":
     """
     Restyle Word's `Heading {level}`, so every heading of that level follows.
 
-    `size` in pt, `bold` and `italic` the face, `color` its text, `rule` the thin line under it.
+    `size` in pt, `bold` and `italic` the face, `color` its text, `rule` the thin line under it,
+    `family` its font, `caps` small capitals, `upper` capitals alone,
+    `align` and `indent` its place, `page` a new page before it,
+    and its lines `lines` apart as a multiple or `at_least` pt.
     `None` leaves that property as the document has it.
     """
     try:
       st = self._doc.styles[f"Heading {level}"]
     except KeyError: return self
+    pf = st.paragraph_format
     if size is not None:
       st.font.size = Pt(size)
       # Tighter leading for display sizes: 1.15 at body, → 1.0 at 24pt+.
-      st.paragraph_format.line_spacing = tight_line_height(size)
+      pf.line_spacing = tight_line_height(size)
     if bold is not None: st.font.bold = bold
     if italic is not None: st.font.italic = italic
     if color is not None: st.font.color.rgb = RGBColor(*rgb255(color))
     if rule: _set_pbdr(st.element, color_hex(Defaults.RULE_COLOR), sides=("bottom",))
     elif rule is False: _clear_border(st.element, "bottom")
+    if family is not None: _force_font(st, family)
+    if caps is not None: st.font.small_caps = caps
+    if upper is not None: st.font.all_caps = upper
+    if align is not None: pf.alignment = align_to_docx(align)
+    if indent is not None: pf.left_indent = Mm(to_mm(indent, self.unit))
+    if page is not None: pf.page_break_before = page
+    _leading(pf, lines, at_least)
+    return self
+
+  def body_style(self, lines:float|None=None, at_least:float|None=None) -> "DOCX":
+    """
+    Lines of Word's `Normal` style, which every paragraph of no leading of its own takes:
+    `lines` apart as a multiple, or `at_least` pt.
+    """
+    _leading(self._doc.styles["Normal"].paragraph_format, lines, at_least)
     return self
 
   def _apply_section_geometry(self):
@@ -275,7 +320,8 @@ class DOCX:
     Set the blocks that follow in `count` columns `gap` apart.
     `columns(1)` returns to one.
 
-    Each change starts a continuous section, so the text runs on down the same page.
+    Each change starts a continuous section, so the text runs on down the same page,
+    unless nothing is set in the section yet: that one takes the columns itself.
     Word balances the columns of a section that such a break ends, so they finish level.
     """
     if not isinstance(count, int) or count < 1:
@@ -299,14 +345,15 @@ class DOCX:
     """
     End the section so far at the last paragraph and open a continuous one after it.
     Returns the `w:sectPr` of the new section, the last in the body.
+    A section nothing is set in yet is returned as it is, so no empty paragraph ends it.
 
     The new section takes its headers and footers from the one before,
     and never a first-page variant: it does not start a page.
     """
     last = self._doc.element.body.get_or_add_sectPr()
     p = last.getprevious()
-    if p is None or p.tag != qn("w:p") or p.find(f"{qn('w:pPr')}/{qn('w:sectPr')}") is not None:
-      p = self.hairline()._p
+    if p is None or p.find(f"{qn('w:pPr')}/{qn('w:sectPr')}") is not None: return last
+    if p.tag != qn("w:p"): p = self.hairline()._p
     p.set_sectPr(last.clone())
     for ref in last.xpath("w:headerReference|w:footerReference"):
       last.remove(ref)
@@ -529,12 +576,47 @@ class DOCX:
     if at.box is self._doc:
       # Word joins two tables with nothing between them into one
       if _last_block(self._doc).tag == qn("w:tbl"): self.hairline()
-      return self._doc.add_table(rows=rows, cols=cols)
+      self._table = self._doc.add_table(rows=rows, cols=cols)
+      return self._table
     if at.spare is not None and _first_block(at.spare._p):
       at.spare._p.getparent().remove(at.spare._p)
-    table = at.box.add_table(rows, cols)
+    self._table = at.box.add_table(rows, cols)
     at.spare = at.box.paragraphs[-1]
-    return table
+    return self._table
+
+  def grid(
+    self, widths:list[float], rows:int = 1,
+    rule:tuple|None = None,
+    height:float|None = None,
+    middle:bool = False,
+  ) -> list[list]:
+    """
+    A table to lay out by: `rows` rows of cells `widths` wide, ruled `(color, pt)` by `rule`
+    or bare, each row `height` tall at least, what its cells hold in their `middle` with `middle`.
+    Returns its cells by row, which `into()` writes in and `span()` joins.
+    """
+    table = self.new_table(rows, len(widths))
+    if rule: apply_table_borders(table, *rule)
+    else: remove_table_borders(table)
+    set_table_widths(table, [to_mm(w, self.unit) for w in widths])
+    for row in table.rows:
+      if height is not None:
+        row.height, row.height_rule = Mm(to_mm(height, self.unit)), WD_ROW_HEIGHT_RULE.AT_LEAST
+      if middle:
+        for cell in row.cells: set_cell_vertical_align(cell, "center")
+    return [list(row.cells) for row in table.rows]
+
+  def span(self, first, last):
+    """The cells of a row from `first` to `last` of `grid()` joined into one, which it returns."""
+    return first.merge(last)
+
+  def keep_rows(self, ends:int=0) -> "DOCX":
+    """
+    Each row of the table written last on one page, and a break between pages or columns
+    kept from its ends: its first `ends + 1` rows go together, and so do its last `ends`.
+    """
+    if self._table is not None: keep_rows(self._table, ends)
+    return self
 
   #------------------------------------------------------------------------------------- Paragraphs
 
@@ -609,6 +691,73 @@ class DOCX:
       self.para()
     _set_pbdr(self._current_para._p, color_hex(color), sides=sides,
       size_eighths=eighths(size), space=round(space))
+    return self
+
+  def shape(
+    self,
+    indent:float|None = None,
+    first:float|None = None,
+    before:float|None = None,
+    after:float|None = None,
+    lines:float|None = None,
+    at_least:float|None = None,
+    keep:bool|None = None,
+    tabs:tuple = (),
+    align:str|None = None,
+    style:str|None = None,
+    page:bool|None = None,
+  ) -> "DOCX":
+    """
+    Lay out the open paragraph: `indent` in from the left, its first line `first` further,
+    a negative one hanging, `before` and `after` pt around it, its lines `lines` apart
+    as a multiple or `at_least` pt, kept with the next paragraph by `keep`,
+    a tab stop at each `(position, "L"|"C"|"R")` of `tabs`, in Word's `style` by name,
+    on a new page by `page`, with no empty paragraph before it as `page_break()` leaves.
+    Its gaps are its own: the next paragraph's gap does not collapse into them.
+    `None` leaves a property as it is.
+    """
+    if self._current_para is None: self.para()
+    p = self._current_para
+    pf = p.paragraph_format
+    if style is not None: p.style = self._doc.styles[style]
+    if indent is not None: pf.left_indent = Mm(to_mm(indent, self.unit))
+    if first is not None: pf.first_line_indent = Mm(to_mm(first, self.unit))
+    if before is not None: pf.space_before = Pt(before)
+    if after is not None: pf.space_after = Pt(after)
+    _leading(pf, lines, at_least)
+    if keep is not None: pf.keep_with_next = keep
+    if page is not None: pf.page_break_before = page
+    for at, kind in tabs: pf.tab_stops.add_tab_stop(Mm(to_mm(at, self.unit)), _TABS[kind])
+    if align: p.alignment = align_to_docx(align)
+    return self
+
+  def restyle(
+    self,
+    bold:bool|None = None,
+    italic:bool|None = None,
+    caps:bool|None = None,
+    size:float|None = None,
+    family:str|None = None,
+    color:tuple|str|None = None,
+    lang:str|None = None,
+  ) -> "DOCX":
+    """
+    Set the runs of the open paragraph written so far in this look, over the style they take:
+    `False` turns off a face their style turns on, `caps` sets small capitals,
+    `lang` the language Word checks and hyphenates them by.
+    `None` leaves a property as it is.
+    """
+    p = self._current_para
+    if p is None: return self
+    for r in p._p.iter(qn("w:r")): # a link's words too, which `p.runs` leaves out
+      font = Run(r, p).font
+      if bold is not None: font.bold = bold
+      if italic is not None: font.italic = italic
+      if caps is not None: font.small_caps = caps
+      if size is not None: font.size = Pt(size)
+      if family is not None: font.name = family
+      if color is not None: font.color.rgb = RGBColor(*rgb255(color))
+    if lang is not None: mark_language(p._p, lang)
     return self
 
   def _flush_para(self):
@@ -705,7 +854,7 @@ class DOCX:
       bg_color=seg.bg_color,
       superscript=seg.superscript,
       subscript=seg.subscript,
-      small_caps=seg.small_caps,
+      small_caps=seg.small_caps or bool(self._style.small_caps),
     )
     _apply_run_format(run, merged, family, size,
       code_family=self._style.code_family, code_size=self._style.code_size,
@@ -957,6 +1106,33 @@ class DOCX:
 
   #----------------------------------------------------------------------------------------- Tables
 
+  def table_words(self, header:list|None, body:list[list], style:TableStyle|None=None) -> float:
+    """
+    mm `table()` needs for these rows to hold their longest words,
+    each column's widest word with its padding: a narrower table breaks words inside cells.
+    """
+    style = style or TableStyle()
+    rows = ([header] if header else []) + (body or [])
+    if not rows: return 0.0
+    bold_rows = 1 if header and style.header_bold else 0
+    return words_width(rows, style.cell_pad_h, self._cell_family(style), self._cell_size(style),
+      bold_rows)
+
+  def _cell_size(self, style:TableStyle) -> float:
+    """
+    Size (pt) of table text: `style.font_size`, else one step below the body (11→10, 14→12),
+    as tables read better a little smaller.
+    """
+    if style.font_size is not None: return style.font_size
+    return smaller_size(self._style.font_size or Defaults.FONT_SIZE)
+
+  def _cell_family(self, style:TableStyle) -> str:
+    """
+    Face of table text: `style.font_family`, else `Normal`'s,
+    since cell runs name no font of their own then, not the one `font()` set.
+    """
+    return style.font_family or self._doc.styles["Normal"].font.name or Defaults.FONT_FAMILY
+
   def table(
     self,
     body:list[list[str|TablePicture]],
@@ -995,14 +1171,7 @@ class DOCX:
           RuntimeWarning, stacklevel=2,
         )
     style = style or TableStyle()
-    # Cell size: explicit `style.font_size`,
-    # else one ladder step below body (11→10, 14→12) via `smaller_size`.
-    # Tables read better slightly smaller.
-    if style.font_size is None:
-      body_pt = self._style.font_size or Defaults.FONT_SIZE
-      eff_size_pt = smaller_size(body_pt)
-    else:
-      eff_size_pt = style.font_size
+    eff_size_pt = self._cell_size(style)
     # Column widths: explicit `widths=`, else sized by content to fill the content area.
     # Left to `python-docx`, a narrow table drifts left.
     # Explicit widths and no autofit anchor it to the full width.
@@ -1011,11 +1180,9 @@ class DOCX:
       while len(col_w_mm) < ncols:
         col_w_mm.append(self.content_width / ncols)
     elif style.fill_content_width:
-      # cell runs name no font, so they set in the `Normal` face, not the current `font()`
-      family = self._doc.styles["Normal"].font.name or Defaults.FONT_FAMILY
       bold_rows = 1 if header and style.header_bold else 0
       col_w_mm = content_widths(rows, self.content_width, style.cell_pad_h,
-        family, eff_size_pt, bold_rows)
+        self._cell_family(style), eff_size_pt, bold_rows)
     else:
       col_w_mm = None
     # Borders first: `set_table_widths` reorders `tblPr` into canonical schema order
@@ -1035,7 +1202,7 @@ class DOCX:
       head_row = tbl.rows[0]
       for j, txt in enumerate(header):
         cell = head_row.cells[j]
-        run = self._cell_run(cell, txt, eff_size_pt, room(j))
+        run = self._cell_run(cell, txt, eff_size_pt, room(j), style.font_family)
         if style.header_bold:
           run.bold = True
         if style.header_color is not None:
@@ -1057,7 +1224,7 @@ class DOCX:
       for j, txt in enumerate(row):
         if j >= len(tr.cells): break
         cell = tr.cells[j]
-        self._cell_run(cell, txt, eff_size_pt, room(j))
+        self._cell_run(cell, txt, eff_size_pt, room(j), style.font_family)
         if bg is not None:
           apply_cell_shading(cell, bg)
         set_cell_margins(cell, top=style.cell_pad_top, right=style.cell_pad_h,
@@ -1070,10 +1237,10 @@ class DOCX:
     self.track_block_spacing(0, extra_for_next=6)
     return self
 
-  def _cell_run(self, cell, value, size_pt:float, room:float):
+  def _cell_run(self, cell, value, size_pt:float, room:float, family:str|None=None):
     """
     The run holding `value` in `cell`, emptied of its placeholder first:
-    text at `size_pt`, or a `TablePicture` scaled down to fit `room` mm.
+    text at `size_pt`, in `family` where given, or a `TablePicture` scaled down to fit `room` mm.
     """
     cell.text = ""
     run = cell.paragraphs[0].add_run()
@@ -1084,6 +1251,7 @@ class DOCX:
     else:
       run.text = str(value)
       run.font.size = Pt(size_pt)
+      if family: run.font.name = family
     return run
 
   def _tighten_cell_paras(self, cell):
@@ -1172,6 +1340,7 @@ class DOCX:
     rstyle = OxmlElement("w:rStyle")
     rstyle.set(qn("w:val"), "Hyperlink")
     rpr.append(rstyle)
+    if self._style.small_caps: rpr.append(OxmlElement("w:smallCaps"))
     color = OxmlElement("w:color")
     color.set(qn("w:val"), "0563C1")
     rpr.append(color)
@@ -1183,12 +1352,46 @@ class DOCX:
     hl.append(run)
     p._element.append(hl)
 
+  #--------------------------------------------------------------------------------------- Contents
+
+  def toc(self, levels:int=3, shown:str="", indent:float=6, after:float=6) -> "DOCX":
+    """
+    A table of contents of the headings of levels 1 to `levels`, as Word builds one:
+    a field it fills as it opens the file, asking the reader first, `shown` until then.
+    Its entries link to their headings and take Word's own `TOC 1` to `TOC 9` styles:
+    each level `indent` in from the one above, `after` pt apart, single lines,
+    the page number at the right edge after dots.
+    """
+    if not 1 <= levels <= 9: raise ValueError(f"levels run from 1 to 9, got {levels!r}")
+    styles = self._doc.styles
+    for level in range(1, levels + 1):
+      name = f"toc {level}"
+      style = styles[name] if name in styles else styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
+      # Word's own `TOC 1` it fills the contents with, not a style of that name beside it
+      style.element.set(qn("w:styleId"), f"TOC{level}")
+      style.element.attrib.pop(qn("w:customStyle"), None)
+      style.base_style = styles["Normal"]
+      pf = style.paragraph_format
+      pf.line_spacing, pf.space_before, pf.space_after = 1.0, Pt(0), Pt(after)
+      pf.left_indent = Mm(to_mm(indent, self.unit) * (level - 1))
+      pf.tab_stops.clear_all() # one, though the contents are set twice
+      pf.tab_stops.add_tab_stop(Mm(self.content_width), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+    self._flush_para()
+    complex_field(self.new_para(), f'TOC \\o "1-{levels}" \\h \\z \\u', shown)
+    settings = self._doc.settings.element
+    if settings.find(qn("w:updateFields")) is None:
+      update = OxmlElement("w:updateFields")
+      update.set(qn("w:val"), "true")
+      _insert_ordered(settings, update, _SETTINGS_ORDER)
+    self.track_block_spacing(0)
+    return self
+
   #-------------------------------------------------------------------------------- Headers/footers
 
   def header(self, text:str|None=None, align:str|None=None) -> "DOCX":
     """
     Set the header text of the last section, which the sections `columns()` opens share.
-    For richer headers use `doc.doc.sections[0].header` directly.
+    `in_header()` writes paragraphs of any look there, on the first, odd or even pages.
     """
     sec = self._doc.sections[-1]
     p = sec.header.paragraphs[0]
@@ -1220,6 +1423,69 @@ class DOCX:
     if page_number:
       if text: p.add_run("  ")
       page_fields(p, "{page} / {pages}")
+    return self
+
+  @contextmanager
+  def in_header(self, pages:str="all"):
+    """
+    Write the `with` body into the header of the last section on `pages`: `all` its pages,
+    its `first` page apart, or `even` pages apart from odd ones, which then holds for every
+    section. The header stops following the section before. Its paragraph is open from the start,
+    in Word's `Header` style, and `para()` adds more.
+    """
+    with self._band("header", pages): yield self
+
+  @contextmanager
+  def in_footer(self, pages:str="all"):
+    """Write the `with` body into the footer of the last section on `pages`, as `in_header`."""
+    with self._band("footer", pages): yield self
+
+  @contextmanager
+  def _band(self, kind:str, pages:str):
+    """The header or footer `kind` of the last section on `pages` as the write target."""
+    if pages not in ("all", "first", "even"):
+      raise ValueError(f"pages are all, first or even, got {pages!r}")
+    sec = self._doc.sections[-1]
+    if pages == "first": sec.different_first_page_header_footer = True
+    if pages == "even": self._doc.settings.odd_and_even_pages_header_footer = True
+    band = getattr(sec, kind if pages == "all" else f"{pages}_page_{kind}")
+    band.is_linked_to_previous = False
+    self._flush_para()
+    outer = (self._at, self._last_space_after, self._extra_block_after)
+    self._at = _Target(band, self._page.content_width)
+    self._current_para = band.paragraphs[0]
+    try:
+      yield self
+    finally:
+      self._flush_para()
+      self._at, self._last_space_after, self._extra_block_after = outer
+
+  def fields(self, template:str) -> "DOCX":
+    """`template` into the open paragraph in the font set, `{page}` and `{pages}` as fields."""
+    if self._current_para is None: self.para()
+    page_fields(self._current_para, template, self._look)
+    return self
+
+  def _look(self, run):
+    """`run` in the font, size, face and colour of what `text()` writes now."""
+    _apply_run_format(run, RichSegment(text=run.text, color=self._style.color,
+      bold=bool(self._style.bold), italic=bool(self._style.italic)),
+      self._style.font_family, self._style.font_size)
+
+  def section(self) -> "DOCX":
+    """
+    Start the pages after this one in a section of their own: `in_header()` and `in_footer()`
+    set its headers and footers apart, and its first page is like the others.
+    """
+    self.hairline()
+    self._doc.add_section(WD_SECTION.NEW_PAGE).different_first_page_header_footer = False
+    return self
+
+  def from_edge(self, header:float|None=None, footer:float|None=None) -> "DOCX":
+    """How far the header and the footer of the last section stand from the page's edge."""
+    sec = self._doc.sections[-1]
+    if header is not None: sec.header_distance = Mm(to_mm(header, self.unit))
+    if footer is not None: sec.footer_distance = Mm(to_mm(footer, self.unit))
     return self
 
   #--------------------------------------------------------------------------------------- Metadata
@@ -1369,6 +1635,12 @@ def no_hyphens(element):
   pPr = element.get_or_add_pPr()
   if pPr.find(qn("w:suppressAutoHyphens")) is None:
     _ppr_insert(pPr, OxmlElement("w:suppressAutoHyphens"))
+
+def _leading(pf, lines:float|None, at_least:float|None):
+  """Lines of paragraph format `pf` `lines` apart as a multiple, or `at_least` pt apart."""
+  if lines is not None: pf.line_spacing = lines
+  if at_least is not None:
+    pf.line_spacing, pf.line_spacing_rule = Pt(at_least), WD_LINE_SPACING.AT_LEAST
 
 def _hairline_format(p):
   """Paragraph `p` set 1pt high with no space around it."""

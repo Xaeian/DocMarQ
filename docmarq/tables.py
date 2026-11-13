@@ -64,6 +64,19 @@ def content_widths(
     _IMAGE_BALANCE_BIAS)
   return widths
 
+def words_width(
+  rows:list[list], pad:float, family:str, size_pt:float, bold_rows:int = 0,
+) -> float:
+  """
+  mm `rows` need to hold their longest words: each column's widest word, `pad` a side,
+  as `content_widths` lays them out. Narrower, words break inside cells.
+  """
+  ncols = max(len(row) for row in rows)
+  asks = [[_ask(cell, family, size_pt, r < bold_rows) for cell in row]
+    for r, row in enumerate(rows)]
+  return sum(max((row[i].low for row in asks if i < len(row) and not row[i].image), default=0)
+    + 2 * pad + _FIT_SLACK_MM for i in range(ncols))
+
 def _ask(cell, family:str, size_pt:float, bold:bool) -> "_Cell":
   """What `cell` asks of its column: a picture its range, text its widest word and longest line."""
   if isinstance(cell, TablePicture):

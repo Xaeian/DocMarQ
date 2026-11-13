@@ -1,0 +1,3 @@
+# The suite runs on Linux and Windows from one checkout, so every file stays LF.
+# Without this, core.autocrlf rewrites every file on a Windows clone.
+* text=auto eol=lf

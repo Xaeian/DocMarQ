@@ -1,5 +1,15 @@
 # Changes `docmarq`
 
+## `0.5.1` Columns & layout
+
+- Two columns in any document, balanced by Word, `<!-- group wide -->` across the page
+- A table too narrow for its words says so, and with `floats` goes across the page
+- Tables in a face of their own, equation numbers on the left: `font_table`, `math_number_left`
+- Printing on both sides, even pages mirrored for binding: `two_sided`
+- Table of contents Word fills as it opens the file: `toc()`
+- Paragraphs, headers, footers and layout tables through the API alone
+- Fixes across formulas and page breaks
+
 ## `0.5.0` Slides & articles
 
 - Slides: 16:9 pages, pictures in table cells
@@ -7,7 +17,9 @@
 - Word footnotes, numbered, marked or unmarked
 - Emoji in an emoji face, so Word no longer prints them as boxes
 - No line ends with a lone `w` or `i`, and no unit leaves its number
-- Authors with ORCID and e-mail, a titled bibliography, a Portuguese preset
+- Authors with ORCID and e-mail
+- Titled bibliography
+- Portuguese preset
 - Text a package sets itself, written as the engine writes a paragraph
 - Fix: images in text and table cells printed as `[image]`
 - Fixes across SVG arrowheads, table padding and metadata

@@ -215,3 +215,11 @@ def unreadable_logo_warns_and_is_left_out(tmp_path):
       style=lang_style("pl"), base_dir=str(tmp_path))
   assert {Path(w.filename).name for w in caught} == {Path(__file__).name}
   assert not [n for n in zipfile.ZipFile(path).namelist() if n.startswith("word/media/")]
+
+#------------------------------------------------------------------------------------ Closing break
+
+def a_closing_page_break_without_signatures_opens_no_empty_page(tmp_path):
+  path = str(tmp_path / "end.docx")
+  md_to_docx("## One\n\nA clause.\n\n<!-- pagebreak -->\n", path)
+  breaks = docx_xml(path).xpath("//w:br[@w:type='page']", namespaces=NS)
+  assert not breaks # an empty last page in Word

@@ -34,6 +34,7 @@ class MarkdownStyle:
   font_body: str = "Calibri"
   font_head: str = "Calibri"
   font_mono: str = "Consolas"
+  font_table: str|None = None # face of table cells, the body's when `None`
   # Emoji go in a face of their own, since a text face holds none, `None` leaving them as written.
   emoji_font: str|None = EMOJI_FONT
 
@@ -49,7 +50,8 @@ class MarkdownStyle:
   # Paragraph gap in mm. Converted to Word's pt-based `space_after` at apply time.
   para_gap: float = 3
   # mm the first line of a body paragraph starts in, as books and journals set text.
-  # A paragraph of a list, a quote or a footnote keeps flush.
+  # A paragraph of a list, a quote or a footnote keeps flush,
+  # and so does one opening in lowercase under a formula, going on with its sentence.
   first_indent: float = 0
 
   #--------------------------------------------------------------------------------------- Headings
@@ -86,6 +88,17 @@ class MarkdownStyle:
   # `True` keeps each paragraph on one page, and a list on one page with its items.
   # `False` leaves page breaks to Word.
   keep_together: bool = False
+  # `2` sets the text in two columns `column_gap` apart, which Word balances on their last page,
+  # the text before the first `##` across the page, as a contract's preamble or a paper's lead.
+  # A group opened `wide` spans the page between runs of columns, which go on under it.
+  columns: int = 1
+  column_gap: float = 8 # mm
+  # In columns, a table, picture or group that misses the rest of a column waits for the top
+  # of the next one while the text fills this one, their order kept,
+  # and a group opened `wide` waits for the top of the next page.
+  # `False` sets each where it stands, as a contract needs.
+  # Word sets them where they stand either way.
+  floats: bool = False
 
   #------------------------------------------------------------------------------------------- Math
 
@@ -100,6 +113,7 @@ class MarkdownStyle:
   # `stix` is closest to Word's Cambria Math,
   # so a fallback formula blends with the native ones around it.
   math_fontset: str = "stix"
+  math_number_left: bool = False # a formula's `\tag` at the left edge, as some journals set it
 
   #---------------------------------------------------------------------------------------- Mermaid
 

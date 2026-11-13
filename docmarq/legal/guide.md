@@ -3,7 +3,7 @@
 How to prepare a markdown file for a letter, statement or contract rendered through [`docmarq.legal`](readme.md).
 
 The file is the document: its text, and in the frontmatter the facts that belong to it.
-How it looks - columns, fonts, signing lines - is chosen when it is rendered and never written into the file.
+How it looks (columns, fonts, signing lines) is chosen when it is rendered and never written into the file.
 
 ## Quick start
 

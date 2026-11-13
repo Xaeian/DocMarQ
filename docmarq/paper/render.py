@@ -11,7 +11,7 @@ from ..core import DOCX
 from ..constants import PageSize, A4
 from ..inline import RichSegment
 from ..parts import signatures, page_number
-from ..md import MarkdownRenderer, split_frontmatter, docx_metadata
+from ..md import MarkdownRenderer, split_frontmatter, docx_metadata, closing_breaks
 from .style import PaperStyle
 from .banner import Banner, compact
 
@@ -25,6 +25,7 @@ def md_to_docx(
   page:PageSize = A4,
   margin:float|tuple = 20,
   gutter:float = 0,
+  two_sided:bool = False,
   base_dir:str|None = None,
   font_dir:str|None = None,
   metadata:dict|None = None,
@@ -46,6 +47,8 @@ def md_to_docx(
       `A4.landscape()` flips it, `PageSize(200, 250)` is a custom sheet.
     margin: mm, scalar or CSS-order 1-4 sequence.
     gutter: binding margin in mm - Word's native gutter, on the left of every page.
+    two_sided: printed on both sides of the sheet, Word mirroring the margins of even pages,
+      so the left one and the gutter stay at the bound edge.
     base_dir: root for relative image paths. `None` uses cwd.
     font_dir: TTF root for mermaid diagram font sync.
       When set, diagrams render in `style.font_body` instead of the system default,
@@ -53,9 +56,9 @@ def md_to_docx(
   """
   style = _checked(style or PaperStyle())
   doc = DOCX(output_path, width=page.width, height=page.height,
-    margin=margin, gutter=gutter,
+    margin=margin, gutter=gutter, two_sided=two_sided,
     font_body=style.font_body, font_head=style.font_head, body_size=style.body_size)
-  md_into(doc, md_text, style=style, base_dir=base_dir, font_dir=font_dir, metadata=metadata)
+  _into(doc, md_text, style, base_dir, font_dir, metadata, ends=True)
   doc.save()
   return doc
 
@@ -76,7 +79,16 @@ def md_into(
   The caller saves it.
   Header and footer belong to the whole document, so a cover carries the page number too,
   and a banner, which keeps the first page clear of the compact header, belongs on page 1.
+  A page break that ends `md_text` stays, for what the caller writes after it.
   """
+  _into(doc, md_text, style, base_dir, font_dir, metadata, ends=False)
+
+def _into(
+  doc:DOCX, md_text:str, style:PaperStyle|None, base_dir:str|None, font_dir:str|None,
+  metadata:dict|None,
+  ends:bool,
+):
+  """`md_into` once more, and with `ends` the file ends with it: a closing page break goes."""
   style = _checked(style or PaperStyle())
   fm, _ = split_frontmatter(md_text)
   meta = docx_metadata(fm, metadata)
@@ -85,7 +97,7 @@ def md_into(
   banner = Banner(doc, style, fm, renderer.frontmatter_file(fm, "logo")) if fm and style.banner \
     else None
   _chrome(doc, style, fm)
-  _draw(doc, renderer, style, md_text, banner)
+  _draw(doc, renderer, style, md_text, banner, ends)
 
 def _checked(style) -> PaperStyle:
   """`style` when it is a `PaperStyle`. A wrong one fails here, before anything is written."""
@@ -123,6 +135,7 @@ def _chrome(doc:DOCX, style:PaperStyle, fm:dict):
 def _draw(
   doc:DOCX, renderer:MarkdownRenderer, style:PaperStyle,
   md_text:str, banner:Banner|None,
+  ends:bool,
 ):
   """Banner, content and signing lines, in writing order."""
   if banner:
@@ -133,6 +146,7 @@ def _draw(
     tokens = _skip_matching_h1(tokens, str(title))
   # indexed after the drop, so a link to the removed title is plain text
   renderer.index(tokens)
+  if ends and not style.sign: tokens = tokens[:closing_breaks(tokens)] # nothing follows them
   renderer.render_tokens(tokens)
   if style.sign:
     face = RichSegment("", size=style.sign_size, color=style.muted_color, italic=True)

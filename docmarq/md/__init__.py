@@ -23,7 +23,7 @@ __extras__ = ("md", ["markdown-it-py", "mdit-py-plugins", "PyYAML"])
 #--------------------------------------------------------------------------------------- Public API
 
 from .style import MarkdownStyle
-from .renderer import MarkdownRenderer, top_blocks
+from .renderer import MarkdownRenderer, top_blocks, first_section, closing_breaks
 from .frontmatter import (split_frontmatter, peek_frontmatter, metadata_from_frontmatter,
   docx_metadata, read_yaml, people, byline)
 from .presets import lang_style, LANG_PRESETS
@@ -33,6 +33,7 @@ __all__ = [
   "MarkdownStyle",
   "MarkdownRenderer",
   "top_blocks",
+  "first_section", "closing_breaks",
   "split_frontmatter",
   "peek_frontmatter",
   "read_yaml",

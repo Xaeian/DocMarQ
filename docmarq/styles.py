@@ -22,6 +22,7 @@ class Style:
   italic: bool|None = None
   underline: bool|None = None
   strike: bool|None = None
+  small_caps: bool|None = None # lowercase letters as Word's small capitals
   align: str|None = None
   line_height: float|None = None # ratio of font size
   space_before: float|None = None # pt
@@ -52,6 +53,7 @@ class Style:
       italic=bool(self.italic),
       underline=bool(self.underline),
       strike=bool(self.strike),
+      small_caps=bool(self.small_caps),
       align=self.align or Align.LEFT,
       line_height=self.line_height or Defaults.LINE_HEIGHT,
       space_before=self.space_before if self.space_before is not None else 4,
@@ -106,6 +108,7 @@ class TableStyle:
   # (for 11 pt body → 10 pt cells, common paper convention).
   # Set an explicit float to override.
   font_size: float|None = None
+  font_family: str|None = None # face of cell text, that of `Normal` when `None`
 
 #------------------------------------------------------------------------------------------ Presets
 

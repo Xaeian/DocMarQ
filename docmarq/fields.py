@@ -40,6 +40,18 @@ def page_fields(p, template:str, look=None):
 
 #------------------------------------------------------------------------------------------ Complex
 
+def complex_field(p, instr:str, shown:str="", look=None):
+  """
+  A field running `instr` at the end of paragraph `p`, as a table of contents is one:
+  `shown` stands in its place until Word works it out, `look(run)` formats every run.
+  """
+  run = _runs(p, look)
+  _mark(run(), "begin")
+  _instr(run(), f" {instr} ")
+  _mark(run(), "separate")
+  if shown: run().text = shown
+  _mark(run(), "end")
+
 def page_fields_if_many(p, template:str, look=None):
   """
   `template` into paragraph `p`, shown only in a document of more than one page.
@@ -49,32 +61,41 @@ def page_fields_if_many(p, template:str, look=None):
   `look(run)` formats every run, so the text Word puts in its place takes that look too.
   The result stored for readers that never work fields out is empty.
   """
+  run = _runs(p, look)
+  def nested(code:str):
+    _mark(run(), "begin")
+    _instr(run(), f" {code} ")
+    _mark(run(), "separate")
+    run().text = "1"
+    _mark(run(), "end")
+  _mark(run(), "begin")
+  _instr(run(), " IF ")
+  nested("NUMPAGES")
+  _instr(run(), ' > 1 "')
+  for part in _PLACEHOLDER.split(template):
+    if part in _CODES: nested(_CODES[part])
+    elif part: _instr(run(), part.replace("\\", "\\\\").replace('"', '\\"'))
+  _instr(run(), '" "" ')
+  _mark(run(), "separate")
+  _mark(run(), "end")
+
+def _runs(p, look):
+  """Maker of the runs of a field in paragraph `p`, each formatted by `look(run)`."""
   def run():
     r = p.add_run()
     if look: look(r)
     return r
-  def mark(kind:str):
-    el = OxmlElement("w:fldChar")
-    el.set(qn("w:fldCharType"), kind)
-    run()._r.append(el)
-  def instr(text:str):
-    el = OxmlElement("w:instrText")
-    el.set(qn("xml:space"), "preserve")
-    el.text = text
-    run()._r.append(el)
-  def nested(code:str):
-    mark("begin")
-    instr(f" {code} ")
-    mark("separate")
-    run().text = "1"
-    mark("end")
-  mark("begin")
-  instr(" IF ")
-  nested("NUMPAGES")
-  instr(' > 1 "')
-  for part in _PLACEHOLDER.split(template):
-    if part in _CODES: nested(_CODES[part])
-    elif part: instr(part.replace("\\", "\\\\").replace('"', '\\"'))
-  instr('" "" ')
-  mark("separate")
-  mark("end")
+  return run
+
+def _mark(run, kind:str):
+  """`run` as the field mark `kind`: begin, separate or end."""
+  el = OxmlElement("w:fldChar")
+  el.set(qn("w:fldCharType"), kind)
+  run._r.append(el)
+
+def _instr(run, text:str):
+  """`run` holding `text` of a field's instruction."""
+  el = OxmlElement("w:instrText")
+  el.set(qn("xml:space"), "preserve")
+  el.text = text
+  run._r.append(el)
