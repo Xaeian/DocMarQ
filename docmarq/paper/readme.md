@@ -89,7 +89,7 @@ from docmarq.constants import A4, page_size
 
 style = lang_style("pl", # banner/footer labels
   font_body="Calibri", font_head="Calibri", font_mono="Consolas",
-  body_size=11, line_height=1.0, image_max_h=120,
+  body_size=11, line_height=1.15, image_max_h=120,
   banner=True, banner_compact=True, sign="approval",
   mermaid_theme="default",
 )

@@ -143,7 +143,7 @@ Same field names with deliberately different values, so do not "fix" these:
 
 | Field | pdfmarq | docmarq | Why |
 | --- | --- | --- | --- |
-| `line_height` | `1.4` | `1.0` | Word's "Single" already adds ~1.2× leading; pdfmarq has none |
+| `line_height` | `1.4` | `1.15` | a multiple of Word's "Single", ~1.22× the size in Calibri, so lines stand 1.4× their size apart as in pdfmarq |
 | `font_body` / `font_mono` | `Vera` / `Courier` | `Calibri` / `Consolas` | embedded TTF vs font resolved on reader's machine |
 | `keep_together` | `None`: whole in one column, flowing in columns | `False` | pdfmarq measures each block; Word breaks pages itself, as docmarq always let it |
 | `math_fontset` | `stixsans` | `stix` | fallback formulas blend with Word's serif Cambria Math |
