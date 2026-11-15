@@ -334,9 +334,9 @@ def apply_table_rules(table, color:tuple|str, size_pt:float, rules:str, double:b
   for side in ("top", "bottom"):
     borders.find(qn(f"w:{side}")).set(qn("w:val"), "double")
 
-def rule_cell(cell, color:tuple|str, size_pt:float, side:str="bottom"):
+def rule_cell(cell, color:tuple|str, size_pt:float, side:str="bottom", val:str="single"):
   """
-  Single rule on one `side` of `cell`, as under a table's header row.
+  Rule on one `side` of `cell`, as under a table's header row, `single` or as `val` names it.
   A rule already on that side gives way, and the sides keep the order of the schema.
   """
   tc_pr = cell._tc.get_or_add_tcPr()
@@ -347,7 +347,7 @@ def rule_cell(cell, color:tuple|str, size_pt:float, side:str="bottom"):
   old = borders.find(qn(f"w:{side}"))
   if old is not None: borders.remove(old)
   size = str(eighths(size_pt))
-  rule = OxmlElement(f"w:{side}", {qn("w:val"): "single", qn("w:sz"): size,
+  rule = OxmlElement(f"w:{side}", {qn("w:val"): val, qn("w:sz"): size,
     qn("w:space"): "0", qn("w:color"): color_hex(color)})
   later = {qn(f"w:{name}") for name in _CELL_SIDES[_CELL_SIDES.index(side) + 1:]}
   following = next((child for child in borders if child.tag in later), None)

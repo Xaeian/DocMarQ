@@ -17,15 +17,17 @@ from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
 from .constants import Defaults, DXA_PER_MM
 from .utils import (to_mm, parse_margin, align_to_docx, color_hex,
-  rgb255, smaller_size, tight_line_height, text_element, eighths)
+  rgb255, smaller_size, tight_line_height, eighths)
 from .styles import Style, TableStyle
 from .layout import PageGeometry
 from .structure import Metadata, new_properties
-from .inline import RichSegment, _apply_run_format
+from .inline import RichSegment, _apply_run_format, set_char_space
 from .svg import svg_to_png_buffer, is_svg
-from .fields import complex_field, page_fields
-from .images import pin_offsets
+from .fields import complex_field, mark_field, page_fields
+from .images import add_picture, pin_offsets
 from .emoji import font_emoji, EMOJI_FONT
+from .fonts import embed_fonts
+from .metrics import text_width_mm
 from . import dropcap, notes
 from .tables import (
   apply_table_rules, check_table_rules, rule_cell, apply_cell_shading, set_cell_align,
@@ -78,13 +80,17 @@ class DOCX:
     font_head:str|None = None,
     body_size:float = Defaults.FONT_SIZE,
     two_sided:bool = False,
+    font_dir:str|None = None,
   ):
     """
     `gutter` is Word's binding margin, added to the left one.
     `two_sided` prints on both sides of the sheet: Word mirrors the margins of even pages,
     so the left one and the gutter stay at the bound edge, as in pdfmarq.
+    `font_dir` holds faces as pdfmarq takes them, `Family/Family-Mode.ttf`: those the document
+    names go into its file as it is saved, so Word shows them where they are not installed.
     """
     self.path = path
+    self._font_dir = font_dir
     self.unit = unit
     top, right, bot, left = parse_margin(margin)
     self._page = PageGeometry(
@@ -153,6 +159,10 @@ class DOCX:
     if self._at.width is not None: return self._at.width
     count, gap = self._cols
     return (self._page.content_width - gap * (count - 1)) / count
+
+  def text_width(self, text:str, family:str, size:float, bold:bool=False) -> float:
+    """mm `text` takes set in `family` at `size` pt, from the faces this file carries first."""
+    return text_width_mm(text, family, size, bold, self._font_dir)
 
   @property
   def doc(self):
@@ -236,6 +246,7 @@ class DOCX:
     page:bool|None = None,
     lines:float|None = None,
     at_least:float|None = None,
+    char_space:float|None = None,
   ) -> "DOCX":
     """
     Restyle Word's `Heading {level}`, so every heading of that level follows.
@@ -243,7 +254,7 @@ class DOCX:
     `size` in pt, `bold` and `italic` the face, `color` its text, `rule` the thin line under it,
     `family` its font, `caps` small capitals, `upper` capitals alone,
     `align` and `indent` its place, `page` a new page before it,
-    and its lines `lines` apart as a multiple or `at_least` pt.
+    its lines `lines` apart as a multiple or `at_least` pt, its letters `char_space` pt apart.
     `None` leaves that property as the document has it.
     """
     try:
@@ -265,7 +276,44 @@ class DOCX:
     if align is not None: pf.alignment = align_to_docx(align)
     if indent is not None: pf.left_indent = Mm(to_mm(indent, self.unit))
     if page is not None: pf.page_break_before = page
+    if char_space is not None: set_char_space(st.element.get_or_add_rPr(), char_space)
     _leading(pf, lines, at_least)
+    return self
+
+  def paragraph_style(
+    self, name:str,
+    size:float|None = None,
+    bold:bool|None = None,
+    italic:bool|None = None,
+    color:tuple|str|None = None,
+    family:str|None = None,
+    upper:bool|None = None,
+    char_space:float|None = None,
+    before:float|None = None,
+    after:float|None = None,
+    at_least:float|None = None,
+  ) -> "DOCX":
+    """
+    Restyle Word's paragraph style `name`, as `toc 1` the contents fill their chapters with:
+    `size` in pt, `bold` and `italic` the face, `color` its text, `family` its font,
+    `upper` capitals alone, its letters `char_space` pt apart, `before` and `after` pt around
+    its paragraphs, their lines `at_least` pt apart; `None` leaves a property as it is.
+    A style the document lacks is left alone, as `heading_style` leaves one.
+    """
+    if name not in self._doc.styles: return self
+    st = self._doc.styles[name]
+    pf = st.paragraph_format
+    if before is not None: pf.space_before = Pt(before)
+    if after is not None: pf.space_after = Pt(after)
+    if at_least is not None:
+      pf.line_spacing, pf.line_spacing_rule = Pt(at_least), WD_LINE_SPACING.AT_LEAST
+    if size is not None: st.font.size = Pt(size)
+    if bold is not None: st.font.bold = bold
+    if italic is not None: st.font.italic = italic
+    if color is not None: st.font.color.rgb = RGBColor(*rgb255(color))
+    if family is not None: _force_font(st, family)
+    if upper is not None: st.font.all_caps = upper
+    if char_space is not None: set_char_space(st.element.get_or_add_rPr(), char_space)
     return self
 
   def body_style(self, lines:float|None=None, at_least:float|None=None) -> "DOCX":
@@ -654,15 +702,13 @@ class DOCX:
     self._add_run(self._current_para, seg)
     return self
 
-  def link(self, content:str, url:str|None=None, target:str|None=None) -> "DOCX":
+  def link(self, content:str, url:str|None=None, target:str|None=None, **seg_kwargs) -> "DOCX":
     """
-    Add a hyperlink run.
+    Add a hyperlink run in the look of the text around it, `seg_kwargs` as `text()` takes them:
+    in `color` where given, as a PDF draws a link, else in Word's underlined blue.
     Either `url` for external link or `target` for internal bookmark name.
     """
-    if self._current_para is None:
-      self.para()
-    self._add_hyperlink(self._current_para, content, url=url, target=target)
-    return self
+    return self.text(content, link_url=url, link_target=target, **seg_kwargs)
 
   def enter(self) -> "DOCX":
     """End the current paragraph - next `text()` starts a new one."""
@@ -682,15 +728,30 @@ class DOCX:
     sides:tuple = ("top", "left", "bottom", "right"),
     size:float = 0.5,
     space:float = 1,
+    dotted:bool = False,
   ) -> "DOCX":
     """
-    Rule the current paragraph on `sides`, `size` pt thick, `space` pt clear of its text.
+    Rule the current paragraph on `sides`, `size` pt thick, `space` pt clear of its text,
+    in dots by `dotted`, as a line to sign on.
     Word keeps the width in eighths of a point and the space in whole points.
     """
     if self._current_para is None:
       self.para()
     _set_pbdr(self._current_para._p, color_hex(color), sides=sides,
-      size_eighths=eighths(size), space=round(space))
+      size_eighths=eighths(size), space=round(space), val="dotted" if dotted else "single")
+    return self
+
+  def cell_rule(
+    self, cell, color:tuple|str,
+    side:str = "bottom",
+    size:float = 0.5,
+    dotted:bool = False,
+  ) -> "DOCX":
+    """
+    Rule one `side` of a `cell` of `grid()`, `size` pt thick, in dots by `dotted`,
+    as the light lines between the rows of a form.
+    """
+    rule_cell(cell, color, size, side, "dotted" if dotted else "single")
     return self
 
   def shape(
@@ -706,12 +767,16 @@ class DOCX:
     align:str|None = None,
     style:str|None = None,
     page:bool|None = None,
+    right:float|None = None,
+    exact:float|None = None,
   ) -> "DOCX":
     """
-    Lay out the open paragraph: `indent` in from the left, its first line `first` further,
-    a negative one hanging, `before` and `after` pt around it, its lines `lines` apart
-    as a multiple or `at_least` pt, kept with the next paragraph by `keep`,
-    a tab stop at each `(position, "L"|"C"|"R")` of `tabs`, in Word's `style` by name,
+    Lay out the open paragraph: `indent` in from the left and `right` from the right,
+    its first line `first` further, a negative one hanging, `before` and `after` pt around it,
+    its lines `lines` apart as a multiple, `at_least` pt or `exact` pt, kept with the next one
+    by `keep`,
+    a tab stop at each `(position, "L"|"C"|"R")` of `tabs`, `(position, "R", ".")` dots led to it,
+    in Word's `style` by name,
     on a new page by `page`, with no empty paragraph before it as `page_break()` leaves.
     Its gaps are its own: the next paragraph's gap does not collapse into them.
     `None` leaves a property as it is.
@@ -721,13 +786,18 @@ class DOCX:
     pf = p.paragraph_format
     if style is not None: p.style = self._doc.styles[style]
     if indent is not None: pf.left_indent = Mm(to_mm(indent, self.unit))
+    if right is not None: pf.right_indent = Mm(to_mm(right, self.unit))
     if first is not None: pf.first_line_indent = Mm(to_mm(first, self.unit))
     if before is not None: pf.space_before = Pt(before)
     if after is not None: pf.space_after = Pt(after)
     _leading(pf, lines, at_least)
+    if exact is not None:
+      pf.line_spacing, pf.line_spacing_rule = Pt(exact), WD_LINE_SPACING.EXACTLY
     if keep is not None: pf.keep_with_next = keep
     if page is not None: pf.page_break_before = page
-    for at, kind in tabs: pf.tab_stops.add_tab_stop(Mm(to_mm(at, self.unit)), _TABS[kind])
+    for at, kind, *lead in tabs:
+      leader = WD_TAB_LEADER.DOTS if lead == ["."] else WD_TAB_LEADER.SPACES
+      pf.tab_stops.add_tab_stop(Mm(to_mm(at, self.unit)), _TABS[kind], leader)
     if align: p.alignment = align_to_docx(align)
     return self
 
@@ -821,10 +891,7 @@ class DOCX:
     """Add a run with `seg` styling, falling back to current `_style`."""
     if seg.break_line:
       p.add_run().add_break(WD_BREAK.LINE)
-    if seg.link_url or seg.link_target:
-      # `w:hyperlink` wraps its own run, so the link path replaces the plain run entirely.
-      self._add_hyperlink(p, seg.text, url=seg.link_url, target=seg.link_target)
-      return
+    linked = bool(seg.link_url or seg.link_target)
     run = p.add_run(seg.text)
     # Effective family/size: segment wins, else current style.
     # A styled paragraph (heading) contributes neither, so its own font survives.
@@ -832,10 +899,10 @@ class DOCX:
     family = seg.family or (None if inherited else self._style.font_family)
     size = seg.size or (None if inherited else self._style.font_size)
     # Color: the segment's own, else the paragraph's default set by `blockquote()` and the like,
-    # else the current `_style.color`.
+    # else the current `_style.color`; a link naming none takes Word's blue below.
     if seg.color is not None:
       eff_color = seg.color
-    elif inherited:
+    elif inherited or linked:
       eff_color = None
     elif self._para_default_color is not None:
       eff_color = self._para_default_color
@@ -855,10 +922,12 @@ class DOCX:
       superscript=seg.superscript,
       subscript=seg.subscript,
       small_caps=seg.small_caps or bool(self._style.small_caps),
+      char_space=seg.char_space,
     )
     _apply_run_format(run, merged, family, size,
       code_family=self._style.code_family, code_size=self._style.code_size,
       code_color=self._style.code_color, code_bg=self._style.code_bg)
+    if linked: _link_run(p, run, seg)
 
   #--------------------------------------------------------------------------------------- Headings
 
@@ -1092,16 +1161,35 @@ class DOCX:
       self._add_run(p, RichSegment(text=text))
     return self
 
-  def hr(self, color:tuple|str=(0.82, 0.84, 0.87), size_eighths:int=4) -> "DOCX":
-    """Insert a horizontal rule - empty paragraph with bottom border."""
+  def hr(
+    self, color:tuple|str = (0.82, 0.84, 0.87), size_eighths:int = 4,
+    length:float|None = None,
+    align:str = "L",
+    before:float = 4,
+    after:float = 4,
+    dotted:bool = False,
+  ) -> "DOCX":
+    """
+    A horizontal rule, an empty paragraph with a bottom border, `before` and `after` pt around it,
+    across the text, or `length` long at `align` as an accent under a title: a short one stands
+    a point tall, so it keeps close to the line above. `dotted` sets it in dots, a line to sign on.
+    """
     self._flush_para()
     p = self.new_para()
     pf = p.paragraph_format
-    pf.space_before = Pt(self.collapsed_before(4))
-    pf.space_after = Pt(4)
+    pf.space_before = Pt(self.collapsed_before(before))
+    pf.space_after = Pt(after)
+    if length is not None:
+      rest = max(0.0, self.content_width - to_mm(length, self.unit)) # mm beside the rule
+      left = {"L": 0.0, "C": rest / 2, "R": rest}[align]
+      pf.left_indent, pf.right_indent = Mm(left), Mm(rest - left)
+      pf.line_spacing, pf.line_spacing_rule = Pt(1), WD_LINE_SPACING.EXACTLY
+      mark = OxmlElement("w:rPr")
+      mark.append(OxmlElement("w:sz", {qn("w:val"): "2"}))
+      _ppr_insert(p._p.get_or_add_pPr(), mark)
     _set_pbdr(p._element, color_hex(color), sides=("bottom",),
-      size_eighths=size_eighths)
-    self.track_block_spacing(4)
+      size_eighths=size_eighths, val="dotted" if dotted else "single")
+    self.track_block_spacing(after)
     return self
 
   #----------------------------------------------------------------------------------------- Tables
@@ -1246,7 +1334,8 @@ class DOCX:
     run = cell.paragraphs[0].add_run()
     if isinstance(value, TablePicture):
       scale = min(1.0, room / value.width) if value.width > 0 else 1.0
-      run.add_picture(value.source, width=Mm(value.width * scale), height=Mm(value.height * scale))
+      add_picture(run, value.source, width=Mm(value.width * scale),
+        height=Mm(value.height * scale))
       pin_offsets(run)
     else:
       run.text = str(value)
@@ -1271,9 +1360,12 @@ class DOCX:
   def image(
     self, path:str, width:float|None = None, height:float|None = None,
     align:str|None = None,
+    before:float = 0,
+    after:float = 0,
   ) -> "DOCX":
     """
-    Insert an image. Width/height in current unit (mm by default).
+    Insert an image, `before` and `after` pt around its paragraph.
+    Width/height in current unit (mm by default).
     Provide only `width` for proportional scaling.
 
     SVG sources are rasterized first - `python-docx` reads raster formats only.
@@ -1283,6 +1375,8 @@ class DOCX:
     p = self.new_para()
     if align:
       p.alignment = align_to_docx(align)
+    if before: p.paragraph_format.space_before = Pt(self.collapsed_before(before))
+    if after: p.paragraph_format.space_after = Pt(after)
     run = p.add_run()
     kwargs = {}
     if width: kwargs["width"] = Mm(to_mm(width, self.unit))
@@ -1292,9 +1386,9 @@ class DOCX:
       buf = svg_to_png_buffer(path)
       if buf is not None:
         source = buf
-    run.add_picture(source, **kwargs)
+    add_picture(run, source, **kwargs)
     # Treat image paragraph like a regular body block for collapse purposes.
-    self.track_block_spacing(0)
+    self.track_block_spacing(after)
     return self
 
   #------------------------------------------------------------------------------------ Page breaks
@@ -1326,43 +1420,22 @@ class DOCX:
     self._current_para._element.append(end)
     return self
 
-  def _add_hyperlink(self, p, text:str, url:str|None=None, target:str|None=None):
-    """Append a hyperlink run to paragraph. Either `url` or `target`."""
-    hl = OxmlElement("w:hyperlink")
-    if url:
-      r_id = p.part.relate_to(url, RT.HYPERLINK, is_external=True)
-      hl.set(qn("r:id"), r_id)
-    elif target:
-      hl.set(qn("w:anchor"), target)
-    run = OxmlElement("w:r")
-    rpr = OxmlElement("w:rPr")
-    # Hyperlink style: blue + underline
-    rstyle = OxmlElement("w:rStyle")
-    rstyle.set(qn("w:val"), "Hyperlink")
-    rpr.append(rstyle)
-    if self._style.small_caps: rpr.append(OxmlElement("w:smallCaps"))
-    color = OxmlElement("w:color")
-    color.set(qn("w:val"), "0563C1")
-    rpr.append(color)
-    underline = OxmlElement("w:u")
-    underline.set(qn("w:val"), "single")
-    rpr.append(underline)
-    run.append(rpr)
-    run.append(text_element(text))
-    hl.append(run)
-    p._element.append(hl)
-
   #--------------------------------------------------------------------------------------- Contents
 
-  def toc(self, levels:int=3, shown:str="", indent:float=6, after:float=6) -> "DOCX":
+  def toc(
+    self, levels:int=3, shown:str="", indent:float=6, after:float=6, kind:str="",
+  ) -> "DOCX":
     """
     A table of contents of the headings of levels 1 to `levels`, as Word builds one:
     a field it fills as it opens the file, asking the reader first, `shown` until then.
     Its entries link to their headings and take Word's own `TOC 1` to `TOC 9` styles:
     each level `indent` in from the one above, `after` pt apart, single lines,
     the page number at the right edge after dots.
+    Given `kind`, a letter, it lists instead what `toc_entry()` marks with it,
+    as a list of figures lists their captions.
     """
     if not 1 <= levels <= 9: raise ValueError(f"levels run from 1 to 9, got {levels!r}")
+    if kind: _list_letter(kind)
     styles = self._doc.styles
     for level in range(1, levels + 1):
       name = f"toc {level}"
@@ -1377,13 +1450,27 @@ class DOCX:
       pf.tab_stops.clear_all() # one, though the contents are set twice
       pf.tab_stops.add_tab_stop(Mm(self.content_width), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
     self._flush_para()
-    complex_field(self.new_para(), f'TOC \\o "1-{levels}" \\h \\z \\u', shown)
+    source = f"\\f {kind} \\h \\z" if kind else f'\\o "1-{levels}" \\h \\z \\u'
+    complex_field(self.new_para(), f"TOC {source}", shown)
     settings = self._doc.settings.element
     if settings.find(qn("w:updateFields")) is None:
       update = OxmlElement("w:updateFields")
       update.set(qn("w:val"), "true")
       _insert_ordered(settings, update, _SETTINGS_ORDER)
     self.track_block_spacing(0)
+    return self
+
+  def toc_entry(self, words:str, kind:str, level:int=1) -> "DOCX":
+    """
+    Mark the open paragraph as an entry of the list `toc(kind=kind)` builds, `words` there
+    at `level` with this paragraph's page, as a caption enters a list of figures.
+    The mark is a field Word reads, and nothing of it shows.
+    """
+    _list_letter(kind)
+    if not 1 <= level <= 9: raise ValueError(f"level runs from 1 to 9, got {level!r}")
+    if self._current_para is None: self.para()
+    words = words.replace("\\", "\\\\").replace('"', '\\"')
+    mark_field(self._current_para, f'TC "{words}" \\f {kind} \\l {level}')
     return self
 
   #-------------------------------------------------------------------------------- Headers/footers
@@ -1516,6 +1603,10 @@ class DOCX:
       for part in self._doc.part.package.iter_parts(): # body, headers, footers and footnotes
         element = getattr(part, "element", None)
         if element is not None: font_emoji(element, self._emoji_font)
+    embedded = embed_fonts(self._doc, self._font_dir) if self._font_dir else []
+    settings = self._doc.settings.element
+    if embedded and settings.find(qn("w:embedTrueTypeFonts")) is None:
+      _insert_ordered(settings, OxmlElement("w:embedTrueTypeFonts"), _SETTINGS_ORDER)
     self._doc.save(self.path)
     return self
 
@@ -1636,11 +1727,31 @@ def no_hyphens(element):
   if pPr.find(qn("w:suppressAutoHyphens")) is None:
     _ppr_insert(pPr, OxmlElement("w:suppressAutoHyphens"))
 
+def _list_letter(kind:str):
+  """`kind` of a list of entries refused unless one letter, the name Word knows such a list by."""
+  if not (len(kind) == 1 and kind.isalpha()): raise ValueError(f"kind is one letter, got {kind!r}")
+
 def _leading(pf, lines:float|None, at_least:float|None):
   """Lines of paragraph format `pf` `lines` apart as a multiple, or `at_least` pt apart."""
   if lines is not None: pf.line_spacing = lines
   if at_least is not None:
     pf.line_spacing, pf.line_spacing_rule = Pt(at_least), WD_LINE_SPACING.AT_LEAST
+
+def _link_run(p, run, seg:RichSegment):
+  """
+  `run` of paragraph `p` wrapped in a hyperlink to the URL or bookmark of `seg`,
+  in Word's underlined blue where `seg` names no colour.
+  """
+  link = OxmlElement("w:hyperlink")
+  if seg.link_url:
+    link.set(qn("r:id"), p.part.relate_to(seg.link_url, RT.HYPERLINK, is_external=True))
+  else: link.set(qn("w:anchor"), seg.link_target)
+  run._r.addprevious(link)
+  link.append(run._r)
+  if seg.color is not None: return
+  run._r.get_or_add_rPr().insert(0, OxmlElement("w:rStyle", {qn("w:val"): "Hyperlink"}))
+  run.font.color.rgb = RGBColor(0x05, 0x63, 0xC1)
+  run.font.underline = True
 
 def _hairline_format(p):
   """Paragraph `p` set 1pt high with no space around it."""

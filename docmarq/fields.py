@@ -3,42 +3,28 @@
 """
 Word fields: values Word works out as it lays the pages out, as the page number and page count.
 
-A simple field is one element.
-A complex one is a run of marks - begin, instruction, separate, result, end -
+Each is a run of marks - begin, instruction, separate, result, end -
 and its instruction may hold other fields, as `IF NUMPAGES > 1` holds `PAGE`.
+Its runs carry its look: LibreOffice sets the one element of a simple field
+in the paragraph's style instead, whatever look the run inside it has.
 """
 import re
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.text.run import Run
 
 _PLACEHOLDER = re.compile(r"(\{page\}|\{pages\})")
 _CODES = {"{page}": "PAGE", "{pages}": "NUMPAGES"}
 
-#------------------------------------------------------------------------------------------- Simple
-
-def simple_field(p, instr:str, look=None):
-  """
-  Append a field running `instr` to paragraph `p`, showing `0` until Word works it out.
-  `look(run)` formats the run it shows in.
-  """
-  fld = OxmlElement("w:fldSimple")
-  fld.set(qn("w:instr"), instr)
-  run = Run(OxmlElement("w:r"), p)
-  if look: look(run)
-  run.text = "0"
-  fld.append(run._r)
-  p._p.append(fld)
-
 def page_fields(p, template:str, look=None):
-  """`template` into paragraph `p`, `{page}` and `{pages}` as fields, `look(run)` on each run."""
+  """
+  `template` into paragraph `p`, `{page}` and `{pages}` as fields showing `0` until Word
+  works them out, `look(run)` on each run.
+  """
   for part in _PLACEHOLDER.split(template):
-    if part in _CODES: simple_field(p, _CODES[part], look)
+    if part in _CODES: complex_field(p, _CODES[part], "0", look)
     elif part:
       run = p.add_run(part)
       if look: look(run)
-
-#------------------------------------------------------------------------------------------ Complex
 
 def complex_field(p, instr:str, shown:str="", look=None):
   """
@@ -50,6 +36,16 @@ def complex_field(p, instr:str, shown:str="", look=None):
   _instr(run(), f" {instr} ")
   _mark(run(), "separate")
   if shown: run().text = shown
+  _mark(run(), "end")
+
+def mark_field(p, instr:str):
+  """
+  A field with no result at the end of paragraph `p`, as `TC` marks an entry of a list:
+  Word reads its instruction as it builds the list, and nothing of it shows.
+  """
+  run = _runs(p, None)
+  _mark(run(), "begin")
+  _instr(run(), f" {instr} ")
   _mark(run(), "end")
 
 def page_fields_if_many(p, template:str, look=None):

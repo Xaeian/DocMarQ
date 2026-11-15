@@ -2,6 +2,7 @@
 
 """Page geometry - section configuration mirroring Word's section model."""
 from dataclasses import dataclass
+from .constants import Defaults
 
 #------------------------------------------------------------------------------------- PageGeometry
 
@@ -17,10 +18,10 @@ class PageGeometry:
   """
   width: float
   height: float
-  margin_top: float = 20
-  margin_right: float = 20
-  margin_bot: float = 20
-  margin_left: float = 20
+  margin_top: float = Defaults.MARGIN
+  margin_right: float = Defaults.MARGIN
+  margin_bot: float = Defaults.MARGIN
+  margin_left: float = Defaults.MARGIN
   header_dist: float|None = None # mm from top edge to header content
   footer_dist: float|None = None # mm from bottom edge to footer content
   gutter: float = 0 # binding margin

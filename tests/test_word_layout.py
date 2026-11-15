@@ -6,6 +6,7 @@ headers and footers, sections, layout tables and the styles of the contents.
 """
 
 import pytest
+from PIL import Image
 from docmarq import DOCX
 from conftest import NS, attrs, docx_xml, twips
 
@@ -43,6 +44,50 @@ def shape_page_opens_a_new_page_before_the_paragraph(doc):
   assert not body.xpath("//w:p[w:r/w:t='Plain']/w:pPr/w:pageBreakBefore", namespaces=NS)
   assert not body.xpath("//w:br[@w:type='page']", namespaces=NS) # no paragraph of a break
 
+def shape_sets_a_right_indent_and_exact_lines_and_an_image_its_gaps(doc, tmp_path):
+  doc.para("Narrow").shape(right=8, exact=13)
+  dot = tmp_path / "dot.png"
+  Image.new("RGB", (4, 4)).save(dot)
+  doc.image(str(dot), width=10, before=12, after=6)
+  doc.save()
+  body = docx_xml(doc.path)
+  ppr = body.xpath("//w:p[w:r/w:t='Narrow']/w:pPr", namespaces=NS)[0]
+  assert attrs(ppr.find(W + "ind"), "right") == [twips(8)]
+  assert attrs(ppr.find(W + "spacing"), "line", "lineRule") == ["260", "exact"]
+  gaps = body.xpath("//w:p[w:r/w:drawing]/w:pPr/w:spacing", namespaces=NS)[0]
+  above = int(attrs(ppr.find(W + "spacing"), "after")[0] or 0)
+  # 12pt from the paragraph above, its own gap after counted in, as gaps collapse
+  assert [int(attrs(gaps, "before")[0]) + above, attrs(gaps, "after")[0]] == [240, "120"]
+
+def letters_spread_and_short_rules_dress_a_title_page(doc):
+  doc.para("Spread").text(" WIDE", char_space=1.8)
+  doc.heading_style(1, char_space=1.2)
+  doc.hr((0.86, 0.73, 0.1), 10, length=18, align="C", before=8, after=12)
+  doc.para("Signed").border((0.3, 0.3, 0.4), sides=("bottom",), size=0.6, dotted=True)
+  doc.para("Field").shape(tabs=[(60, "R", ".")])
+  cells = doc.grid([80, 40])[0]
+  doc.cell_rule(cells[1], (0.8, 0.8, 0.8), "left", 0.4, dotted=True)
+  doc.toc(2)
+  doc.paragraph_style("toc 1", family="Sora", size=10, char_space=0.5)
+  doc.save()
+  body, styles = docx_xml(doc.path), docx_xml(doc.path, "word/styles.xml")
+  assert body.xpath("//w:r[w:t=' WIDE']/w:rPr/w:spacing/@w:val", namespaces=NS) == ["36"]
+  heading = styles.xpath("//w:style[@w:styleId='Heading1']/w:rPr/w:spacing/@w:val", namespaces=NS)
+  assert heading == ["24"]
+  rule = body.xpath("//w:p[w:pPr/w:pBdr/w:bottom[@w:sz='10']]/w:pPr", namespaces=NS)[0]
+  side = (doc.content_width - 18) / 2 # mm on either side of the centred rule
+  assert [abs(int(v) - int(twips(side))) <= 1 for v in attrs(rule.find(W + "ind"), "left",
+    "right")] == [True, True]
+  assert attrs(rule.find(W + "spacing"), "line", "lineRule") == ["20", "exact"] # a point tall
+  dotted = body.xpath("//w:p[w:r/w:t='Signed']/w:pPr/w:pBdr/w:bottom/@w:val", namespaces=NS)
+  assert dotted == ["dotted"]
+  tab = "//w:p[w:r/w:t='Field']/w:pPr/w:tabs/w:tab/@w:leader"
+  assert body.xpath(tab, namespaces=NS) == ["dot"]
+  assert body.xpath("//w:tc[2]/w:tcPr/w:tcBorders/w:left/@w:val", namespaces=NS) == ["dotted"]
+  toc = styles.xpath("//w:style[@w:styleId='TOC1']/w:rPr", namespaces=NS)[0]
+  assert attrs(toc.find(W + "rFonts"), "ascii") == ["Sora"]
+  assert attrs(toc.find(W + "spacing"), "val") == ["10"]
+
 def restyle_sets_the_runs_written_so_far(doc):
   doc.heading("Plain", level=1)
   doc.restyle(bold=False, italic=True, caps=True, size=10, color=(1, 0, 0), lang="en")
@@ -63,6 +108,19 @@ def small_caps_of_the_style_set_the_runs_after_it(doc):
   doc.save()
   runs = docx_xml(doc.path).xpath("//w:p[w:r/w:t='Small']/w:r", namespaces=NS)
   assert [r.find(f"{W}rPr/{W}smallCaps") is not None for r in runs] == [True, False]
+
+def a_link_wears_the_look_of_its_text_in_the_colour_given(doc):
+  doc.font("Georgia", 10).para("See ").link("the site", url="https://example.com",
+    color=(0, 0, 0), italic=True)
+  doc.para("Or ").link("this", target="part")
+  doc.save()
+  given, plain = docx_xml(doc.path).xpath("//w:hyperlink/w:r/w:rPr", namespaces=NS)
+  assert attrs(given.find(W + "rFonts"), "ascii") == ["Georgia"]
+  assert attrs(given.find(W + "sz"), "val") == ["20"] and given.find(W + "i") is not None
+  assert attrs(given.find(W + "color"), "val") == ["000000"] and given.find(W + "u") is None
+  assert attrs(plain[0], "val") == ["Hyperlink"] and attrs(plain.find(W + "sz"), "val") == ["20"]
+  assert attrs(plain.find(W + "color"), "val") == ["0563C1"]
+  assert attrs(plain.find(W + "u"), "val") == ["single"]
 
 def restyle_and_small_caps_reach_the_words_of_a_link(doc):
   doc.para("See ").link("the site", url="https://example.com")
@@ -109,6 +167,20 @@ def toc_entries_take_words_own_styles(doc):
     assert attrs(ppr.find(f"{W}tabs/{W}tab"), "val", "leader", "pos") == [
       "right", "dot", twips(doc.content_width)]
     assert attrs(ppr.find(W + "ind"), "left") == [twips(indent)]
+
+def toc_of_a_kind_lists_the_entries_marked_with_it(doc):
+  doc.para("Fig. 1. A \"plot\" of x").toc_entry('Fig. 1. A "plot" of x', "F")
+  doc.toc(1, kind="F")
+  doc.save()
+  body = docx_xml(doc.path)
+  codes = [t.text for t in body.xpath("//w:instrText", namespaces=NS)]
+  assert codes == [' TC "Fig. 1. A \\"plot\\" of x" \\f F \\l 1 ', " TOC \\f F \\h \\z "]
+  marks = body.xpath("//w:p[w:r/w:t='Fig. 1. A \"plot\" of x']//w:fldChar/@w:fldCharType",
+    namespaces=NS)
+  assert marks == ["begin", "end"] # no result: nothing of the mark shows
+  with pytest.raises(ValueError): doc.toc(1, kind="FIG")
+  with pytest.raises(ValueError): doc.toc_entry("Fig. 2.", "2")
+  with pytest.raises(ValueError): doc.toc_entry("Fig. 2.", "F", level=10)
 
 def toc_called_again_keeps_one_tab_to_the_page_number(doc):
   doc.toc(2)

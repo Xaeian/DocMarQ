@@ -15,7 +15,7 @@ from ..core import DOCX
 from ..inline import apply_run_shading
 from ..tables import (remove_table_borders, set_cell_margins, set_cell_vertical_align,
   set_table_widths)
-from ..images import preprocess_to_buffer, pin_offsets
+from ..images import add_picture, preprocess_to_buffer, pin_offsets
 from ..utils import color_hex, rgb255, tight_line_height_pt, format_date, eighths
 from ..md import byline, bind_letters
 from .style import PaperStyle, UNKNOWN_STATUS
@@ -80,7 +80,7 @@ class Banner:
     run = p.add_run()
     buf = preprocess_to_buffer(self.logo)
     try:
-      run.add_picture(buf if buf is not None else self.logo, width=Mm(max_w))
+      add_picture(run, buf if buf is not None else self.logo, width=Mm(max_w))
       pin_offsets(run)
     except (OSError, ValueError, UnrecognizedImageError) as e:
       warnings.warn(

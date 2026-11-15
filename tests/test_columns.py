@@ -6,11 +6,11 @@ import pytest
 from docmarq import DOCX
 from docmarq.md import MarkdownRenderer, MarkdownStyle
 from docmarq.fields import page_fields_if_many
-from conftest import NS, docx_xml
+from conftest import MARGIN, NS, docx_xml
 
 @pytest.fixture
 def doc(tmp_path):
-  return DOCX(str(tmp_path / "core.docx"))
+  return DOCX(str(tmp_path / "core.docx"), margin=MARGIN)
 
 #------------------------------------------------------------------------------------------ Columns
 
@@ -229,7 +229,8 @@ def border_writes_its_sides_in_schema_order(doc):
     == {("8", "4")}
 
 def gutter_narrows_the_content(tmp_path):
-  assert DOCX(str(tmp_path / "g.docx"), gutter=10).content_width == pytest.approx(160)
+  page = DOCX(str(tmp_path / "g.docx"), gutter=10, margin=MARGIN)
+  assert page.content_width == pytest.approx(160)
 
 def two_sided_mirrors_the_margins(tmp_path):
   one = DOCX(str(tmp_path / "one.docx"), gutter=10).save()

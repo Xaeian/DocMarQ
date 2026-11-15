@@ -26,6 +26,7 @@ from ..core import DOCX
 from ..constants import EMU_PER_MM
 from ..metrics import text_width_mm
 from ..svg import svg_to_png_buffer, is_svg
+from ..images import add_picture
 from ..tables import remove_table_borders, set_cell_margins, set_table_widths
 from ..utils import format_date, mm_to_pt, align_to_docx
 from ..warn import caller_level
@@ -234,7 +235,7 @@ def _logo_row(doc:DOCX, style:LegalStyle, pic:tuple):
   pf = p.paragraph_format
   pf.space_before = Pt(0)
   pf.space_after = Pt(mm_to_pt(_ROW_GAP_MM))
-  p.add_run().add_picture(src, width=Mm(w), height=Mm(h))
+  add_picture(p.add_run(), src, width=Mm(w), height=Mm(h))
   doc.track_block_spacing(mm_to_pt(_ROW_GAP_MM))
 
 def _float(run, pic:tuple, align:str):
@@ -243,7 +244,7 @@ def _float(run, pic:tuple, align:str):
   Text wraps square around it, `_SIDE_GAP_MM` clear on the side facing the text.
   """
   src, w, h = pic
-  run.add_picture(src, width=Mm(w), height=Mm(h))
+  add_picture(run, src, width=Mm(w), height=Mm(h))
   inline = run._r.find(f".//{qn('wp:inline')}")
   gap = str(round(_SIDE_GAP_MM * EMU_PER_MM))
   anchor = OxmlElement("wp:anchor", {"distT": "0", "distB": "0",

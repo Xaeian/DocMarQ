@@ -19,7 +19,11 @@ DOCX("out.docx", margin=25, gutter=10, two_sided=True)
 DOCX("out.docx", unit="pt") # or "cm", "in", "px"
 # Start from a Word template (.dotx / .docx) - keeps theme + styles
 DOCX("out.docx", template="templates/corporate.docx")
+# Carry the faces it names, found in `faces/Family/Family-Mode.ttf`, in the file
+DOCX("out.docx", font_body="Source Serif 4", font_dir="faces")
 ```
+
+Word shows the faces a file carries where they are not installed; LibreOffice does too, OnlyOffice does not.
 
 ## Style
 
@@ -177,7 +181,7 @@ doc.table(rows, word_style="Light Grid")
 ```
 
 `doc.keep_rows(2)` keeps each row of the table written last on one page, and two rows at either end together, as journals split a table between columns.
-`text_width_mm(text, face, size)` measures words as Word sets them, to count the lines they take.
+`text_width_mm(text, face, size)` measures words as Word sets them, to count the lines they take, and `doc.text_width(text, face, size)` by the faces the file carries first.
 
 ## Colors
 
@@ -196,6 +200,7 @@ color_hex((0.03, 0.41, 0.85)) # → "0869D9" uppercase, no '#'
 ```py
 doc.image("photo.png", width=60, height=40)
 doc.image("logo.svg", width=30, align="C") # proportional, centered
+doc.image("logo.svg", height=40, align="C", before=12, after=6) # pt around its paragraph
 ```
 
 ## Page breaks, bookmarks, links
@@ -204,11 +209,17 @@ doc.image("logo.svg", width=30, align="C") # proportional, centered
 doc.page_break()
 doc.bookmark("section-1")
 doc.link("see chapter 1", target="section-1")     # internal jump
-doc.link("github", url="https://github.com/...")  # external
+doc.link("github", url="https://github.com/...")  # external, in Word's underlined blue
+doc.link("web", url="https://...", color="#000")  # in the look of its text, as a PDF draws it
 doc.toc(3, indent=6, after=6)                     # contents, Word fills it on opening
+doc.para("Fig. 1. A plot")
+doc.toc_entry("Fig. 1. A plot", "F")              # its entry in lists of kind "F"
+doc.toc(1, kind="F")                              # such a list, as of figures
 ```
 
 The contents take Word's own `TOC 1` to `TOC 9` styles: each level `indent` mm in, `after` pt apart, dots to the page number at the right edge.
+Lists by `kind` take those styles too.
+`doc.paragraph_style("toc 1", family="Sora", size=10, before=6, after=0, at_least=13)` restyles one of them, or any paragraph style the document has.
 
 ## Headers / footers
 

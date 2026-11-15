@@ -11,7 +11,7 @@ from docmarq.parts import signatures, sign_labels, page_number, LANG_LABELS
 from docmarq.paper import md_to_docx, md_into, PaperStyle, lang_style, LANG_PRESETS
 from docmarq.md import MarkdownStyle, LANG_PRESETS as ENGINE_PRESETS, metadata_from_frontmatter
 from docmarq.md import split_frontmatter
-from conftest import NS, docx_xml, docx_text
+from conftest import MARGIN, NS, docx_xml, docx_text, field_codes
 
 # Style fields md2paper sets by name from request options (its `_STYLE` and `docx_style`).
 MD2PAPER_FIELDS = {
@@ -33,7 +33,7 @@ def md_to_docx_signature_is_stable():
   assert list(params) == ["md_text", "output_path", "style", "page", "margin", "gutter",
     "two_sided", "base_dir", "font_dir", "metadata"]
   assert (params["page"].default, params["margin"].default, params["gutter"].default,
-    params["two_sided"].default) == (A4, 20, 0, False)
+    params["two_sided"].default) == (A4, 18, 0, False)
 
 def lang_style_layers_engine_parts_and_banner_labels():
   style = lang_style("de")
@@ -68,7 +68,7 @@ def page_number_sits_in_both_footers_under_a_banner(tmp_path):
   md_to_docx(BANNER, path)
   for i in (1, 2):
     footer = docx_xml(path, f"word/footer{i}.xml")
-    assert footer.xpath("//w:fldSimple/@w:instr", namespaces=NS) == ["PAGE", "NUMPAGES"]
+    assert field_codes(footer) == ["PAGE", "NUMPAGES"]
 
 def no_page_number_without_a_label(tmp_path):
   path = str(tmp_path / "doc.docx")
@@ -95,7 +95,7 @@ def sign_labels_read_scenarios_and_lists():
   assert sign_labels(False, scenarios) == []
 
 def one_signing_line_sits_at_the_right_margin(tmp_path):
-  doc = DOCX(str(tmp_path / "s.docx"))
+  doc = DOCX(str(tmp_path / "s.docx"), margin=MARGIN)
   face = RichSegment("", size=9, color=(0.2, 0.2, 0.2), italic=True)
   signatures(doc, ["Name"], face, gap=20, width=70, thick=0.5, line="dotted")
   doc.save()
@@ -110,14 +110,14 @@ def page_number_takes_a_face(tmp_path):
   page_number(p, "Strona", show_total=False, face=RichSegment("", family="Cambria", size=8))
   doc.save()
   footer = docx_xml(doc.path, "word/footer1.xml")
-  assert footer.xpath("//w:fldSimple/@w:instr", namespaces=NS) == ["PAGE"]
+  assert field_codes(footer) == ["PAGE"]
   assert set(footer.xpath("//w:r/w:rPr/w:sz/@w:val", namespaces=NS)) == {"16"}
 
 def page_number_reads_page_and_total(tmp_path):
   path = str(tmp_path / "doc.docx")
   md_to_docx("Body.", path)
   footer = docx_xml(path, "word/footer1.xml")
-  assert footer.xpath("string(//w:p)", namespaces=NS) == "Page 0/0" # fields show 0 until Word
+  assert "".join(footer.xpath("//w:t/text()", namespaces=NS)) == "Page 0/0" # 0 until Word
   size = str(round(PaperStyle().banner_meta_size * 2)) # half-points
   assert set(footer.xpath("//w:r/w:rPr/w:sz/@w:val", namespaces=NS)) == {size}
 
@@ -132,7 +132,7 @@ def md_into_writes_after_a_cover(tmp_path):
   assert texts[0] == "Coverword" and "Body text." in texts
   assert docx.Document(doc.path).core_properties.title == "Report"
   footer = docx_xml(doc.path, "word/footer1.xml")
-  assert footer.xpath("//w:fldSimple/@w:instr", namespaces=NS) == ["PAGE", "NUMPAGES"]
+  assert field_codes(footer) == ["PAGE", "NUMPAGES"]
 
 def missing_logo_warns_at_the_callers_line(tmp_path):
   md = "---\ntitle: T\nlogo: none.png\n---\n\nBody.\n"

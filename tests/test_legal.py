@@ -8,7 +8,7 @@ import pytest
 from PIL import Image, features
 from docmarq.paper import md_to_docx as paper_md_to_docx
 from docmarq.legal import md_to_docx, LegalStyle, lang_style, LANG_PRESETS
-from conftest import NS, docx_xml
+from conftest import MARGIN, NS, docx_xml
 
 LETTER = """---
 title: Termination notice
@@ -39,7 +39,7 @@ def render(tmp_path):
   Image.new("RGB", (60, 20), (30, 60, 120)).save(tmp_path / "logo.png")
   def run(md:str, style:LegalStyle):
     path = str(tmp_path / "legal.docx")
-    md_to_docx(md, path, style=style, base_dir=str(tmp_path))
+    md_to_docx(md, path, style=style, base_dir=str(tmp_path), margin=MARGIN)
     return docx_xml(path), path
   return run
 

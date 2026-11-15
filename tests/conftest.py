@@ -12,6 +12,10 @@ def pytest_pycollect_makeitem(collector, name, obj):
   if inspect.isfunction(obj) and obj.__module__ != collector.obj.__name__:
     return [] # ignore library functions imported into the test file
 
+# The page the tests' positions and breaks were measured on, whatever margin the library
+# takes by default: a test of the default reads `Defaults.MARGIN` instead
+MARGIN = 20
+
 #--------------------------------------------------------------------------------------- Assertions
 
 def assert_valid_docx(path:str|Path, min_size:int=2000):
@@ -97,6 +101,10 @@ def docx_xml(path:str, part:str="word/document.xml"):
   from lxml import etree
   with zipfile.ZipFile(path) as z:
     return etree.fromstring(z.read(part))
+
+def field_codes(part) -> list[str]:
+  """The instructions of the fields in XML `part`, as Word reads them."""
+  return [code.strip() for code in part.xpath("//w:instrText/text()", namespaces=NS)]
 
 def twips(mm:float) -> str:
   """`mm` in Word's twentieths of a point, as its XML writes a length."""

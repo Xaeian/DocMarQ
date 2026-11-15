@@ -87,7 +87,7 @@ class Defaults:
   """Default values for DOCX generation."""
   PAGE_WIDTH = 210
   PAGE_HEIGHT = 297
-  MARGIN = 20
+  MARGIN = 18
   FONT_FAMILY = "Calibri"
   FONT_SIZE = 11
   FONT_MODE = "Regular"

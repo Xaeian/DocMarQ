@@ -36,7 +36,7 @@ from ..constants import Align, Defaults
 from ..styles import TableStyle
 from ..utils import mm_to_pt, eighths, color_hex, align_to_docx, smaller_size
 from ..svg import register_fonts, is_svg
-from ..images import preprocess_to_buffer, pin_offsets
+from ..images import add_picture, preprocess_to_buffer, pin_offsets
 from ..tables import TablePicture, check_table_rules
 from .style import MarkdownStyle
 from .frontmatter import split_frontmatter
@@ -536,10 +536,12 @@ class MarkdownRenderer:
     for c in self._children(inline_token):
       ct = c.type
       if ct == "text":
+        # A link in the colour the style gives links, as the PDF engine draws one
         if state["link_target"]:
-          self.doc.link(c.content, target=state["link_target"])
+          self.doc.link(c.content, target=state["link_target"], color=self.style.link_color,
+            **kwargs())
         elif state["link_url"]:
-          self.doc.link(c.content, url=state["link_url"])
+          self.doc.link(c.content, url=state["link_url"], color=self.style.link_color, **kwargs())
         else:
           self.doc.text(c.content, **kwargs())
       elif ct == "code_inline":
@@ -919,7 +921,7 @@ class MarkdownRenderer:
     buf, _w_mm, h_mm, baseline_mm = result
     run = p.add_run()
     try:
-      run.add_picture(buf, height=Mm(h_mm))
+      add_picture(run, buf, height=Mm(h_mm))
     except Exception:
       self._warn_math_fallback()
       self.doc.text(latex, code=True)
@@ -956,7 +958,7 @@ class MarkdownRenderer:
       return
     p = self._tagged_equation_para(tag)
     run = p.runs[0]
-    run.add_picture(buf, height=Mm(h_mm))
+    add_picture(run, buf, height=Mm(h_mm))
     pin_offsets(run)
     self.doc.track_block_spacing(self.doc.text_style.space_after or 0)
 
@@ -1001,7 +1003,7 @@ class MarkdownRenderer:
     w_mm, h_mm = image_utils.size_inline(info, s.inline_image_max_h * size_pt / s.body_size)
     if self.doc.paragraph is None: self.doc.para()
     run = self.doc.paragraph.add_run()
-    run.add_picture(picture, width=Mm(w_mm), height=Mm(h_mm))
+    add_picture(run, picture, width=Mm(w_mm), height=Mm(h_mm))
     pin_offsets(run)
     self._set_run_vertical_position(run, -round(size_pt * 0.24 * 2)) # half-points
 
@@ -1190,7 +1192,7 @@ class MarkdownRenderer:
         kwargs["width"] = Mm(width_mm)
       if height_mm is not None:
         kwargs["height"] = Mm(height_mm)
-      run.add_picture(src, **kwargs)
+      add_picture(run, src, **kwargs)
       pin_offsets(run)
     self.doc.track_block_spacing(2)
 

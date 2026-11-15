@@ -41,11 +41,10 @@ class MarkdownStyle:
   # Body size in pt.
   body_size: float = 11
 
-  # Body line-height multiplier.
-  # 1.0 = Word's "Single" rule, which renders ~1.2x font size due to Calibri's internal leading,
-  # tight without being cramped.
+  # Body line-height, a multiple of Word's "Single" rule, which is about 1.22 times the size
+  # of Calibri: 1.15 sets its lines 1.4 times their size apart, as pdfmarq's 1.4 does.
   # `None` writes none, leaving the leading to Word's paragraph style, as a template sets it.
-  line_height: float|None = 1.0
+  line_height: float|None = 1.15
 
   # Paragraph gap in mm. Converted to Word's pt-based `space_after` at apply time.
   para_gap: float = 3

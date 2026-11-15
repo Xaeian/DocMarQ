@@ -8,7 +8,7 @@ as a cover, and leaves saving to the caller.
 """
 from markdown_it.token import Token
 from ..core import DOCX
-from ..constants import PageSize, A4
+from ..constants import PageSize, A4, Defaults
 from ..inline import RichSegment
 from ..parts import signatures, page_number
 from ..md import MarkdownRenderer, split_frontmatter, docx_metadata, closing_breaks
@@ -23,7 +23,7 @@ def md_to_docx(
   *,
   style:PaperStyle|None = None,
   page:PageSize = A4,
-  margin:float|tuple = 20,
+  margin:float|tuple = Defaults.MARGIN,
   gutter:float = 0,
   two_sided:bool = False,
   base_dir:str|None = None,

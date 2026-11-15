@@ -43,6 +43,7 @@ class RichSegment:
   superscript: bool = False # raise as superscript (footnote refs)
   subscript: bool = False # lower as subscript
   small_caps: bool = False # lowercase letters as Word's small capitals
+  char_space: float = 0 # pt between letters beyond their own width, as Word's expanded spacing
 
 #------------------------------------------------------------------------------------ Run rendering
 
@@ -88,6 +89,29 @@ def _apply_run_format(
     f.subscript = True
   if seg.small_caps:
     f.small_caps = True
+  if seg.char_space: set_char_space(run._element.get_or_add_rPr(), seg.char_space)
+
+# CT_RPr child sequence (ISO/IEC 29500-1), where a run's or a style's properties place `spacing`
+_RPR_ORDER = (
+  "rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "outline",
+  "shadow", "emboss", "imprint", "noProof", "snapToGrid", "vanish", "webHidden", "color",
+  "spacing", "w", "kern", "position", "sz", "szCs", "highlight", "u", "effect", "bdr", "shd",
+  "fitText", "vertAlign", "rtl", "cs", "em", "lang", "eastAsianLayout", "specVanish", "oMath",
+)
+
+def set_char_space(rpr, pt:float):
+  """
+  Letters `pt` apart beyond their own width in the run or style properties `rpr`, as Word's
+  expanded spacing, `<w:spacing>` in twentieths of a point at its place in the sequence.
+  """
+  old = rpr.find(qn("w:spacing"))
+  if old is not None: rpr.remove(old)
+  spacing = OxmlElement("w:spacing")
+  spacing.set(qn("w:val"), str(round(pt * 20)))
+  after = set(_RPR_ORDER[_RPR_ORDER.index("spacing") + 1:])
+  later = next((child for child in rpr if child.tag.split("}")[-1] in after), None)
+  if later is None: rpr.append(spacing)
+  else: later.addprevious(spacing)
 
 def _highlight_value(name:str):
   """Map color name to `WD_COLOR_INDEX`. Returns `None` if unknown."""

@@ -12,7 +12,7 @@ from docx.enum.text import WD_BREAK
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from ..core import DOCX, mark_language, no_hyphens
-from ..constants import PageSize, A4
+from ..constants import PageSize, A4, Defaults
 from ..inline import RichSegment
 from ..parts import signatures, page_number
 from ..tables import remove_table_borders, set_cell_margins, set_table_widths
@@ -30,7 +30,7 @@ def md_to_docx(
   *,
   style:LegalStyle|None = None,
   page:PageSize = A4,
-  margin:float|tuple = 20,
+  margin:float|tuple = Defaults.MARGIN,
   gutter:float = 0,
   two_sided:bool = False,
   base_dir:str|None = None,
@@ -166,7 +166,7 @@ def md_parallel_to_docx(
   *,
   styles:list[LegalStyle],
   page:PageSize = A4,
-  margin:float|tuple = 20,
+  margin:float|tuple = Defaults.MARGIN,
   gutter:float = 0,
   two_sided:bool = False,
   base_dir:str|None = None,

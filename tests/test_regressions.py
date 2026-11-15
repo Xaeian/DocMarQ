@@ -99,6 +99,34 @@ class TestSvgImages(TempDocxCase):
     self.assertIn("TAILMARK", docx_text(p))
     self.assertIn("graphic", docx.Document(p).element.xml)
 
+  def test_an_svg_drawing_goes_in_beside_its_png(self):
+    """Word and LibreOffice draw the vectors, an older reader the PNG; one part for a drawing."""
+    import zipfile
+    p, svg = self.path(), self.write_svg()
+    d = DOCX(p)
+    d.image(svg, width=40)
+    d.image(svg, width=20)
+    d.save()
+    with zipfile.ZipFile(p) as z:
+      media = sorted(n for n in z.namelist() if n.startswith("word/media/"))
+      xml = z.read("word/document.xml").decode("utf-8")
+    self.assertEqual([n.rsplit(".", 1)[1] for n in media], ["png", "svg"])
+    self.assertEqual(xml.count("svgBlip"), 2)
+
+  def test_an_svg_holding_text_stays_a_png_alone(self):
+    """Its text is set here in the faces it names, which a reader may lack."""
+    import zipfile
+    p, svg = self.path(), self.path("label.svg")
+    with open(svg, "w", encoding="utf-8") as f:
+      f.write('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">'
+        '<text x="2" y="14">Label</text></svg>')
+    d = DOCX(p)
+    d.image(svg, width=40)
+    d.save()
+    with zipfile.ZipFile(p) as z:
+      self.assertFalse([n for n in z.namelist() if n.endswith(".svg")])
+      self.assertNotIn("svgBlip", z.read("word/document.xml").decode("utf-8"))
+
   def test_missing_rasterizer_costs_one_figure(self):
     """
     No rasterizing backend is a degraded figure, not a dead render.

@@ -9,7 +9,7 @@ A long URL never squeezes the columns beside it.
 
 import pytest
 from reportlab.pdfbase.pdfmetrics import stringWidth
-from conftest import docx_grid_mm
+from conftest import MARGIN, docx_grid_mm
 from docmarq import DOCX
 from docmarq.constants import Unit, Defaults
 from docmarq.utils import smaller_size
@@ -29,7 +29,7 @@ def grid(tmp_path):
   """Grid widths of the first table `md` renders to."""
   def render(md:str) -> list[float]:
     path = str(tmp_path / "table.docx")
-    md_to_docx(md, path)
+    md_to_docx(md, path, margin=MARGIN)
     return docx_grid_mm(path)[0]
   return render
 

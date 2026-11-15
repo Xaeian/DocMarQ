@@ -4,7 +4,9 @@
 SVG rasterization for DOCX embedding.
 
 `python-docx` has no SVG support,
-so vector sources are turned into PNG before they reach `add_picture`.
+so vector sources are turned into PNG before they reach `add_picture`;
+the PNG keeps the path of its SVG, which `images.add_picture` carries beside it
+where the drawing holds no text.
 Lives at package level, next to `core`:
 `svglib` and `rlPyCairo` are base dependencies,
 and both the fluent API and the markdown renderer embed images.
@@ -17,14 +19,16 @@ Example:
   >>> from docmarq.svg import register_fonts, svg_to_png_buffer
   >>> register_fonts("./fonts", "IBMPlexSans")
   >>> buf = svg_to_png_buffer("logo.svg")
-  >>> # buf is a BytesIO of PNG bytes, or None when rasterizing is impossible
+  >>> # buf is a BytesIO of PNG bytes, its `svg` the source, or None when rasterizing is impossible
 """
 import io, threading, warnings
+import xml.etree.ElementTree as ET
 from importlib import import_module
 from . import svgmarkers
 from .fonts import resolve_ttf
 
 SVG_TARGET_PX = 2400 # longest raster side for SVG → PNG (~360 DPI at A4 content width)
+_TEXT = {"text", "tspan", "textPath", "foreignObject"} # elements a reader sets in its own fonts
 
 _BACKEND_WARNED = False
 
@@ -75,7 +79,19 @@ def svg_to_png_buffer(path:str):
       drawing.height *= s
     png_bytes = renderPM.drawToString(drawing, fmt="PNG")
   except Exception: return None
-  return io.BytesIO(png_bytes)
+  return Raster(png_bytes, path)
+
+class Raster(io.BytesIO):
+  """The PNG bytes of an SVG, which keep the path of the SVG in `svg`."""
+  def __init__(self, data:bytes, svg:str):
+    super().__init__(data)
+    self.svg = svg
+
+def drawn_only(path:str) -> bool:
+  """True when the SVG at `path` draws shapes alone, no text a reader would set in its fonts."""
+  try: root = ET.parse(path).getroot()
+  except (OSError, ET.ParseError): return False
+  return not any(el.tag.rsplit("}", 1)[-1] in _TEXT for el in root.iter())
 
 #------------------------------------------------------------------------------------- Font mapping
 

@@ -1,13 +1,21 @@
 # docmarq/images.py
 
 """
-Pictures for Word: an image as a PNG Word takes, and the offsets python-docx leaves out.
+Pictures for Word: an image as a PNG Word takes, an SVG drawing carried beside its PNG,
+and the offsets python-docx leaves out.
 The markdown engine embeds its figures through these, the paper banner its logo.
 """
 import io, os
+from pathlib import Path
 from PIL import Image
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.opc.part import Part
 from docx.oxml import OxmlElement
-from .svg import svg_to_png_buffer, is_svg
+from docx.oxml.ns import qn
+from .svg import svg_to_png_buffer, is_svg, drawn_only
+
+_SVG_EXT = "{96DAC541-7B7A-43D3-8B79-37D633B846F1}" # the extension Word 2016 keeps an SVG in
+_ASVG = "http://schemas.microsoft.com/office/drawing/2016/SVG/main"
 
 #--------------------------------------------------------------------------------------- Preprocess
 
@@ -44,6 +52,36 @@ def preprocess_to_buffer(path:str):
     buf.seek(0)
     return buf
   except (OSError, ValueError): return None
+
+#------------------------------------------------------------------------------------------ Picture
+
+def add_picture(run, source, **size):
+  """
+  `source` as a picture of `run`, `size` as python-docx takes it.
+  The PNG of an SVG drawing carries the drawing too, as Word 2016 keeps one: Word and LibreOffice
+  draw its vectors, sharp at any size, an older reader the PNG.
+  An SVG holding text stays a PNG alone, its text set here in faces a reader may lack.
+  """
+  shape = run.add_picture(source, **size)
+  svg = getattr(source, "svg", "")
+  if svg and drawn_only(svg): _carry_svg(run, svg)
+  return shape
+
+def _carry_svg(run, path:str):
+  """The SVG at `path` beside the PNG of the last picture of `run`, one part for each drawing."""
+  part, data = run.part, Path(path).read_bytes()
+  svg = next((p for p in part.package.iter_parts()
+    if p.content_type == "image/svg+xml" and p.blob == data), None)
+  if svg is None:
+    svg = Part(part.package.next_partname("/word/media/image%d.svg"), "image/svg+xml", data,
+      part.package)
+  ext_list, ext = OxmlElement("a:extLst"), OxmlElement("a:ext")
+  ext.set("uri", _SVG_EXT)
+  blip = ext.makeelement(f"{{{_ASVG}}}svgBlip", nsmap={"asvg": _ASVG})
+  blip.set(qn("r:embed"), part.relate_to(svg, RT.IMAGE))
+  ext.append(blip)
+  ext_list.append(ext)
+  run._r.xpath(".//a:blip")[-1].append(ext_list)
 
 #---------------------------------------------------------------------------------- Picture offsets
 
